@@ -16,13 +16,17 @@ import { TriggerSystem } from './levels/trigger-system';
 import { ObjectiveSystem } from './levels/objective-system';
 import { buildLevel } from './levels/level-builder';
 import type { LevelSchema } from './levels/level-schema';
+import { DestructibleSystem } from './levels/destructible-system';
 import { HUD } from './ui/hud';
 import { DamageIndicator } from './ui/damage-indicator';
 import { ScopeOverlay } from './ui/scope-overlay';
 import { TacticalOverlay } from './ui/tactical-overlay';
+import { playDestruction } from './audio/sound-effects';
+import { startMusic, stopMusic } from './audio/music';
 import { BriefingScreen } from './ui/briefing-screen';
 import { ObjectivesDisplay } from './ui/objectives-display';
 import { InventoryScreen } from './ui/inventory-screen';
+import { PauseMenu } from './ui/pause-menu';
 import { renderWeaponPreviewToCanvas } from './weapons/weapon-preview-renderer';
 import {
   concreteWallTexture,
@@ -62,6 +66,7 @@ export class Game {
   private scopeOverlay: ScopeOverlay;
   private tacticalOverlay: TacticalOverlay;
 
+  private destructibleSystem: DestructibleSystem;
   private doorSystem: DoorSystem | null = null;
   private triggerSystem: TriggerSystem | null = null;
   private objectiveSystem: ObjectiveSystem | null = null;
@@ -69,6 +74,11 @@ export class Game {
   private objectivesDisplay: ObjectivesDisplay | null = null;
   private inventoryScreen: InventoryScreen;
   private weaponPreviewMeshCache = new Map<string, THREE.Group>();
+
+  private flashlight: THREE.SpotLight;
+  private flashlightOn = false;
+  private pauseMenu: PauseMenu;
+  private paused = false;
 
   private physicsAccumulator = 0;
   private started = false;
@@ -98,6 +108,14 @@ export class Game {
     // Camera
     this.fpsCamera = new FPSCamera();
     this.scene.add(this.fpsCamera.camera);
+
+    // Flashlight — toggleable SpotLight attached to camera (V key)
+    // Positioned at weapon area so it also illuminates the held weapon
+    this.flashlight = new THREE.SpotLight(0xffe8cc, 0, 30, Math.PI / 6, 0.35, 1.5);
+    this.flashlight.position.set(0.3, -0.1, -0.3);
+    this.flashlight.target.position.set(0, 0, -5);
+    this.fpsCamera.camera.add(this.flashlight);
+    this.fpsCamera.camera.add(this.flashlight.target);
 
     // Player
     this.player = new PlayerController(
@@ -132,10 +150,17 @@ export class Game {
     this.grenadeSystem.setEnemyManager(this.enemyManager);
     this.grenadeSystem.setPlayerCollider(this.player.getCollider());
 
+    // Destructible system (crates, barrels)
+    this.destructibleSystem = new DestructibleSystem(this.scene, this.physics);
+
     // Pickup system
     this.pickupSystem = new PickupSystem(this.scene);
     this.pickupSystem.onPickupCollected = (type, amount, keyId) => {
       this.handlePickup(type, amount, keyId);
+    };
+    // Build actual 3D weapon models for ground pickups (set after weaponManager exists)
+    this.pickupSystem.weaponModelBuilder = (weaponType: string) => {
+      return this.weaponManager.getPreviewMesh(weaponType as any, 'default');
     };
 
     // Damage indicator + scope overlay + tactical (NV/gas mask)
@@ -161,8 +186,9 @@ export class Game {
     // Skip decals/impact particles on enemy hits (no lingering effects) and use enemy collider for hit test
     this.projectileSystem.isEnemyCollider = (c) => this.enemyManager.getEnemyByCollider(c) !== null;
 
-    // When player shoots: check if it hit an enemy
+    // When player shoots: check if it hit an enemy OR a destructible prop
     this.projectileSystem.onHitCollider = (collider, _point, _normal) => {
+      // Check enemies first
       const enemy = this.enemyManager.getEnemyByCollider(collider);
       if (enemy && !enemy.dead) {
         const weapon = this.weaponManager.currentWeapon;
@@ -175,7 +201,45 @@ export class Game {
             position: enemy.group.position.clone(),
           });
         }
+        return;
       }
+
+      // Check destructible props
+      const prop = this.destructibleSystem.getByColliderHandle(collider.handle);
+      if (prop) {
+        const weapon = this.weaponManager.currentWeapon;
+        this.destructibleSystem.damage(prop, weapon.stats.damage);
+      }
+    };
+
+    // When a frag grenade explodes: also damage destructible props in radius
+    this.grenadeSystem.onExplosion = (position, radius, damage) => {
+      this.destructibleSystem.damageInRadius(position, radius, damage);
+    };
+
+    // When a barrel explodes: damage enemies and player in radius
+    this.destructibleSystem.onBarrelExplode = (position, radius, damage) => {
+      // Damage enemies
+      this.enemyManager.damageEnemiesInRadius(position, radius, damage);
+      // Damage player if in range
+      const playerPos = this.player.getPosition();
+      const dx = playerPos.x - position.x;
+      const dy = playerPos.y - position.y;
+      const dz = playerPos.z - position.z;
+      const dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
+      if (dist <= radius) {
+        const falloff = 1 - dist / radius;
+        const playerDmg = damage * falloff;
+        this.player.takeDamage(playerDmg);
+        this.damageIndicator.flash();
+      }
+      // Visual explosion sprite from grenade system
+      this.grenadeSystem.spawnExplosion(position);
+    };
+
+    // Destruction sounds
+    this.destructibleSystem.onPropDestroyed = (type, _position) => {
+      playDestruction(type);
     };
 
     // HUD
@@ -183,6 +247,15 @@ export class Game {
 
     // Inventory (Tab to open/close)
     this.inventoryScreen = new InventoryScreen();
+
+    // Pause menu (Escape key)
+    this.pauseMenu = new PauseMenu();
+    this.pauseMenu.onResume = () => {
+      this.resumeGame();
+    };
+    this.pauseMenu.onExit = () => {
+      this.exitToMenu();
+    };
 
     if (this.levelMode) {
       this.doorSystem = new DoorSystem(
@@ -233,6 +306,7 @@ export class Game {
       objectiveSystem: this.objectiveSystem,
       enemyManager: this.enemyManager,
       pickupSystem: this.pickupSystem,
+      destructibleSystem: this.destructibleSystem,
       setPlayerPosition: (x, y, z) => this.player.setPosition(x, y, z),
     });
   }
@@ -245,6 +319,29 @@ export class Game {
     this.hud.show();
     if (this.levelMode && this.objectivesDisplay) this.objectivesDisplay.show();
     this.loop.start();
+    // Start the spy-thriller background music
+    startMusic();
+  }
+
+  private pauseGame(): void {
+    this.paused = true;
+    document.exitPointerLock();
+    this.pauseMenu.show();
+  }
+
+  private resumeGame(): void {
+    this.paused = false;
+    this.pauseMenu.hide();
+    this.input.requestPointerLock();
+    this.input.resetMouse();
+  }
+
+  private exitToMenu(): void {
+    this.paused = false;
+    this.loop.stop();
+    stopMusic();
+    // Reload the page to cleanly reset everything (physics, scene, etc.)
+    window.location.reload();
   }
 
   private handleTrigger(event: string): void {
@@ -260,6 +357,22 @@ export class Game {
   }
 
   private tick(dt: number): void {
+    // Pause toggle (Escape)
+    if (this.input.wasKeyJustPressed('escape')) {
+      if (this.pauseMenu.isOpen) {
+        this.resumeGame();
+      } else if (!this.inventoryScreen.isOpen) {
+        this.pauseGame();
+      }
+    }
+
+    // While paused, only render (frozen frame) — skip all updates
+    if (this.paused) {
+      this.input.resetMouse();
+      this.renderer.render(this.scene, this.fpsCamera.camera);
+      return;
+    }
+
     // Inventory toggle (Tab)
     if (this.input.wasKeyJustPressed('Tab')) {
       if (this.inventoryScreen.isOpen) {
@@ -358,12 +471,21 @@ export class Game {
     );
     this.grenadeSystem.update(dt, this.fpsCamera.camera);
 
+    // Destructible props: debris physics + cleanup
+    this.destructibleSystem.update(dt);
+
     // Scope overlay
     this.scopeOverlay.visible = this.weaponManager.scoped;
 
     // Tactical overlay (N key — night vision + gas mask)
     if (this.input.wasKeyJustPressed('n')) {
       this.tacticalOverlay.visible = !this.tacticalOverlay.visible;
+    }
+
+    // Flashlight toggle (V key)
+    if (this.input.wasKeyJustPressed('v')) {
+      this.flashlightOn = !this.flashlightOn;
+      this.flashlight.intensity = this.flashlightOn ? 40 : 0;
     }
 
     // Damage indicator
@@ -494,18 +616,18 @@ export class Game {
     this.scene.add(ambient);
 
     // Main overhead light
-    const pointLight = new THREE.PointLight(0xffffee, 40, 30);
+    const pointLight = new THREE.PointLight(0xffffee, 40, 35);
     pointLight.position.set(0, 4.5, 0);
     pointLight.castShadow = true;
     pointLight.shadow.mapSize.set(512, 512);
     this.scene.add(pointLight);
 
     // Secondary lights in corners
-    const cornerLight1 = new THREE.PointLight(0xffe0a0, 15, 20);
+    const cornerLight1 = new THREE.PointLight(0xffe0a0, 20, 22);
     cornerLight1.position.set(-7, 3, -7);
     this.scene.add(cornerLight1);
 
-    const cornerLight2 = new THREE.PointLight(0xa0d0ff, 15, 20);
+    const cornerLight2 = new THREE.PointLight(0xa0d0ff, 20, 22);
     cornerLight2.position.set(7, 3, 7);
     this.scene.add(cornerLight2);
 
@@ -589,28 +711,29 @@ export class Game {
       this.physics.createStaticCuboid(hx, hy, hz, x, y, z);
     }
 
-    // Crates scattered around
-    const crates: [number, number, number, number, number, number, THREE.Material][] = [
-      [1.2, 1.2, 1.2, 4, 0.6, 3, crateMat],
-      [1, 1, 1, 4.8, 0.5, 4.2, crateMat],
-      [0.8, 0.8, 0.8, 3.5, 1.6, 3.3, crateMat],
-      [1.5, 1, 1.5, -6, 0.5, -5, metalCrateMat],
-      [1, 0.8, 1, -5.5, 0.4, -3.5, metalCrateMat],
-      [2, 1.5, 0.8, -3, 0.75, 7, crateMat],
-      [0.6, 2, 0.6, 7, 1, -7, metalCrateMat],
-      [0.6, 2, 0.6, -7, 1, -7, metalCrateMat],
+    // Crates scattered around (destructible)
+    const crateData: { w: number; h: number; d: number; x: number; y: number; z: number; mat: THREE.Material; type: 'crate' | 'crate_metal' }[] = [
+      { w: 1.2, h: 1.2, d: 1.2, x: 4, y: 0.6, z: 3, mat: crateMat, type: 'crate' },
+      { w: 1, h: 1, d: 1, x: 4.8, y: 0.5, z: 4.2, mat: crateMat, type: 'crate' },
+      { w: 0.8, h: 0.8, d: 0.8, x: 3.5, y: 1.6, z: 3.3, mat: crateMat, type: 'crate' },
+      { w: 1.5, h: 1, d: 1.5, x: -6, y: 0.5, z: -5, mat: metalCrateMat, type: 'crate_metal' },
+      { w: 1, h: 0.8, d: 1, x: -5.5, y: 0.4, z: -3.5, mat: metalCrateMat, type: 'crate_metal' },
+      { w: 2, h: 1.5, d: 0.8, x: -3, y: 0.75, z: 7, mat: crateMat, type: 'crate' },
+      { w: 0.6, h: 2, d: 0.6, x: 7, y: 1, z: -7, mat: metalCrateMat, type: 'crate_metal' },
+      { w: 0.6, h: 2, d: 0.6, x: -7, y: 1, z: -7, mat: metalCrateMat, type: 'crate_metal' },
     ];
 
-    for (const [w, h, d, x, y, z, mat] of crates) {
-      const crate = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat);
-      crate.position.set(x, y, z);
+    for (const c of crateData) {
+      const crate = new THREE.Mesh(new THREE.BoxGeometry(c.w, c.h, c.d), c.mat);
+      crate.position.set(c.x, c.y, c.z);
       crate.castShadow = true;
       crate.receiveShadow = true;
       this.scene.add(crate);
-      this.physics.createStaticCuboid(w / 2, h / 2, d / 2, x, y, z);
+      const collider = this.physics.createStaticCuboid(c.w / 2, c.h / 2, c.d / 2, c.x, c.y, c.z);
+      this.destructibleSystem.register(crate, collider, c.type, undefined, Math.max(c.w, c.h, c.d));
     }
 
-    // Barrels
+    // Barrels (destructible + explosive)
     const barrelMat = new THREE.MeshStandardMaterial({
       map: barrelTexture(),
       roughness: 0.5,
@@ -624,13 +747,14 @@ export class Game {
     for (const [bx, by, bz] of barrelPositions) {
       const barrel = new THREE.Mesh(
         new THREE.CylinderGeometry(0.4, 0.4, 1.2, 8),
-        barrelMat,
+        barrelMat.clone(), // clone so each barrel can flash independently
       );
       barrel.position.set(bx, by, bz);
       barrel.castShadow = true;
       barrel.receiveShadow = true;
       this.scene.add(barrel);
-      this.physics.createStaticCuboid(0.4, 0.6, 0.4, bx, by, bz);
+      const collider = this.physics.createStaticCuboid(0.4, 0.6, 0.4, bx, by, bz);
+      this.destructibleSystem.register(barrel, collider, 'barrel', undefined, 0.8);
     }
   }
 }

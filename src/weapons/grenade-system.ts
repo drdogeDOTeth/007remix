@@ -63,6 +63,8 @@ export class GrenadeSystem {
   private playerCollider: RAPIER.Collider | null = null;
   /** Called each frame when player is inside a gas cloud. Gas mask protects if not called / callback ignores. */
   onPlayerInGas: ((damage: number) => void) | null = null;
+  /** Called when a frag grenade explodes — for damaging destructible props, etc. (position, radius, damage) */
+  onExplosion: ((position: THREE.Vector3, radius: number, damage: number) => void) | null = null;
   private readonly _playerPos = new THREE.Vector3();
   private thrown: ThrownGrenade[] = [];
   private clouds: GasCloud[] = [];
@@ -114,7 +116,8 @@ export class GrenadeSystem {
     });
   }
 
-  private spawnExplosion(at: THREE.Vector3): void {
+  /** Spawn a frag explosion at the given position. Public so barrel explosions can reuse visuals. */
+  spawnExplosion(at: THREE.Vector3): void {
     if (!this.explosionTexture) {
       this.explosionTexture = generateExplosionTexture();
     }
@@ -331,8 +334,11 @@ export class GrenadeSystem {
     for (let i = this.explosions.length - 1; i >= 0; i--) {
       const e = this.explosions[i];
       e.elapsed += dt;
-      if (!e.damageDealt && this.enemyManager) {
-        this.enemyManager.damageEnemiesInRadius(e.position, e.radius, FRAG_EXPLOSION_DAMAGE);
+      if (!e.damageDealt) {
+        if (this.enemyManager) {
+          this.enemyManager.damageEnemiesInRadius(e.position, e.radius, FRAG_EXPLOSION_DAMAGE);
+        }
+        this.onExplosion?.(e.position, e.radius, FRAG_EXPLOSION_DAMAGE);
         e.damageDealt = true;
       }
       const t = Math.min(1, e.elapsed / e.duration);

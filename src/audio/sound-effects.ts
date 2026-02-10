@@ -86,41 +86,84 @@ export function playGunshotPistol(): void {
   bass.stop(now + 0.06);
 }
 
-/** KF7 Rifle: metallic rattle — bandpass resonance + mid-frequency buzz */
+/** AR-style Rifle: aggressive crack + punchy mid-bass + bolt carrier slap */
 export function playGunshotRifle(): void {
   const ctx = getAudioCtx();
   const now = ctx.currentTime;
 
-  // Noise burst with resonant bandpass (metallic ring)
-  const noise = makeNoise(ctx, 0.08, 4);
-  const bp = ctx.createBiquadFilter();
-  bp.type = 'bandpass';
-  bp.frequency.setValueAtTime(2200, now);
-  bp.frequency.exponentialRampToValueAtTime(600, now + 0.06);
-  bp.Q.value = 3; // resonant — gives metallic ring
-  const dist = makeDistortion(ctx, 30);
-  const g = ctx.createGain();
-  g.gain.setValueAtTime(0.3, now);
-  g.gain.exponentialRampToValueAtTime(0.001, now + 0.07);
-  noise.connect(bp);
-  bp.connect(dist);
-  dist.connect(g);
-  g.connect(ctx.destination);
-  noise.start(now);
-  noise.stop(now + 0.08);
+  // 1. Initial sharp transient crack — the "snap" when the round breaks the sound barrier
+  const crack = makeNoise(ctx, 0.025, 7);
+  const crackHp = ctx.createBiquadFilter();
+  crackHp.type = 'highpass';
+  crackHp.frequency.setValueAtTime(4500, now);
+  crackHp.frequency.exponentialRampToValueAtTime(1800, now + 0.015);
+  const crackG = ctx.createGain();
+  crackG.gain.setValueAtTime(0.5, now);
+  crackG.gain.exponentialRampToValueAtTime(0.001, now + 0.025);
+  crack.connect(crackHp);
+  crackHp.connect(crackG);
+  crackG.connect(ctx.destination);
+  crack.start(now);
+  crack.stop(now + 0.025);
 
-  // Mid-frequency buzz (bolt carrier rattle)
-  const buzz = ctx.createOscillator();
-  buzz.type = 'sawtooth';
-  buzz.frequency.setValueAtTime(300, now);
-  buzz.frequency.exponentialRampToValueAtTime(100, now + 0.04);
-  const bg = ctx.createGain();
-  bg.gain.setValueAtTime(0.15, now);
-  bg.gain.exponentialRampToValueAtTime(0.001, now + 0.05);
-  buzz.connect(bg);
-  bg.connect(ctx.destination);
-  buzz.start(now);
-  buzz.stop(now + 0.06);
+  // 2. Main body — distorted mid-frequency blast (the concussive "bark")
+  const body = makeNoise(ctx, 0.1, 3.5);
+  const bodyBp = ctx.createBiquadFilter();
+  bodyBp.type = 'bandpass';
+  bodyBp.frequency.setValueAtTime(1800, now);
+  bodyBp.frequency.exponentialRampToValueAtTime(400, now + 0.07);
+  bodyBp.Q.value = 1.5;
+  const bodyDist = makeDistortion(ctx, 45);
+  const bodyG = ctx.createGain();
+  bodyG.gain.setValueAtTime(0.4, now);
+  bodyG.gain.exponentialRampToValueAtTime(0.001, now + 0.09);
+  body.connect(bodyBp);
+  bodyBp.connect(bodyDist);
+  bodyDist.connect(bodyG);
+  bodyG.connect(ctx.destination);
+  body.start(now);
+  body.stop(now + 0.1);
+
+  // 3. Punchy bass thump — felt in the chest
+  const bass = ctx.createOscillator();
+  bass.frequency.setValueAtTime(160, now);
+  bass.frequency.exponentialRampToValueAtTime(45, now + 0.06);
+  const bassG = ctx.createGain();
+  bassG.gain.setValueAtTime(0.35, now);
+  bassG.gain.exponentialRampToValueAtTime(0.001, now + 0.08);
+  bass.connect(bassG);
+  bassG.connect(ctx.destination);
+  bass.start(now);
+  bass.stop(now + 0.09);
+
+  // 4. Bolt carrier slap — short metallic rattle after main blast
+  const bolt = makeNoise(ctx, 0.04, 5);
+  const boltBp = ctx.createBiquadFilter();
+  boltBp.type = 'bandpass';
+  boltBp.frequency.setValueAtTime(3200, now + 0.02);
+  boltBp.frequency.exponentialRampToValueAtTime(1200, now + 0.05);
+  boltBp.Q.value = 4;
+  const boltG = ctx.createGain();
+  boltG.gain.setValueAtTime(0, now);
+  boltG.gain.setValueAtTime(0.18, now + 0.02);
+  boltG.gain.exponentialRampToValueAtTime(0.001, now + 0.055);
+  bolt.connect(boltBp);
+  boltBp.connect(boltG);
+  boltG.connect(ctx.destination);
+  bolt.start(now + 0.02);
+  bolt.stop(now + 0.06);
+
+  // 5. Sub-bass pressure wave — adds weight
+  const sub = ctx.createOscillator();
+  sub.frequency.setValueAtTime(55, now);
+  sub.frequency.exponentialRampToValueAtTime(20, now + 0.05);
+  const subG = ctx.createGain();
+  subG.gain.setValueAtTime(0.2, now);
+  subG.gain.exponentialRampToValueAtTime(0.001, now + 0.06);
+  sub.connect(subG);
+  subG.connect(ctx.destination);
+  sub.start(now);
+  sub.stop(now + 0.07);
 }
 
 /** Shotgun: thunderous BOOM — heavy bass + wide noise + long tail */
@@ -184,72 +227,126 @@ export function playGunshotShotgun(): void {
   crack.stop(now + 0.04);
 }
 
-/** Sniper: supersonic crack + delayed echo tail */
+/** Sniper: heavy .50 cal boom — massive supersonic crack + deep concussive blast + long reverb tail */
 export function playGunshotSniper(): void {
   const ctx = getAudioCtx();
   const now = ctx.currentTime;
 
-  // Initial sharp supersonic crack (very high frequency)
-  const crack = makeNoise(ctx, 0.03, 6);
-  const hp = ctx.createBiquadFilter();
-  hp.type = 'highpass';
-  hp.frequency.setValueAtTime(5000, now);
-  hp.frequency.exponentialRampToValueAtTime(2000, now + 0.02);
-  const g = ctx.createGain();
-  g.gain.setValueAtTime(0.4, now);
-  g.gain.exponentialRampToValueAtTime(0.001, now + 0.03);
-  crack.connect(hp);
-  hp.connect(g);
-  g.connect(ctx.destination);
+  // 1. Supersonic crack — razor-sharp initial transient
+  const crack = makeNoise(ctx, 0.02, 8);
+  const crackHp = ctx.createBiquadFilter();
+  crackHp.type = 'highpass';
+  crackHp.frequency.setValueAtTime(6000, now);
+  crackHp.frequency.exponentialRampToValueAtTime(2500, now + 0.012);
+  const crackG = ctx.createGain();
+  crackG.gain.setValueAtTime(0.6, now);
+  crackG.gain.exponentialRampToValueAtTime(0.001, now + 0.02);
+  crack.connect(crackHp);
+  crackHp.connect(crackG);
+  crackG.connect(ctx.destination);
   crack.start(now);
-  crack.stop(now + 0.03);
+  crack.stop(now + 0.02);
 
-  // Main body — mid noise with heavy punch
-  const body = makeNoise(ctx, 0.12, 3);
-  const bp = ctx.createBiquadFilter();
-  bp.type = 'bandpass';
-  bp.frequency.setValueAtTime(1000, now);
-  bp.frequency.exponentialRampToValueAtTime(200, now + 0.1);
-  bp.Q.value = 0.8;
-  const dist = makeDistortion(ctx, 25);
-  const bg = ctx.createGain();
-  bg.gain.setValueAtTime(0.4, now);
-  bg.gain.exponentialRampToValueAtTime(0.001, now + 0.12);
-  body.connect(bp);
-  bp.connect(dist);
-  dist.connect(bg);
-  bg.connect(ctx.destination);
+  // 2. Main concussive blast — heavy, wide, distorted body
+  const body = makeNoise(ctx, 0.18, 2.5);
+  const bodyLp = ctx.createBiquadFilter();
+  bodyLp.type = 'lowpass';
+  bodyLp.frequency.setValueAtTime(2200, now);
+  bodyLp.frequency.exponentialRampToValueAtTime(300, now + 0.12);
+  const bodyDist = makeDistortion(ctx, 50);
+  const bodyG = ctx.createGain();
+  bodyG.gain.setValueAtTime(0.55, now);
+  bodyG.gain.exponentialRampToValueAtTime(0.01, now + 0.16);
+  body.connect(bodyLp);
+  bodyLp.connect(bodyDist);
+  bodyDist.connect(bodyG);
+  bodyG.connect(ctx.destination);
   body.start(now);
-  body.stop(now + 0.12);
+  body.stop(now + 0.18);
 
-  // Deep bass thump
+  // 3. Deep bass cannon boom — the gut-punch
   const bass = ctx.createOscillator();
-  bass.frequency.setValueAtTime(120, now);
-  bass.frequency.exponentialRampToValueAtTime(30, now + 0.1);
+  bass.frequency.setValueAtTime(90, now);
+  bass.frequency.exponentialRampToValueAtTime(18, now + 0.15);
   const bassG = ctx.createGain();
-  bassG.gain.setValueAtTime(0.45, now);
-  bassG.gain.exponentialRampToValueAtTime(0.001, now + 0.12);
+  bassG.gain.setValueAtTime(0.6, now);
+  bassG.gain.exponentialRampToValueAtTime(0.001, now + 0.18);
   bass.connect(bassG);
   bassG.connect(ctx.destination);
   bass.start(now);
-  bass.stop(now + 0.14);
+  bass.stop(now + 0.2);
 
-  // Delayed echo/reverb tail (offset by 0.06s)
-  const echo = makeNoise(ctx, 0.2, 2);
-  const echoBp = ctx.createBiquadFilter();
-  echoBp.type = 'bandpass';
-  echoBp.frequency.setValueAtTime(400, now + 0.06);
-  echoBp.frequency.exponentialRampToValueAtTime(100, now + 0.25);
-  echoBp.Q.value = 0.5;
-  const eg = ctx.createGain();
-  eg.gain.setValueAtTime(0, now);
-  eg.gain.setValueAtTime(0.15, now + 0.06);
-  eg.gain.exponentialRampToValueAtTime(0.001, now + 0.28);
-  echo.connect(echoBp);
-  echoBp.connect(eg);
-  eg.connect(ctx.destination);
-  echo.start(now + 0.06);
-  echo.stop(now + 0.28);
+  // 4. Sub-bass pressure wave — shakes the room
+  const sub = ctx.createOscillator();
+  sub.frequency.setValueAtTime(40, now);
+  sub.frequency.exponentialRampToValueAtTime(12, now + 0.12);
+  const subG = ctx.createGain();
+  subG.gain.setValueAtTime(0.45, now);
+  subG.gain.exponentialRampToValueAtTime(0.001, now + 0.15);
+  sub.connect(subG);
+  subG.connect(ctx.destination);
+  sub.start(now);
+  sub.stop(now + 0.18);
+
+  // 5. Barrel ring — high-frequency harmonic resonance after the shot
+  const ring = ctx.createOscillator();
+  ring.type = 'sine';
+  ring.frequency.setValueAtTime(2800, now + 0.01);
+  ring.frequency.exponentialRampToValueAtTime(1800, now + 0.15);
+  const ringG = ctx.createGain();
+  ringG.gain.setValueAtTime(0, now);
+  ringG.gain.setValueAtTime(0.08, now + 0.01);
+  ringG.gain.exponentialRampToValueAtTime(0.001, now + 0.2);
+  ring.connect(ringG);
+  ringG.connect(ctx.destination);
+  ring.start(now + 0.01);
+  ring.stop(now + 0.22);
+
+  // 6. First echo — close wall reflection (offset 0.08s)
+  const echo1 = makeNoise(ctx, 0.15, 2.5);
+  const echo1Bp = ctx.createBiquadFilter();
+  echo1Bp.type = 'bandpass';
+  echo1Bp.frequency.setValueAtTime(600, now + 0.08);
+  echo1Bp.frequency.exponentialRampToValueAtTime(150, now + 0.22);
+  echo1Bp.Q.value = 0.6;
+  const echo1G = ctx.createGain();
+  echo1G.gain.setValueAtTime(0, now);
+  echo1G.gain.setValueAtTime(0.2, now + 0.08);
+  echo1G.gain.exponentialRampToValueAtTime(0.001, now + 0.25);
+  echo1.connect(echo1Bp);
+  echo1Bp.connect(echo1G);
+  echo1G.connect(ctx.destination);
+  echo1.start(now + 0.08);
+  echo1.stop(now + 0.25);
+
+  // 7. Second echo — far wall, deeper and quieter (offset 0.18s)
+  const echo2 = makeNoise(ctx, 0.2, 2);
+  const echo2Lp = ctx.createBiquadFilter();
+  echo2Lp.type = 'lowpass';
+  echo2Lp.frequency.setValueAtTime(350, now + 0.18);
+  echo2Lp.frequency.exponentialRampToValueAtTime(80, now + 0.4);
+  const echo2G = ctx.createGain();
+  echo2G.gain.setValueAtTime(0, now);
+  echo2G.gain.setValueAtTime(0.1, now + 0.18);
+  echo2G.gain.exponentialRampToValueAtTime(0.001, now + 0.42);
+  echo2.connect(echo2Lp);
+  echo2Lp.connect(echo2G);
+  echo2G.connect(ctx.destination);
+  echo2.start(now + 0.18);
+  echo2.stop(now + 0.42);
+
+  // 8. Bolt action clack — delayed mechanical sound (offset 0.12s)
+  const bolt = ctx.createOscillator();
+  bolt.frequency.setValueAtTime(3500, now + 0.12);
+  bolt.frequency.exponentialRampToValueAtTime(1000, now + 0.15);
+  const boltG = ctx.createGain();
+  boltG.gain.setValueAtTime(0, now);
+  boltG.gain.setValueAtTime(0.12, now + 0.12);
+  boltG.gain.exponentialRampToValueAtTime(0.001, now + 0.16);
+  bolt.connect(boltG);
+  boltG.connect(ctx.destination);
+  bolt.start(now + 0.12);
+  bolt.stop(now + 0.18);
 }
 
 /** Play gunshot by weapon type (player weapons) */
@@ -282,6 +379,229 @@ export function playDryFire(): void {
   gain.connect(ctx.destination);
   osc.start(now);
   osc.stop(now + 0.05);
+}
+
+// ─── Destruction sounds ───
+
+/** Wood crate breaking — splintering crack + wood crunch */
+export function playCrateBreak(): void {
+  const ctx = getAudioCtx();
+  const now = ctx.currentTime;
+
+  // 1. Sharp crack — wood splitting
+  const crack = makeNoise(ctx, 0.06, 4);
+  const crackHp = ctx.createBiquadFilter();
+  crackHp.type = 'highpass';
+  crackHp.frequency.setValueAtTime(2500, now);
+  crackHp.frequency.exponentialRampToValueAtTime(800, now + 0.04);
+  const crackG = ctx.createGain();
+  crackG.gain.setValueAtTime(0.35, now);
+  crackG.gain.exponentialRampToValueAtTime(0.001, now + 0.06);
+  crack.connect(crackHp);
+  crackHp.connect(crackG);
+  crackG.connect(ctx.destination);
+  crack.start(now);
+  crack.stop(now + 0.06);
+
+  // 2. Mid crunch — body of the break
+  const crunch = makeNoise(ctx, 0.12, 2.5);
+  const crunchBp = ctx.createBiquadFilter();
+  crunchBp.type = 'bandpass';
+  crunchBp.frequency.setValueAtTime(800, now);
+  crunchBp.frequency.exponentialRampToValueAtTime(200, now + 0.1);
+  crunchBp.Q.value = 1.2;
+  const crunchDist = makeDistortion(ctx, 25);
+  const crunchG = ctx.createGain();
+  crunchG.gain.setValueAtTime(0.3, now);
+  crunchG.gain.exponentialRampToValueAtTime(0.001, now + 0.1);
+  crunch.connect(crunchBp);
+  crunchBp.connect(crunchDist);
+  crunchDist.connect(crunchG);
+  crunchG.connect(ctx.destination);
+  crunch.start(now);
+  crunch.stop(now + 0.12);
+
+  // 3. Low thump — weight of pieces hitting ground
+  const thump = ctx.createOscillator();
+  thump.frequency.setValueAtTime(100, now + 0.02);
+  thump.frequency.exponentialRampToValueAtTime(35, now + 0.08);
+  const thumpG = ctx.createGain();
+  thumpG.gain.setValueAtTime(0, now);
+  thumpG.gain.setValueAtTime(0.2, now + 0.02);
+  thumpG.gain.exponentialRampToValueAtTime(0.001, now + 0.1);
+  thump.connect(thumpG);
+  thumpG.connect(ctx.destination);
+  thump.start(now + 0.02);
+  thump.stop(now + 0.12);
+
+  // 4. Trailing splinter rattle
+  const rattle = makeNoise(ctx, 0.15, 3);
+  const rattleBp = ctx.createBiquadFilter();
+  rattleBp.type = 'bandpass';
+  rattleBp.frequency.setValueAtTime(1500, now + 0.04);
+  rattleBp.frequency.exponentialRampToValueAtTime(400, now + 0.15);
+  rattleBp.Q.value = 2;
+  const rattleG = ctx.createGain();
+  rattleG.gain.setValueAtTime(0, now);
+  rattleG.gain.setValueAtTime(0.12, now + 0.04);
+  rattleG.gain.exponentialRampToValueAtTime(0.001, now + 0.18);
+  rattle.connect(rattleBp);
+  rattleBp.connect(rattleG);
+  rattleG.connect(ctx.destination);
+  rattle.start(now + 0.04);
+  rattle.stop(now + 0.18);
+}
+
+/** Metal crate breaking — metallic crash + reverberant ring */
+export function playMetalCrateBreak(): void {
+  const ctx = getAudioCtx();
+  const now = ctx.currentTime;
+
+  // 1. Sharp metallic impact
+  const impact = makeNoise(ctx, 0.04, 5);
+  const impactHp = ctx.createBiquadFilter();
+  impactHp.type = 'highpass';
+  impactHp.frequency.setValueAtTime(3500, now);
+  impactHp.frequency.exponentialRampToValueAtTime(1000, now + 0.03);
+  const impactG = ctx.createGain();
+  impactG.gain.setValueAtTime(0.4, now);
+  impactG.gain.exponentialRampToValueAtTime(0.001, now + 0.04);
+  impact.connect(impactHp);
+  impactHp.connect(impactG);
+  impactG.connect(ctx.destination);
+  impact.start(now);
+  impact.stop(now + 0.04);
+
+  // 2. Metal crash body — resonant bandpass with distortion
+  const crash = makeNoise(ctx, 0.15, 2.5);
+  const crashBp = ctx.createBiquadFilter();
+  crashBp.type = 'bandpass';
+  crashBp.frequency.setValueAtTime(1200, now);
+  crashBp.frequency.exponentialRampToValueAtTime(300, now + 0.12);
+  crashBp.Q.value = 3;
+  const crashDist = makeDistortion(ctx, 35);
+  const crashG = ctx.createGain();
+  crashG.gain.setValueAtTime(0.35, now);
+  crashG.gain.exponentialRampToValueAtTime(0.001, now + 0.14);
+  crash.connect(crashBp);
+  crashBp.connect(crashDist);
+  crashDist.connect(crashG);
+  crashG.connect(ctx.destination);
+  crash.start(now);
+  crash.stop(now + 0.15);
+
+  // 3. Metallic ring — lingering resonance
+  const ring = ctx.createOscillator();
+  ring.type = 'sine';
+  ring.frequency.setValueAtTime(1800, now);
+  ring.frequency.exponentialRampToValueAtTime(900, now + 0.25);
+  const ringG = ctx.createGain();
+  ringG.gain.setValueAtTime(0.1, now);
+  ringG.gain.exponentialRampToValueAtTime(0.001, now + 0.3);
+  ring.connect(ringG);
+  ringG.connect(ctx.destination);
+  ring.start(now);
+  ring.stop(now + 0.32);
+
+  // 4. Bass thud — heavy metal hitting ground
+  const bass = ctx.createOscillator();
+  bass.frequency.setValueAtTime(120, now);
+  bass.frequency.exponentialRampToValueAtTime(30, now + 0.08);
+  const bassG = ctx.createGain();
+  bassG.gain.setValueAtTime(0.3, now);
+  bassG.gain.exponentialRampToValueAtTime(0.001, now + 0.1);
+  bass.connect(bassG);
+  bassG.connect(ctx.destination);
+  bass.start(now);
+  bass.stop(now + 0.12);
+}
+
+/** Barrel explosion — fiery burst + concussive boom + debris scatter */
+export function playBarrelExplode(): void {
+  const ctx = getAudioCtx();
+  const now = ctx.currentTime;
+
+  // 1. Initial burst — hot, bright
+  const burst = makeNoise(ctx, 0.05, 4);
+  const burstHp = ctx.createBiquadFilter();
+  burstHp.type = 'highpass';
+  burstHp.frequency.setValueAtTime(3000, now);
+  burstHp.frequency.exponentialRampToValueAtTime(800, now + 0.03);
+  const burstG = ctx.createGain();
+  burstG.gain.setValueAtTime(0.5, now);
+  burstG.gain.exponentialRampToValueAtTime(0.001, now + 0.04);
+  burst.connect(burstHp);
+  burstHp.connect(burstG);
+  burstG.connect(ctx.destination);
+  burst.start(now);
+  burst.stop(now + 0.05);
+
+  // 2. Main boom — heavy distorted lowpass
+  const boom = makeNoise(ctx, 0.2, 2);
+  const boomLp = ctx.createBiquadFilter();
+  boomLp.type = 'lowpass';
+  boomLp.frequency.setValueAtTime(1500, now);
+  boomLp.frequency.exponentialRampToValueAtTime(150, now + 0.15);
+  const boomDist = makeDistortion(ctx, 50);
+  const boomG = ctx.createGain();
+  boomG.gain.setValueAtTime(0.55, now);
+  boomG.gain.exponentialRampToValueAtTime(0.01, now + 0.18);
+  boom.connect(boomLp);
+  boomLp.connect(boomDist);
+  boomDist.connect(boomG);
+  boomG.connect(ctx.destination);
+  boom.start(now);
+  boom.stop(now + 0.2);
+
+  // 3. Deep bass — concussive pressure
+  const bass = ctx.createOscillator();
+  bass.frequency.setValueAtTime(70, now);
+  bass.frequency.exponentialRampToValueAtTime(18, now + 0.12);
+  const bassG = ctx.createGain();
+  bassG.gain.setValueAtTime(0.5, now);
+  bassG.gain.exponentialRampToValueAtTime(0.001, now + 0.15);
+  bass.connect(bassG);
+  bassG.connect(ctx.destination);
+  bass.start(now);
+  bass.stop(now + 0.18);
+
+  // 4. Sub rumble
+  const sub = ctx.createOscillator();
+  sub.frequency.setValueAtTime(35, now);
+  sub.frequency.exponentialRampToValueAtTime(10, now + 0.1);
+  const subG = ctx.createGain();
+  subG.gain.setValueAtTime(0.35, now);
+  subG.gain.exponentialRampToValueAtTime(0.001, now + 0.12);
+  sub.connect(subG);
+  subG.connect(ctx.destination);
+  sub.start(now);
+  sub.stop(now + 0.15);
+
+  // 5. Fire crackle tail — debris and flame
+  const crackle = makeNoise(ctx, 0.25, 2);
+  const crackleBp = ctx.createBiquadFilter();
+  crackleBp.type = 'bandpass';
+  crackleBp.frequency.setValueAtTime(600, now + 0.05);
+  crackleBp.frequency.exponentialRampToValueAtTime(100, now + 0.3);
+  crackleBp.Q.value = 0.8;
+  const crackleG = ctx.createGain();
+  crackleG.gain.setValueAtTime(0, now);
+  crackleG.gain.setValueAtTime(0.15, now + 0.05);
+  crackleG.gain.exponentialRampToValueAtTime(0.001, now + 0.35);
+  crackle.connect(crackleBp);
+  crackleBp.connect(crackleG);
+  crackleG.connect(ctx.destination);
+  crackle.start(now + 0.05);
+  crackle.stop(now + 0.35);
+}
+
+/** Play destruction sound by prop type */
+export function playDestruction(type: string): void {
+  switch (type) {
+    case 'crate': playCrateBreak(); break;
+    case 'crate_metal': playMetalCrateBreak(); break;
+    case 'barrel': playBarrelExplode(); break;
+  }
 }
 
 /** Procedural reload sound (mechanical click-clack) */

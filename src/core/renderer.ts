@@ -13,7 +13,7 @@ export class Renderer {
     this.instance.shadowMap.enabled = true;
     this.instance.shadowMap.type = THREE.PCFShadowMap;
     this.instance.toneMapping = THREE.ACESFilmicToneMapping;
-    this.instance.toneMappingExposure = 0.9;
+    this.instance.toneMappingExposure = 1.15;
 
     window.addEventListener('resize', this.onResize);
   }

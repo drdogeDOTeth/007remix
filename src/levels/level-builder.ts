@@ -6,6 +6,7 @@ import { TriggerSystem } from './trigger-system';
 import { ObjectiveSystem } from './objective-system';
 import { EnemyManager } from '../enemies/enemy-manager';
 import { PickupSystem } from '../levels/pickup-system';
+import { DestructibleSystem } from './destructible-system';
 import {
   concreteWallTexture,
   floorTileTexture,
@@ -25,6 +26,7 @@ export interface LevelBuilderDeps {
   objectiveSystem: ObjectiveSystem;
   enemyManager: EnemyManager;
   pickupSystem: PickupSystem;
+  destructibleSystem: DestructibleSystem;
   setPlayerPosition: (x: number, y: number, z: number) => void;
 }
 
@@ -44,11 +46,11 @@ export function buildLevel(level: LevelSchema, deps: LevelBuilderDeps): void {
   } = deps;
 
   // Lights — positioned INSIDE rooms (below ceiling at y≈2.0)
-  const ambient = new THREE.AmbientLight(0x8899aa, 1.4);
+  const ambient = new THREE.AmbientLight(0x8899aa, 1.8);
   scene.add(ambient);
 
   // Hemisphere light for natural indoor fill (warm from above, cool from floor bounce)
-  const hemi = new THREE.HemisphereLight(0xddeeff, 0x445544, 0.6);
+  const hemi = new THREE.HemisphereLight(0xddeeff, 0x445544, 0.9);
   scene.add(hemi);
 
   // Point lights per room — placed at y=1.5 (well below ceiling at y≈2.1)
@@ -62,7 +64,7 @@ export function buildLevel(level: LevelSchema, deps: LevelBuilderDeps): void {
     [0, 1.5, 54],
   ];
   for (const [lx, ly, lz] of lightPositions) {
-    const pointLight = new THREE.PointLight(0xffeedd, 60, 20);
+    const pointLight = new THREE.PointLight(0xffeedd, 80, 25);
     pointLight.position.set(lx, ly, lz);
     pointLight.castShadow = true;
     pointLight.shadow.mapSize.set(512, 512);
@@ -109,10 +111,10 @@ export function buildLevel(level: LevelSchema, deps: LevelBuilderDeps): void {
     doorSystem.addDoor(door);
   }
 
-  // Props
+  // Props (destructible)
   if (level.props) {
     for (const prop of level.props) {
-      buildProp(prop, scene, physics);
+      buildProp(prop, scene, physics, deps.destructibleSystem);
     }
   }
 
@@ -281,7 +283,12 @@ function buildRoom(
 }
 
 
-function buildProp(prop: PropDef, scene: THREE.Scene, physics: PhysicsWorld): void {
+function buildProp(
+  prop: PropDef,
+  scene: THREE.Scene,
+  physics: PhysicsWorld,
+  destructible: DestructibleSystem,
+): void {
   const scale = prop.scale ?? 1;
   const { x, y, z } = prop;
 
@@ -298,7 +305,8 @@ function buildProp(prop: PropDef, scene: THREE.Scene, physics: PhysicsWorld): vo
     mesh.castShadow = true;
     mesh.receiveShadow = true;
     scene.add(mesh);
-    physics.createStaticCuboid(size / 2, size / 2, size / 2, x, y + size / 2, z);
+    const collider = physics.createStaticCuboid(size / 2, size / 2, size / 2, x, y + size / 2, z);
+    destructible.register(mesh, collider, prop.type, undefined, size);
   } else if (prop.type === 'barrel') {
     const mat = new THREE.MeshStandardMaterial({
       map: barrelTexture(),
@@ -312,6 +320,7 @@ function buildProp(prop: PropDef, scene: THREE.Scene, physics: PhysicsWorld): vo
     mesh.position.set(x, y + 0.6 * scale, z);
     mesh.castShadow = true;
     scene.add(mesh);
-    physics.createStaticCuboid(0.4 * scale, 0.6 * scale, 0.4 * scale, x, y + 0.6 * scale, z);
+    const collider = physics.createStaticCuboid(0.4 * scale, 0.6 * scale, 0.4 * scale, x, y + 0.6 * scale, z);
+    destructible.register(mesh, collider, 'barrel', undefined, 0.8 * scale);
   }
 }

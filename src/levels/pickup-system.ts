@@ -3,7 +3,6 @@ import {
   healthTexture,
   armorTexture,
   ammoTexture,
-  weaponTexture,
   keyTexture,
 } from './pickup-textures';
 
@@ -27,15 +26,30 @@ interface Pickup {
   amount: number;
   bobPhase: number;
   keyId?: string;
+  light?: THREE.PointLight; // glow light for weapon pickups
 }
 
 const COLLECT_RADIUS = 1.2;
+
+// Glow colors per weapon type (used for the pickup point light)
+const WEAPON_GLOW_COLORS: Record<string, number> = {
+  'weapon-rifle': 0x66ff44,
+  'weapon-shotgun': 0xff8844,
+  'weapon-sniper': 0x4488ff,
+};
 
 export class PickupSystem {
   private pickups: Pickup[] = [];
   private scene: THREE.Scene;
 
   onPickupCollected: ((type: PickupType, amount: number, keyId?: string) => void) | null = null;
+
+  /**
+   * Optional callback that builds an actual 3D weapon model for ground pickups.
+   * Set by game.ts to reuse the weapon mesh builders.
+   * (weaponType: e.g. 'rifle') => THREE.Group
+   */
+  weaponModelBuilder: ((weaponType: string) => THREE.Group) | null = null;
 
   constructor(scene: THREE.Scene) {
     this.scene = scene;
@@ -52,8 +66,27 @@ export class PickupSystem {
     const group = new THREE.Group();
     group.position.set(x, y, z);
 
-    const mesh = buildPickupMesh(type);
-    group.add(mesh);
+    const isWeapon = type.startsWith('weapon-');
+    let pickupLight: THREE.PointLight | undefined;
+
+    if (isWeapon && this.weaponModelBuilder) {
+      // Build actual 3D weapon model for ground pickup
+      const weaponType = type.replace('weapon-', '');
+      const weaponMesh = this.weaponModelBuilder(weaponType);
+      // Scale for ground pickup display
+      weaponMesh.scale.setScalar(1.0);
+      weaponMesh.rotation.x = -Math.PI / 14; // slight forward tilt
+      group.add(weaponMesh);
+
+      // Add a colored glow light under the weapon
+      const glowColor = WEAPON_GLOW_COLORS[type] ?? 0x66ff44;
+      pickupLight = new THREE.PointLight(glowColor, 3, 4);
+      pickupLight.position.set(0, -0.1, 0);
+      group.add(pickupLight);
+    } else {
+      const mesh = buildPickupMesh(type);
+      group.add(mesh);
+    }
 
     this.scene.add(group);
     this.pickups.push({
@@ -63,6 +96,7 @@ export class PickupSystem {
       collected: false,
       amount,
       bobPhase: Math.random() * Math.PI * 2,
+      light: pickupLight,
     });
   }
 
@@ -75,10 +109,16 @@ export class PickupSystem {
       pickup.mesh.position.y = pickup.position.y + Math.sin(pickup.bobPhase) * 0.1 + 0.15;
       pickup.mesh.rotation.y += dt * 2;
 
+      // Pulse glow light intensity
+      if (pickup.light) {
+        pickup.light.intensity = 2.5 + Math.sin(pickup.bobPhase * 1.5) * 1.5;
+      }
+
       // Check collection distance
       const dist = playerPos.distanceTo(pickup.mesh.position);
       if (dist < COLLECT_RADIUS) {
         pickup.collected = true;
+        if (pickup.light) pickup.light.dispose();
         this.scene.remove(pickup.mesh);
         this.onPickupCollected?.(pickup.type, pickup.amount, pickup.keyId);
       }
@@ -92,7 +132,7 @@ function buildPickupMesh(type: PickupType): THREE.Group {
   if (type === 'health') return buildHealthMesh();
   if (type === 'armor') return buildArmorMesh();
   if (type === 'key') return buildKeyMesh();
-  if (type.startsWith('weapon-')) return buildWeaponMesh(type);
+  if (type.startsWith('weapon-')) return buildWeaponFallbackMesh(type);
   return buildAmmoMesh(type);
 }
 
@@ -150,26 +190,22 @@ function buildAmmoMesh(type: PickupType): THREE.Group {
   return g;
 }
 
-function buildWeaponMesh(type: PickupType): THREE.Group {
+/** Fallback weapon mesh (colored box) — only used if weaponModelBuilder is not set. */
+function buildWeaponFallbackMesh(type: PickupType): THREE.Group {
   const g = new THREE.Group();
-  const tex = weaponTexture();
-
-  // Color tint per weapon
   const tints: Record<string, number> = {
     'weapon-rifle': 0x99ff44,
     'weapon-shotgun': 0xff8844,
     'weapon-sniper': 0x44aaff,
   };
   const tint = tints[type] ?? 0x99ff44;
-
-  const mat = new THREE.MeshBasicMaterial({
-    map: tex,
+  const mat = new THREE.MeshStandardMaterial({
     color: tint,
-    transparent: true,
-    opacity: 0.95,
+    roughness: 0.4,
+    metalness: 0.6,
+    emissive: tint,
+    emissiveIntensity: 0.3,
   });
-
-  // Elongated weapon crate
   const box = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.18, 0.14), mat);
   g.add(box);
   return g;
