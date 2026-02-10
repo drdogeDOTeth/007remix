@@ -225,6 +225,28 @@ export class EnemyManager {
     }
   }
 
+  /** Compute a repulsion force pushing enemy away from nearby allies to prevent overlap. */
+  private readonly _repulsion = new THREE.Vector3();
+  private readonly _diff = new THREE.Vector3();
+  private static readonly MIN_SEPARATION = 1.5;
+
+  getRepulsionForce(enemy: EnemyBase): THREE.Vector3 {
+    this._repulsion.set(0, 0, 0);
+    const pos = enemy.group.position;
+    for (const other of this.enemies) {
+      if (other === enemy || other.dead) continue;
+      this._diff.subVectors(pos, other.group.position);
+      this._diff.y = 0;
+      const dist = this._diff.length();
+      if (dist < EnemyManager.MIN_SEPARATION && dist > 0.01) {
+        // Inverse-distance repulsion: closer = stronger
+        this._diff.normalize().multiplyScalar((EnemyManager.MIN_SEPARATION - dist) / EnemyManager.MIN_SEPARATION);
+        this._repulsion.add(this._diff);
+      }
+    }
+    return this._repulsion;
+  }
+
   /** Remove an enemy's physics body and collider so the player can walk through corpses. Call when enemy dies. */
   removeEnemyPhysics(enemy: EnemyBase): void {
     try {

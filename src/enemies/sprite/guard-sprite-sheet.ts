@@ -272,29 +272,29 @@ function drawIdle(ctx: CanvasRenderingContext2D, cx: number, v: GuardVariant, al
   const shift = alt === 1 ? 1 : 0;
   drawLegs(ctx, cx, v, shift, -shift);
   drawTorso(ctx, cx, v);
-  // Arms at sides
-  drawArm(ctx, cx - TORSO_W / 2 - 1, TORSO_Y + 2, 0.1, v);
-  drawArm(ctx, cx + TORSO_W / 2 + 1, TORSO_Y + 2, -0.1, v);
+  // Arms at sides — negative = outward left, positive = outward right
+  drawArm(ctx, cx - TORSO_W / 2 - 1, TORSO_Y + 2, -0.15, v);
+  drawArm(ctx, cx + TORSO_W / 2 + 1, TORSO_Y + 2, 0.15, v);
   drawHead(ctx, cx, v);
 }
 
 function drawAlert(ctx: CanvasRenderingContext2D, cx: number, v: GuardVariant, alt: number): void {
   drawLegs(ctx, cx, v, 1, -1);
   drawTorso(ctx, cx, v);
-  // Arms raised ~45 degrees
-  const armAngle = alt === 0 ? -0.7 : -0.5;
-  drawArm(ctx, cx - TORSO_W / 2 - 1, TORSO_Y + 2, armAngle - 0.2, v);
-  drawArm(ctx, cx + TORSO_W / 2 + 1, TORSO_Y + 2, -armAngle + 0.2, v);
+  // Arms raised outward — left arm outward-left, right arm holds gun outward-right
+  const armAngle = alt === 0 ? 0.7 : 0.5;
+  drawArm(ctx, cx - TORSO_W / 2 - 1, TORSO_Y + 2, -armAngle, v);
+  drawArm(ctx, cx + TORSO_W / 2 + 1, TORSO_Y + 2, armAngle, v);
   // Gun in right hand
-  drawGun(ctx, cx + TORSO_W / 2 + 5, TORSO_Y + 4, -armAngle);
+  drawGun(ctx, cx + TORSO_W / 2 + 5, TORSO_Y + 4, armAngle);
   drawHead(ctx, cx, v, alt === 1 ? 2 : 0);
 }
 
 function drawShoot(ctx: CanvasRenderingContext2D, cx: number, v: GuardVariant, alt: number): void {
   drawLegs(ctx, cx, v, 2, -1);
   drawTorso(ctx, cx, v);
-  // Left arm across chest (supporting)
-  drawArm(ctx, cx - TORSO_W / 2, TORSO_Y + 4, 0.3, v);
+  // Left arm forward (supporting gun) — slight outward angle
+  drawArm(ctx, cx - TORSO_W / 2, TORSO_Y + 4, -0.3, v);
   // Right arm extended forward (holding gun)
   const recoil = alt === 1 ? 2 : 0;
   ctx.save();
@@ -377,10 +377,10 @@ function drawWalk(ctx: CanvasRenderingContext2D, cx: number, v: GuardVariant, al
   const legSwing = alt === 0 ? 3 : -3;
   drawLegs(ctx, cx, v, legSwing, -legSwing);
   drawTorso(ctx, cx, v);
-  // Arms swing opposite to legs
-  const armSwing = alt === 0 ? 0.3 : -0.3;
-  drawArm(ctx, cx - TORSO_W / 2 - 1, TORSO_Y + 2, -armSwing, v);
-  drawArm(ctx, cx + TORSO_W / 2 + 1, TORSO_Y + 2, armSwing, v);
+  // Arms swing opposite to legs — outward bias
+  const armSwing = alt === 0 ? 0.25 : -0.25;
+  drawArm(ctx, cx - TORSO_W / 2 - 1, TORSO_Y + 2, -0.15 + armSwing, v);
+  drawArm(ctx, cx + TORSO_W / 2 + 1, TORSO_Y + 2, 0.15 - armSwing, v);
   // Gun in right hand
   drawGun(ctx, cx + TORSO_W / 2 + 4, TORSO_Y + ARM_H - 2, 0);
   drawHead(ctx, cx, v);

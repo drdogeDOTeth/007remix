@@ -51,9 +51,10 @@ export function createAlertState(manager: EnemyManager): State<EnemyBase> {
           dir.normalize();
           enemy.lookAt(enemy.lastKnownPlayerPos);
 
-          // Move
-          pos.x += dir.x * MOVE_SPEED * dt;
-          pos.z += dir.z * MOVE_SPEED * dt;
+          // Move with separation from other enemies
+          const repulsion = manager.getRepulsionForce(enemy);
+          pos.x += (dir.x + repulsion.x * 0.8) * MOVE_SPEED * dt;
+          pos.z += (dir.z + repulsion.z * 0.8) * MOVE_SPEED * dt;
 
           // Sync physics body
           manager.syncPhysicsBody(enemy);

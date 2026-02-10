@@ -187,35 +187,96 @@ function buildRoom(
   scene.add(ceiling);
   physics.createStaticCuboid(width / 2, WALL_THICKNESS / 2, depth / 2, x, y + height / 2 + WALL_THICKNESS / 2, z);
 
-  // Walls (4 sides) — skip building wall if a door is on it (door is the only blocker)
-  const wallSpecs: [number, number, number, number, number, number][] = [
-    [hw, hh, WALL_THICKNESS / 2, x, y, z - hd - WALL_THICKNESS / 2],
-    [hw, hh, WALL_THICKNESS / 2, x, y, z + hd + WALL_THICKNESS / 2],
-    [WALL_THICKNESS / 2, hh, hd, x - hw - WALL_THICKNESS / 2, y, z],
-    [WALL_THICKNESS / 2, hh, hd, x + hw + WALL_THICKNESS / 2, y, z],
-  ];
+  // Walls (4 sides) — split around door openings instead of skipping entire walls
 
-  const doorOnWall = (wallIndex: number, wx: number, wy: number, wz: number): boolean => {
+  // Helper: find doors on a given wall
+  const getDoorsOnWall = (wallIndex: number): DoorDef[] => {
+    const found: DoorDef[] = [];
     for (const d of doors) {
-      if (wallIndex === 0 && Math.abs(d.z - (z - hd)) <= DOOR_WALL_TOLERANCE && Math.abs(d.x - x) <= hw + 1) return true;
-      if (wallIndex === 1 && Math.abs(d.z - (z + hd)) <= DOOR_WALL_TOLERANCE && Math.abs(d.x - x) <= hw + 1) return true;
-      if (wallIndex === 2 && Math.abs(d.x - (x - hw)) <= DOOR_WALL_TOLERANCE && Math.abs(d.z - z) <= hd + 1) return true;
-      if (wallIndex === 3 && Math.abs(d.x - (x + hw)) <= DOOR_WALL_TOLERANCE && Math.abs(d.z - z) <= hd + 1) return true;
+      if (wallIndex === 0 && Math.abs(d.z - (z - hd)) <= DOOR_WALL_TOLERANCE && Math.abs(d.x - x) <= hw + 1) found.push(d);
+      if (wallIndex === 1 && Math.abs(d.z - (z + hd)) <= DOOR_WALL_TOLERANCE && Math.abs(d.x - x) <= hw + 1) found.push(d);
+      if (wallIndex === 2 && Math.abs(d.x - (x - hw)) <= DOOR_WALL_TOLERANCE && Math.abs(d.z - z) <= hd + 1) found.push(d);
+      if (wallIndex === 3 && Math.abs(d.x - (x + hw)) <= DOOR_WALL_TOLERANCE && Math.abs(d.z - z) <= hd + 1) found.push(d);
     }
-    return false;
+    return found;
   };
 
-  wallSpecs.forEach(([sx, sy, sz, wx, wy, wz], i) => {
-    if (doorOnWall(i, wx, wy, wz)) return;
+  // Helper: build a single wall segment (mesh + physics)
+  const addWallSeg = (halfW: number, halfH: number, halfD: number, px: number, py: number, pz: number) => {
+    if (halfW < 0.15 && halfD < 0.15) return; // too thin to bother
     const wall = new THREE.Mesh(
-      new THREE.BoxGeometry(sx * 2, sy * 2, sz * 2),
+      new THREE.BoxGeometry(halfW * 2, halfH * 2, halfD * 2),
       wallMat(wColor),
     );
-    wall.position.set(wx, wy, wz);
+    wall.position.set(px, py, pz);
     wall.receiveShadow = true;
     scene.add(wall);
-    physics.createStaticCuboid(sx, sy, sz, wx, wy, wz);
-  });
+    physics.createStaticCuboid(halfW, halfH, halfD, px, py, pz);
+  };
+
+  const wt = WALL_THICKNESS / 2;
+
+  // Wall 0 (z-south) and Wall 1 (z-north): span along X, thin in Z
+  for (let wi = 0; wi < 2; wi++) {
+    const wallZ = wi === 0 ? z - hd - wt : z + hd + wt;
+    const wallDoors = getDoorsOnWall(wi);
+    if (wallDoors.length === 0) {
+      addWallSeg(hw, hh, wt, x, y, wallZ);
+    } else {
+      // Wall runs from (x - hw) to (x + hw) along X
+      const wallStart = x - hw;
+      const wallEnd = x + hw;
+      // Sort doors by x position
+      const sorted = wallDoors.slice().sort((a, b) => a.x - b.x);
+      let cursor = wallStart;
+      for (const d of sorted) {
+        const doorLeft = d.x - d.width / 2 - 0.1; // small gap for frame
+        const doorRight = d.x + d.width / 2 + 0.1;
+        // Segment before this door
+        if (doorLeft > cursor + 0.3) {
+          const segW = (doorLeft - cursor) / 2;
+          const segCx = cursor + segW;
+          addWallSeg(segW, hh, wt, segCx, y, wallZ);
+        }
+        cursor = doorRight;
+      }
+      // Segment after last door
+      if (wallEnd > cursor + 0.3) {
+        const segW = (wallEnd - cursor) / 2;
+        const segCx = cursor + segW;
+        addWallSeg(segW, hh, wt, segCx, y, wallZ);
+      }
+    }
+  }
+
+  // Wall 2 (x-west) and Wall 3 (x-east): span along Z, thin in X
+  for (let wi = 2; wi < 4; wi++) {
+    const wallX = wi === 2 ? x - hw - wt : x + hw + wt;
+    const wallDoors = getDoorsOnWall(wi);
+    if (wallDoors.length === 0) {
+      addWallSeg(wt, hh, hd, wallX, y, z);
+    } else {
+      const wallStart = z - hd;
+      const wallEnd = z + hd;
+      const sorted = wallDoors.slice().sort((a, b) => a.z - b.z);
+      let cursor = wallStart;
+      for (const d of sorted) {
+        const doorFront = d.z - d.width / 2 - 0.1;
+        const doorBack = d.z + d.width / 2 + 0.1;
+        if (doorFront > cursor + 0.3) {
+          const segD = (doorFront - cursor) / 2;
+          const segCz = cursor + segD;
+          addWallSeg(wt, hh, segD, wallX, y, segCz);
+        }
+        cursor = doorBack;
+      }
+      if (wallEnd > cursor + 0.3) {
+        const segD = (wallEnd - cursor) / 2;
+        const segCz = cursor + segD;
+        addWallSeg(wt, hh, segD, wallX, y, segCz);
+      }
+    }
+  }
 }
 
 

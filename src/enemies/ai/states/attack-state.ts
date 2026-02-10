@@ -70,8 +70,9 @@ export function createAttackState(manager: EnemyManager): State<EnemyBase> {
         }
 
         const right = new THREE.Vector3(-toPlayer.z, 0, toPlayer.x);
-        pos.x += (toPlayer.x * moveZ + right.x * strafeDir * 0.5) * MOVE_SPEED * dt;
-        pos.z += (toPlayer.z * moveZ + right.z * strafeDir * 0.5) * MOVE_SPEED * dt;
+        const repulsion = manager.getRepulsionForce(enemy);
+        pos.x += (toPlayer.x * moveZ + right.x * strafeDir * 0.5 + repulsion.x * 0.8) * MOVE_SPEED * dt;
+        pos.z += (toPlayer.z * moveZ + right.z * strafeDir * 0.5 + repulsion.z * 0.8) * MOVE_SPEED * dt;
 
         manager.syncPhysicsBody(enemy);
       } else {

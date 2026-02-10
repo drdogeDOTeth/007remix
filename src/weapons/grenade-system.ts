@@ -28,8 +28,18 @@ interface ThrownGrenade {
   type: GrenadeType;
 }
 
-interface GasCloud {
+interface SmokePuff {
   mesh: THREE.Mesh;
+  basePos: THREE.Vector3;
+  driftX: number;
+  driftZ: number;
+  riseSpeed: number;
+  fadeDelay: number; // each puff fades at slightly different rate
+  baseScale: number;
+}
+
+interface GasCloud {
+  puffs: SmokePuff[];
   position: THREE.Vector3;
   radius: number;
   remaining: number;
@@ -125,21 +135,94 @@ export class GrenadeSystem {
     });
   }
 
+  private smokePuffTexture: THREE.CanvasTexture | null = null;
+
+  private getSmokePuffTexture(): THREE.CanvasTexture {
+    if (this.smokePuffTexture) return this.smokePuffTexture;
+    const size = 64;
+    const canvas = document.createElement('canvas');
+    canvas.width = size;
+    canvas.height = size;
+    const ctx = canvas.getContext('2d')!;
+
+    // Radial gradient: opaque center → transparent edge
+    const cx = size / 2, cy = size / 2;
+    const grad = ctx.createRadialGradient(cx, cy, 0, cx, cy, size / 2);
+    grad.addColorStop(0, 'rgba(120, 160, 80, 0.7)');
+    grad.addColorStop(0.3, 'rgba(100, 140, 60, 0.5)');
+    grad.addColorStop(0.6, 'rgba(80, 120, 50, 0.25)');
+    grad.addColorStop(1, 'rgba(60, 100, 40, 0.0)');
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, size, size);
+
+    // Noisy edge bumps for organic shape
+    ctx.globalCompositeOperation = 'destination-out';
+    for (let i = 0; i < 12; i++) {
+      const angle = (i / 12) * Math.PI * 2;
+      const r = size / 2 - 4 + Math.random() * 8;
+      const bx = cx + Math.cos(angle) * r;
+      const by = cy + Math.sin(angle) * r;
+      const blobR = 4 + Math.random() * 6;
+      const blobGrad = ctx.createRadialGradient(bx, by, 0, bx, by, blobR);
+      blobGrad.addColorStop(0, 'rgba(0,0,0,0.3)');
+      blobGrad.addColorStop(1, 'rgba(0,0,0,0)');
+      ctx.fillStyle = blobGrad;
+      ctx.fillRect(bx - blobR, by - blobR, blobR * 2, blobR * 2);
+    }
+
+    const tex = new THREE.CanvasTexture(canvas);
+    tex.needsUpdate = true;
+    this.smokePuffTexture = tex;
+    return tex;
+  }
+
   private spawnGasCloud(at: THREE.Vector3): void {
-    const geometry = new THREE.SphereGeometry(GAS_RADIUS, 16, 12, 0, Math.PI * 2, 0, Math.PI * 0.5);
-    const material = new THREE.MeshBasicMaterial({
-      color: 0x446644,
-      transparent: true,
-      opacity: 0.35,
-      depthWrite: false,
-      side: THREE.DoubleSide,
-    });
-    const mesh = new THREE.Mesh(geometry, material);
-    mesh.position.copy(at);
-    this.scene.add(mesh);
+    const puffs: SmokePuff[] = [];
+    const puffCount = 10;
+    const puffGeo = new THREE.PlaneGeometry(1, 1);
+
+    for (let i = 0; i < puffCount; i++) {
+      const tex = this.getSmokePuffTexture().clone();
+      tex.needsUpdate = true;
+      // Slight color variation per puff
+      const hue = 0x60 + Math.floor(Math.random() * 0x30);
+      const color = new THREE.Color((hue << 8) | 0x804000 | (hue << 16));
+      const mat = new THREE.MeshBasicMaterial({
+        map: tex,
+        color: new THREE.Color().setHSL(0.25 + Math.random() * 0.08, 0.4, 0.35 + Math.random() * 0.15),
+        transparent: true,
+        opacity: 0.5 + Math.random() * 0.2,
+        depthWrite: false,
+        side: THREE.DoubleSide,
+      });
+
+      const baseScale = 1.0 + Math.random() * 1.5;
+      const mesh = new THREE.Mesh(puffGeo, mat);
+      mesh.scale.set(baseScale, baseScale, 1);
+      // Random position within cloud radius
+      const angle = Math.random() * Math.PI * 2;
+      const dist = Math.random() * GAS_RADIUS * 0.7;
+      const px = at.x + Math.cos(angle) * dist;
+      const py = at.y + 0.3 + Math.random() * 1.2;
+      const pz = at.z + Math.sin(angle) * dist;
+      mesh.position.set(px, py, pz);
+      // Random initial rotation
+      mesh.rotation.z = Math.random() * Math.PI * 2;
+      this.scene.add(mesh);
+
+      puffs.push({
+        mesh,
+        basePos: new THREE.Vector3(px, py, pz),
+        driftX: (Math.random() - 0.5) * 0.4,
+        driftZ: (Math.random() - 0.5) * 0.4,
+        riseSpeed: 0.15 + Math.random() * 0.3,
+        fadeDelay: Math.random() * 0.3,
+        baseScale,
+      });
+    }
 
     this.clouds.push({
-      mesh,
+      puffs,
       position: at.clone(),
       radius: GAS_RADIUS,
       remaining: GAS_DURATION,
@@ -181,23 +264,47 @@ export class GrenadeSystem {
       }
     }
 
-    // Update gas clouds: damage enemies and fade
+    // Update gas clouds: animate puffs, damage enemies, fade out
+    if (camera) this._cameraPosition.setFromMatrixPosition(camera.matrixWorld);
     for (let i = this.clouds.length - 1; i >= 0; i--) {
       const c = this.clouds[i];
       c.remaining -= dt;
+      const lifeT = 1 - c.remaining / c.duration; // 0→1 over lifetime
 
       if (this.enemyManager && c.remaining > 0) {
         const damageThisFrame = GAS_DAMAGE_PER_SECOND * dt;
         this.enemyManager.damageEnemiesInRadius(c.position, c.radius, damageThisFrame);
       }
 
-      const mat = c.mesh.material as THREE.MeshBasicMaterial;
-      mat.opacity = 0.35 * (c.remaining / c.duration);
+      // Animate each smoke puff
+      for (const p of c.puffs) {
+        // Drift and rise
+        p.mesh.position.x += p.driftX * dt;
+        p.mesh.position.z += p.driftZ * dt;
+        p.mesh.position.y += p.riseSpeed * dt;
+        // Slow rotation for organic swirl
+        p.mesh.rotation.z += dt * 0.3;
+        // Expand over time (1.0 → 1.4)
+        const scaleGrow = p.baseScale * (1 + lifeT * 0.4);
+        p.mesh.scale.set(scaleGrow, scaleGrow, 1);
+        // Fade: each puff fades based on cloud life + individual delay
+        const fadeFactor = Math.max(0, 1 - Math.max(0, lifeT - p.fadeDelay) / (1 - p.fadeDelay));
+        (p.mesh.material as THREE.MeshBasicMaterial).opacity = fadeFactor * 0.55;
+        // Billboard toward camera
+        if (camera) {
+          p.mesh.lookAt(this._cameraPosition);
+        }
+      }
 
       if (c.remaining <= 0) {
-        c.mesh.geometry.dispose();
-        mat.dispose();
-        this.scene.remove(c.mesh);
+        // Clean up all puffs
+        for (const p of c.puffs) {
+          const m = p.mesh.material as THREE.MeshBasicMaterial;
+          if (m.map) m.map.dispose();
+          m.dispose();
+          p.mesh.geometry.dispose();
+          this.scene.remove(p.mesh);
+        }
         this.clouds.splice(i, 1);
       }
     }
