@@ -61,6 +61,9 @@ export class GrenadeSystem {
   private enemyManager: EnemyManager | null = null;
   /** Excluded from ground raycast so the grenade doesn't "land" on the player. */
   private playerCollider: RAPIER.Collider | null = null;
+  /** Called each frame when player is inside a gas cloud. Gas mask protects if not called / callback ignores. */
+  onPlayerInGas: ((damage: number) => void) | null = null;
+  private readonly _playerPos = new THREE.Vector3();
   private thrown: ThrownGrenade[] = [];
   private clouds: GasCloud[] = [];
   private explosions: ActiveExplosion[] = [];
@@ -80,6 +83,11 @@ export class GrenadeSystem {
 
   setPlayerCollider(collider: RAPIER.Collider): void {
     this.playerCollider = collider;
+  }
+
+  /** Set player position for gas cloud damage check. Call each frame. */
+  setPlayerPosition(x: number, y: number, z: number): void {
+    this._playerPos.set(x, y, z);
   }
 
   /** Throw a grenade from origin along direction (normalized). */
@@ -274,6 +282,15 @@ export class GrenadeSystem {
       if (this.enemyManager && c.remaining > 0) {
         const damageThisFrame = GAS_DAMAGE_PER_SECOND * dt;
         this.enemyManager.damageEnemiesInRadius(c.position, c.radius, damageThisFrame);
+      }
+      // Player in gas? (mask protects — Game decides based on tactical overlay)
+      if (this.onPlayerInGas && c.remaining > 0) {
+        const dx = this._playerPos.x - c.position.x;
+        const dz = this._playerPos.z - c.position.z;
+        const dist2 = dx * dx + dz * dz;
+        if (dist2 <= c.radius * c.radius) {
+          this.onPlayerInGas(GAS_DAMAGE_PER_SECOND * dt);
+        }
       }
 
       // Animate each smoke puff

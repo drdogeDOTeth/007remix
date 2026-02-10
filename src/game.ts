@@ -19,6 +19,7 @@ import type { LevelSchema } from './levels/level-schema';
 import { HUD } from './ui/hud';
 import { DamageIndicator } from './ui/damage-indicator';
 import { ScopeOverlay } from './ui/scope-overlay';
+import { TacticalOverlay } from './ui/tactical-overlay';
 import { BriefingScreen } from './ui/briefing-screen';
 import { ObjectivesDisplay } from './ui/objectives-display';
 import { InventoryScreen } from './ui/inventory-screen';
@@ -59,6 +60,7 @@ export class Game {
   private hud: HUD;
   private damageIndicator: DamageIndicator;
   private scopeOverlay: ScopeOverlay;
+  private tacticalOverlay: TacticalOverlay;
 
   private doorSystem: DoorSystem | null = null;
   private triggerSystem: TriggerSystem | null = null;
@@ -136,9 +138,18 @@ export class Game {
       this.handlePickup(type, amount, keyId);
     };
 
-    // Damage indicator + scope overlay
+    // Damage indicator + scope overlay + tactical (NV/gas mask)
     this.damageIndicator = new DamageIndicator();
     this.scopeOverlay = new ScopeOverlay();
+    this.tacticalOverlay = new TacticalOverlay();
+
+    // Gas damage — mask protects when tactical overlay (NV/gas mask) is on
+    this.grenadeSystem.onPlayerInGas = (damage) => {
+      if (!this.tacticalOverlay.visible) {
+        this.player.takeDamage(damage);
+        this.damageIndicator.flash();
+      }
+    };
 
     // When enemy shoots player
     this.enemyManager.onPlayerHit = (damage, _fromPos) => {
@@ -340,10 +351,20 @@ export class Game {
     this.projectileSystem.update(dt);
 
     // Grenade system: thrown arcs + gas clouds + explosions
+    this.grenadeSystem.setPlayerPosition(
+      this._playerVec.x,
+      this._playerVec.y,
+      this._playerVec.z,
+    );
     this.grenadeSystem.update(dt, this.fpsCamera.camera);
 
     // Scope overlay
     this.scopeOverlay.visible = this.weaponManager.scoped;
+
+    // Tactical overlay (N key — night vision + gas mask)
+    if (this.input.wasKeyJustPressed('n')) {
+      this.tacticalOverlay.visible = !this.tacticalOverlay.visible;
+    }
 
     // Damage indicator
     this.damageIndicator.update(dt);

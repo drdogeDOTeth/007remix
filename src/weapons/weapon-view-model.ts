@@ -30,7 +30,7 @@ export class WeaponViewModel {
   private bobPhase = 0;
 
   private restPosition = new THREE.Vector3(0.3, -0.28, -0.5);
-  private readonly muzzleOffset = new THREE.Vector3(0, 0.05, -0.35);
+  private readonly muzzleOffset = new THREE.Vector3(0, 0.04, -0.32); // per-weapon, at barrel tip
 
   // Scope
   private _scoped = false;
@@ -86,22 +86,27 @@ export class WeaponViewModel {
     this.weaponMesh = this.buildWeaponMesh(type, skin);
     this.group.add(this.weaponMesh);
 
-    // Re-attach flash/light
+    // Per-weapon rest position and muzzle offset (at barrel tip — flash at muzzle opening)
+    if (type === 'rifle') {
+      this.restPosition.set(0.28, -0.3, -0.5);
+      this.muzzleOffset.set(0, 0.03, -0.54);
+    } else if (type === 'shotgun') {
+      this.restPosition.set(0.25, -0.32, -0.45);
+      this.muzzleOffset.set(0, 0.03, -0.46);
+    } else if (type === 'sniper') {
+      this.restPosition.set(0.3, -0.3, -0.55);
+      this.muzzleOffset.set(0, 0.03, -0.55);
+    } else {
+      this.restPosition.set(0.3, -0.28, -0.5);
+      this.muzzleOffset.set(0, 0.04, -0.32);
+    }
+    
+    // Re-attach flash/light (AFTER muzzleOffset is updated)
     this.muzzleFlash.position.copy(this.muzzleOffset);
     this.weaponMesh.add(this.muzzleFlash);
     this.muzzleLight.position.copy(this.muzzleOffset);
     this.weaponMesh.add(this.muzzleLight);
-
-    // Per-weapon rest position
-    if (type === 'rifle') {
-      this.restPosition.set(0.28, -0.3, -0.5);
-    } else if (type === 'shotgun') {
-      this.restPosition.set(0.25, -0.32, -0.45);
-    } else if (type === 'sniper') {
-      this.restPosition.set(0.3, -0.3, -0.55);
-    } else {
-      this.restPosition.set(0.3, -0.28, -0.5);
-    }
+    
     this.weaponMesh.position.copy(this.restPosition);
   }
 
@@ -112,7 +117,10 @@ export class WeaponViewModel {
     this.weaponMesh = this.buildWeaponMesh(this.currentType, skin);
     this.group.add(this.weaponMesh);
     this.weaponMesh.position.copy(this.restPosition);
+    // Apply current muzzle offset before attaching
+    this.muzzleFlash.position.copy(this.muzzleOffset);
     this.weaponMesh.add(this.muzzleFlash);
+    this.muzzleLight.position.copy(this.muzzleOffset);
     this.weaponMesh.add(this.muzzleLight);
   }
 
