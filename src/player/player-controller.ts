@@ -30,6 +30,9 @@ export class PlayerController {
   /** Keys collected (e.g. 'red', 'blue') for locked doors */
   private keys = new Set<string>();
 
+  /** Dead state - prevents movement and input */
+  private dead = false;
+
   /** Crouch toggle (C key). When true, use shorter capsule and lower speed. */
   private crouching = false;
   /** Smooth crouch transition 0 = standing, 1 = fully crouched (for camera lerp). */
@@ -69,6 +72,11 @@ export class PlayerController {
   }
 
   update(input: InputManager, dt: number): void {
+    // Don't process input if dead
+    if (this.dead) {
+      return;
+    }
+
     // Crouch toggle (C)
     if (input.wasKeyJustPressed('c')) {
       this.crouching = !this.crouching;
@@ -218,5 +226,29 @@ export class PlayerController {
 
   addArmor(amount: number): void {
     this.armor = Math.min(this.maxArmor, this.armor + amount);
+  }
+
+  /**
+   * Mark player as dead (disables movement).
+   */
+  setDead(isDead: boolean): void {
+    this.dead = isDead;
+  }
+
+  /**
+   * Check if player is dead.
+   */
+  isDead(): boolean {
+    return this.dead;
+  }
+
+  /**
+   * Respawn player (reset health, armor, and enable movement).
+   */
+  respawn(): void {
+    this.dead = false;
+    this.health = 100;
+    this.armor = 0;
+    this.verticalVelocity = 0;
   }
 }

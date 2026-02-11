@@ -21,6 +21,9 @@ import { HUD } from './ui/hud';
 import { DamageIndicator } from './ui/damage-indicator';
 import { ScopeOverlay } from './ui/scope-overlay';
 import { TacticalOverlay } from './ui/tactical-overlay';
+import { DeathOverlay } from './ui/death-overlay';
+import { HitMarker } from './ui/hit-marker';
+import { KillFeed } from './ui/kill-feed';
 import { playDestruction } from './audio/sound-effects';
 import { startMusic, stopMusic } from './audio/music';
 import { BriefingScreen } from './ui/briefing-screen';
@@ -37,11 +40,16 @@ import {
   metalCrateTexture,
   barrelTexture,
 } from './levels/procedural-textures';
+import type { NetworkManager } from './network/network-manager';
+import { RemotePlayerManager } from './player/remote-player-manager';
+import { NetworkConfig } from './network/network-config';
 
 const PHYSICS_STEP = 1 / 60;
 
 export interface GameOptions {
   levelMode?: boolean;
+  networkMode?: 'local' | 'client';
+  networkManager?: NetworkManager;
 }
 
 export class Game {
@@ -66,6 +74,9 @@ export class Game {
   private damageIndicator: DamageIndicator;
   private scopeOverlay: ScopeOverlay;
   private tacticalOverlay: TacticalOverlay;
+  private deathOverlay: DeathOverlay;
+  private hitMarker: HitMarker;
+  private killFeed: KillFeed;
 
   private destructibleSystem: DestructibleSystem;
   private doorSystem: DoorSystem | null = null;
@@ -92,6 +103,13 @@ export class Game {
   // Reusable vector to avoid per-frame heap allocations
   private readonly _playerVec = new THREE.Vector3();
 
+  // Multiplayer networking
+  private networkMode: 'local' | 'client';
+  private networkManager: NetworkManager | null = null;
+  private remotePlayerManager: RemotePlayerManager | null = null;
+  private lastNetworkUpdate = 0;
+  private networkUpdateRate = NetworkConfig.UPDATE_RATES.PLAYER_STATE; // Hz
+
   /** Called when all objectives are done and player reaches extraction (mission:complete). */
   onMissionComplete: (() => void) | null = null;
 
@@ -101,6 +119,8 @@ export class Game {
     options: GameOptions = {},
   ) {
     this.levelMode = options.levelMode ?? false;
+    this.networkMode = options.networkMode ?? 'local';
+    this.networkManager = options.networkManager ?? null;
     this.physics = physics;
     this.events = new EventBus();
     this.renderer = new Renderer(canvas);
@@ -171,6 +191,11 @@ export class Game {
     this.damageIndicator = new DamageIndicator();
     this.scopeOverlay = new ScopeOverlay();
     this.tacticalOverlay = new TacticalOverlay();
+
+    // Multiplayer UI (death overlay, hit markers, kill feed)
+    this.deathOverlay = new DeathOverlay();
+    this.hitMarker = new HitMarker();
+    this.killFeed = new KillFeed();
 
     // Gas damage — mask protects when tactical overlay (NV/gas mask) is on
     this.grenadeSystem.onPlayerInGas = (damage) => {
@@ -299,12 +324,168 @@ export class Game {
       this.spawnTestPickups();
     }
 
+    // Initialize multiplayer components if in network mode
+    if (this.networkMode === 'client' && this.networkManager) {
+      this.remotePlayerManager = new RemotePlayerManager(this.scene, this.physics);
+      this.remotePlayerManager.setLocalPlayerId(this.networkManager.playerId ?? '');
+
+      // Handle game state snapshots from server
+      this.networkManager.onGameStateSnapshot = (snapshot) => {
+        this.remotePlayerManager?.updateFromSnapshot(snapshot);
+      };
+
+      // Handle weapon fire events (Phase 4: animations)
+      this.networkManager.onWeaponFire = (event) => {
+        const isLocalPlayer = event.playerId === this.networkManager?.playerId;
+
+        // Don't show fire animation for local player (they see their own first-person effects)
+        if (!isLocalPlayer) {
+          const remotePlayer = this.remotePlayerManager?.getPlayer(event.playerId);
+          if (remotePlayer) {
+            remotePlayer.playFireAnimation();
+            console.log(`[Game] Remote player ${event.playerId} fired weapon`);
+          }
+        }
+      };
+
+      // Handle combat events (Phase 3 + 4)
+      this.networkManager.onPlayerDamaged = (event) => {
+        const isLocalPlayer = event.victimId === this.networkManager?.playerId;
+        const isLocalShooter = event.shooterId === this.networkManager?.playerId;
+
+        if (isLocalPlayer) {
+          // Apply damage to local player
+          this.player.takeDamage(event.damage);
+          this.damageIndicator.flash();
+          console.log(`[Game] Took ${event.damage} damage from ${event.shooterId}`);
+        }
+
+        // Show hit marker if we're the shooter
+        if (isLocalShooter) {
+          if (event.wasHeadshot) {
+            this.hitMarker.showHeadshot();
+          } else {
+            this.hitMarker.show();
+          }
+        }
+      };
+
+      this.networkManager.onPlayerDied = (event) => {
+        const isLocalPlayer = event.victimId === this.networkManager?.playerId;
+        const isLocalShooter = event.killerId === this.networkManager?.playerId;
+
+        if (isLocalPlayer) {
+          // Mark local player as dead (disables movement)
+          this.player.setDead(true);
+
+          // Show death overlay with killer name
+          const killerPlayer = this.remotePlayerManager?.getPlayer(event.killerId);
+          const killerName = killerPlayer?.username ?? 'Unknown';
+          this.deathOverlay.show(killerName);
+          console.log(`[Game] You were killed by ${killerName}`);
+        } else {
+          // Play death animation for remote player
+          const victimPlayer = this.remotePlayerManager?.getPlayer(event.victimId);
+          if (victimPlayer) {
+            victimPlayer.playDeathAnimation();
+          }
+        }
+
+        // Add to kill feed
+        const killerPlayer = event.killerId === this.networkManager?.playerId
+          ? { username: 'You' }
+          : this.remotePlayerManager?.getPlayer(event.killerId);
+        const victimPlayer = event.victimId === this.networkManager?.playerId
+          ? { username: 'You' }
+          : this.remotePlayerManager?.getPlayer(event.victimId);
+
+        const killerName = killerPlayer?.username ?? 'Unknown';
+        const victimName = victimPlayer?.username ?? 'Unknown';
+
+        // TODO: Get actual weapon type from event
+        this.killFeed.addKill(killerName, victimName, 'pistol');
+      };
+
+      // Handle respawn events (Phase 4)
+      this.networkManager.onPlayerRespawned = (event) => {
+        const isLocalPlayer = event.playerId === this.networkManager?.playerId;
+
+        if (isLocalPlayer) {
+          // Respawn local player (reset health, armor, enable movement)
+          this.player.respawn();
+          this.player.setPosition(event.position.x, event.position.y, event.position.z);
+
+          // Hide death overlay
+          this.deathOverlay.hide();
+
+          console.log(`[Game] Respawned at (${event.position.x}, ${event.position.y}, ${event.position.z})`);
+        } else {
+          // Reset remote player after respawn
+          const remotePlayer = this.remotePlayerManager?.getPlayer(event.playerId);
+          if (remotePlayer) {
+            remotePlayer.resetAfterRespawn();
+          }
+          console.log(`[Game] Player ${event.playerId} respawned`);
+        }
+      };
+
+      console.log('[Game] Multiplayer mode initialized with combat sync');
+    }
+
     // Game loop
     this.loop = new GameLoop((dt) => this.tick(dt));
 
     // Event listeners
-    this.events.on('weapon:fired', () => {
+    this.events.on('weapon:fired', (data: any) => {
       this.hud.flashCrosshairFire();
+
+      // Send weapon fire event to server in multiplayer mode (Phase 3)
+      if (this.networkMode === 'client' && this.networkManager) {
+        // Check if we hit a remote player
+        let hitPlayerId: string | undefined;
+        if (data.hit && data.hit.collider) {
+          const remotePlayer = this.remotePlayerManager?.getPlayerByCollider(data.hit.collider);
+          if (remotePlayer) {
+            hitPlayerId = remotePlayer.id;
+            console.log(`[Game] Hit remote player: ${hitPlayerId}`);
+          }
+        }
+
+        // Map weapon name to network weapon type
+        const weaponName = this.weaponManager.currentWeapon.stats.name.toLowerCase();
+        let weaponType: 'pistol' | 'rifle' | 'shotgun' | 'sniper' = 'pistol';
+        if (weaponName.includes('soviet') || weaponName.includes('rifle')) {
+          weaponType = 'rifle';
+        } else if (weaponName.includes('shotgun')) {
+          weaponType = 'shotgun';
+        } else if (weaponName.includes('sniper')) {
+          weaponType = 'sniper';
+        } else if (weaponName.includes('pistol') || weaponName.includes('pp7')) {
+          weaponType = 'pistol';
+        }
+
+        console.log(`[Game] Sending weapon fire: ${weaponType}, hitPlayerId: ${hitPlayerId ?? 'none'}`);
+
+        this.networkManager.sendWeaponFire({
+          playerId: this.networkManager.playerId!,
+          timestamp: performance.now(),
+          weaponType,
+          origin: {
+            x: data.position.x,
+            y: data.position.y,
+            z: data.position.z,
+          },
+          direction: {
+            x: data.direction.x,
+            y: data.direction.y,
+            z: data.direction.z,
+          },
+          hitPlayerId,
+          hitPoint: data.hit?.point
+            ? { x: data.hit.point.x, y: data.hit.point.y, z: data.hit.point.z }
+            : undefined,
+        });
+      }
     });
   }
 
@@ -539,6 +720,32 @@ export class Game {
     this.hud.updateGrenades(this.gasGrenadeCount, this.fragGrenadeCount);
     this.hud.updateWeapon(this.weaponManager.currentWeapon);
     this.hud.update(dt);
+
+    // Multiplayer: Send player state to server + update remote players
+    if (this.networkMode === 'client' && this.networkManager) {
+      // Send local player state at configured rate (20Hz by default)
+      const now = performance.now();
+      const updateInterval = 1000 / this.networkUpdateRate;
+      if (now - this.lastNetworkUpdate >= updateInterval) {
+        const playerPos = this.player.getPosition();
+        this.networkManager.sendPlayerState({
+          playerId: this.networkManager.playerId!,
+          position: { x: playerPos.x, y: playerPos.y, z: playerPos.z },
+          rotation: this.fpsCamera.getYRotation(),
+          health: this.player.health,
+          armor: this.player.armor,
+          currentWeapon: this.weaponManager.currentWeapon.stats.name.toLowerCase().replace(/\s+/g, '-') as any,
+          crouching: this.player.isCrouching,
+          isMoving: this.input.isKeyDown('w') || this.input.isKeyDown('a') ||
+                    this.input.isKeyDown('s') || this.input.isKeyDown('d'),
+          timestamp: now,
+        });
+        this.lastNetworkUpdate = now;
+      }
+
+      // Update remote players
+      this.remotePlayerManager?.update(dt);
+    }
 
     // Reset per-frame input
     this.input.resetMouse();

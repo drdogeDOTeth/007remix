@@ -18,6 +18,8 @@ import { PhysicsWorld } from './core/physics-world';
 import { Game } from './game';
 import { loadLevel } from './levels/level-loader';
 import { CCTVBackground } from './ui/cctv-background';
+import { ScreenGlitch } from './ui/screen-glitch';
+import { NetworkManager } from './network/network-manager';
 
 async function init(): Promise<void> {
   const canvas = document.getElementById('game-canvas') as HTMLCanvasElement;
@@ -30,6 +32,10 @@ async function init(): Promise<void> {
   const cctvBackground = new CCTVBackground(cctvPhysics);
   cctvBackground.start();
 
+  // Create screen glitch effect for CCTV feed
+  const screenGlitch = new ScreenGlitch();
+  screenGlitch.start();
+
   // Helper to hide CCTV background
   const hideCCTVBackground = () => {
     const cctvCanvas = document.getElementById('cctv-render-canvas');
@@ -37,6 +43,7 @@ async function init(): Promise<void> {
       cctvCanvas.style.display = 'none';
     }
     cctvBackground.stop();
+    screenGlitch.stop();
   };
 
   // Quick Play: single room, click to start
@@ -73,6 +80,43 @@ async function init(): Promise<void> {
         btn.textContent = origText ?? 'MISSION — FACILITY';
         btn.disabled = false;
         alert('Could not load mission. Make sure you run with "npm run dev" so /levels/facility.json is served.');
+      }
+    });
+  }
+
+  // Multiplayer: connect to server and start multiplayer game
+  const multiplayerBtn = document.getElementById('btn-multiplayer');
+  if (multiplayerBtn) {
+    multiplayerBtn.addEventListener('click', async () => {
+      const btn = multiplayerBtn as HTMLButtonElement;
+      const origText = btn.textContent;
+      btn.textContent = 'CONNECTING...';
+      btn.disabled = true;
+
+      try {
+        // Create network manager and connect to server
+        const networkManager = new NetworkManager('Player');
+        await networkManager.connect();
+
+        console.log('[Main] Connected to server as:', networkManager.playerId);
+
+        // Create multiplayer game
+        const game = new Game(canvas, physics, {
+          networkMode: 'client',
+          networkManager,
+        });
+
+        // Hide start screen and start game
+        document.getElementById('start-screen')!.style.display = 'none';
+        hideCCTVBackground();
+        game.start();
+
+        canvas.addEventListener('click', () => game.start());
+      } catch (err) {
+        console.error('[Main] Multiplayer connection failed:', err);
+        btn.textContent = origText ?? 'MULTIPLAYER — DEATHMATCH';
+        btn.disabled = false;
+        alert('Could not connect to server. Make sure the server is running with "npm run server".');
       }
     });
   }

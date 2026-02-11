@@ -223,6 +223,7 @@ export class WeaponManager {
     const weapon = this.currentWeapon;
     const spreadMult = this._scoped ? 0.1 : 1;
 
+    let firstHit: { point?: THREE.Vector3; collider?: RAPIER.Collider } | null = null;
     for (let i = 0; i < weapon.stats.raysPerShot; i++) {
       let dir = direction;
       if (weapon.stats.raysPerShot > 1) {
@@ -239,7 +240,12 @@ export class WeaponManager {
         dir.z += (Math.random() - 0.5) * weapon.stats.spread * spreadMult;
         dir.normalize();
       }
-      this.projectileSystem.fireRay(origin, dir, weapon, this.playerCollider);
+      const result = this.projectileSystem.fireRay(origin, dir, weapon, this.playerCollider);
+
+      // Store first hit for network sync (Phase 3)
+      if (!firstHit && result.hit && result.collider) {
+        firstHit = { point: result.point, collider: result.collider };
+      }
     }
 
     playGunshotWeapon(WEAPON_TYPE_MAP[this.currentIndex]);
@@ -248,6 +254,7 @@ export class WeaponManager {
       weaponName: weapon.stats.name,
       position: origin,
       direction,
+      hit: firstHit,
     });
   }
 }

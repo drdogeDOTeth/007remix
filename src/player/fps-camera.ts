@@ -59,6 +59,13 @@ export class FPSCamera {
     return out;
   }
 
+  /**
+   * Get the current yaw rotation (for network sync).
+   */
+  getYRotation(): number {
+    return this.yaw;
+  }
+
   private onResize = (): void => {
     this.camera.aspect = window.innerWidth / window.innerHeight;
     this.camera.updateProjectionMatrix();
