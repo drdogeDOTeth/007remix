@@ -125,6 +125,8 @@ export interface PropDef {
   z: number;
   /** Optional scale */
   scale?: number;
+  /** Optional Y-axis rotation (radians) */
+  rotY?: number;
   /** Loot dropped when destroyed */
   loot?: PropLoot;
 }

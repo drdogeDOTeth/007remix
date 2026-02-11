@@ -17,6 +17,7 @@ Object.defineProperties = function<T>(obj: T, props: PropertyDescriptorMap & Thi
 import { PhysicsWorld } from './core/physics-world';
 import { Game } from './game';
 import { loadLevel } from './levels/level-loader';
+import { LevelGenerator } from './levels/level-generator';
 import { CCTVBackground } from './ui/cctv-background';
 import { ScreenGlitch } from './ui/screen-glitch';
 import { NetworkManager } from './network/network-manager';
@@ -45,6 +46,35 @@ async function init(): Promise<void> {
     }
     cctvBackground.stop();
     screenGlitch.stop();
+  };
+
+  // Helper to show CCTV background
+  const showCCTVBackground = () => {
+    const cctvCanvas = document.getElementById('cctv-render-canvas');
+    if (cctvCanvas) {
+      cctvCanvas.style.display = 'block';
+    }
+    cctvBackground.start();
+    screenGlitch.start();
+  };
+
+  // Helper to create a random level game
+  const createRandomLevelGame = async () => {
+    const generator = new LevelGenerator(Date.now());
+    const level = generator.generate({
+      minRooms: 6,
+      maxRooms: 12,
+      minEnemies: 5,
+      maxEnemies: 15,
+      difficulty: 'medium'
+    });
+    
+    const game = new Game(canvas, physics, { levelMode: true });
+    game.showBriefing(level);
+    game.onMissionComplete = () => {
+      document.getElementById('mission-complete')!.style.display = 'flex';
+    };
+    return game;
   };
 
   // Quick Play: single room, click to start
@@ -85,6 +115,35 @@ async function init(): Promise<void> {
     });
   }
 
+  // Random Level: generate and play a new procedural level
+  const randomLevelBtn = document.getElementById('btn-random-level');
+  if (randomLevelBtn) {
+    randomLevelBtn.addEventListener('click', async () => {
+      const btn = randomLevelBtn as HTMLButtonElement;
+      const origText = btn.textContent;
+      btn.textContent = 'GENERATING...';
+      btn.disabled = true;
+      try {
+        const game = await createRandomLevelGame();
+        canvas.addEventListener('click', () => {
+          document.getElementById('start-screen')!.style.display = 'none';
+          hideCCTVBackground();
+          game.start();
+        });
+      } catch (err) {
+        if (err instanceof Error) {
+          console.error('Random level generation failed:', err.message);
+          console.error(err.stack);
+        } else {
+          console.error('Random level generation failed:', err);
+        }
+        btn.textContent = origText ?? 'RANDOM LEVEL';
+        btn.disabled = false;
+        alert('Could not generate random level. Please try again.');
+      }
+    });
+  }
+
   // Multiplayer: show lobby first, then connect
   const lobbyScreen = new LobbyScreen();
   const multiplayerBtn = document.getElementById('btn-multiplayer');
@@ -119,6 +178,43 @@ async function init(): Promise<void> {
           document.getElementById('start-screen')!.style.display = 'flex';
         },
       });
+    });
+  }
+
+  // Mission Complete screen handlers
+  const nextLevelBtn = document.getElementById('btn-next-level');
+  if (nextLevelBtn) {
+    nextLevelBtn.addEventListener('click', async () => {
+      document.getElementById('mission-complete')!.style.display = 'none';
+      const btn = nextLevelBtn as HTMLButtonElement;
+      const origText = btn.textContent;
+      btn.textContent = 'GENERATING...';
+      btn.disabled = true;
+      try {
+        const game = await createRandomLevelGame();
+        game.start();
+        btn.textContent = origText;
+        btn.disabled = false;
+      } catch (err) {
+        if (err instanceof Error) {
+          console.error('Next level generation failed:', err.message);
+          console.error(err.stack);
+        } else {
+          console.error('Next level generation failed:', err);
+        }
+        btn.textContent = origText;
+        btn.disabled = false;
+        alert('Could not generate next level. Please try again.');
+      }
+    });
+  }
+
+  const returnMenuBtn = document.getElementById('btn-return-menu');
+  if (returnMenuBtn) {
+    returnMenuBtn.addEventListener('click', () => {
+      document.getElementById('mission-complete')!.style.display = 'none';
+      document.getElementById('start-screen')!.style.display = 'flex';
+      showCCTVBackground();
     });
   }
 }

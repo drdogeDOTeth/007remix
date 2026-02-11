@@ -9,10 +9,10 @@ import { globalLightPool } from '../core/light-pool';
  * Barrels trigger a secondary explosion dealing area damage.
  */
 
-const DEBRIS_COUNT = 6;
-const DEBRIS_LIFETIME = 1.8;
-const DEBRIS_GRAVITY = -14;
-const BARREL_FLASH_DURATION = 0.35;
+const DEBRIS_COUNT = 4; // Reduced from 6 for better performance
+const DEBRIS_LIFETIME = 1.2; // Reduced from 1.8
+const DEBRIS_GRAVITY = -12;
+const BARREL_FLASH_DURATION = 0.25; // Reduced from 0.35
 
 // Shared debris geometries (reused by all debris chunks to avoid per-chunk allocation)
 const SHARED_DEBRIS_GEOS: THREE.BoxGeometry[] = [];
@@ -62,9 +62,9 @@ const DEFAULT_HEALTH: Record<string, number> = {
   barrel: 20,
 };
 
-// Barrel explosion properties
-const BARREL_EXPLOSION_RADIUS = 3;
-const BARREL_EXPLOSION_DAMAGE = 50;
+// Barrel explosion properties - reduced for performance
+const BARREL_EXPLOSION_RADIUS = 2; // Reduced from 3
+const BARREL_EXPLOSION_DAMAGE = 35; // Reduced from 50
 
 export interface PropLoot {
   type: string;
@@ -344,8 +344,9 @@ export class DestructibleSystem {
 
   private spawnDebris(prop: DestructibleProp): void {
     const mats = getDebrisMats(prop.type);
-    const count = prop.type === 'barrel' ? DEBRIS_COUNT + 2 : DEBRIS_COUNT;
-    const speed = prop.type === 'barrel' ? 6 : 3;
+    // Reduce debris count for barrels to improve performance
+    const count = prop.type === 'barrel' ? DEBRIS_COUNT : DEBRIS_COUNT - 1;
+    const speed = prop.type === 'barrel' ? 4 : 2; // Reduced speeds
     // Floor level = bottom of the prop (prop center minus half size)
     const floorY = prop.position.y - prop.size / 2;
 
@@ -371,7 +372,7 @@ export class DestructibleSystem {
       const outSpeed = (1 + Math.random()) * speed;
       const velocity = new THREE.Vector3(
         Math.cos(angle) * outSpeed,
-        2 + Math.random() * (prop.type === 'barrel' ? 5 : 3),
+        1 + Math.random() * (prop.type === 'barrel' ? 3 : 2), // Reduced vertical velocity
         Math.sin(angle) * outSpeed,
       );
 
@@ -379,9 +380,9 @@ export class DestructibleSystem {
       this.debris.push({
         mesh,
         velocity,
-        rotSpeedX: (Math.random() - 0.5) * 10,
-        rotSpeedY: (Math.random() - 0.5) * 10,
-        rotSpeedZ: (Math.random() - 0.5) * 10,
+        rotSpeedX: (Math.random() - 0.5) * 8, // Reduced rotation speeds
+        rotSpeedY: (Math.random() - 0.5) * 8,
+        rotSpeedZ: (Math.random() - 0.5) * 8,
         life,
         maxLife: life,
         floorY,

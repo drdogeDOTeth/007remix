@@ -46,26 +46,17 @@ export function buildLevel(level: LevelSchema, deps: LevelBuilderDeps): void {
   } = deps;
 
   // Lights — positioned INSIDE rooms (below ceiling at y≈2.0)
-  const ambient = new THREE.AmbientLight(0x8899aa, 1.8);
+  const ambient = new THREE.AmbientLight(0x8899aa, 2.5); // Increased from 1.8
   scene.add(ambient);
 
   // Hemisphere light for natural indoor fill (warm from above, cool from floor bounce)
-  const hemi = new THREE.HemisphereLight(0xddeeff, 0x445544, 0.9);
+  const hemi = new THREE.HemisphereLight(0xddeeff, 0x445544, 1.2); // Increased from 0.9
   scene.add(hemi);
 
-  // Point lights per room — placed at y=1.5 (well below ceiling at y≈2.1)
-  const lightPositions: [number, number, number][] = [
-    [0, 1.5, 0],
-    [0, 1.5, 16],
-    [12, 1.5, 16],
-    [12, 1.5, 28],
-    [0, 1.5, 28],
-    [0, 1.5, 42],
-    [0, 1.5, 54],
-  ];
-  for (const [lx, ly, lz] of lightPositions) {
-    const pointLight = new THREE.PointLight(0xffeedd, 80, 25);
-    pointLight.position.set(lx, ly, lz);
+  // Point lights per room — dynamically placed at room centers
+  for (const room of level.rooms) {
+    const pointLight = new THREE.PointLight(0xffeedd, 120, 30); // Increased intensity from 80, distance from 25
+    pointLight.position.set(room.x, 1.5, room.z); // Center of each room at y=1.5
     pointLight.castShadow = true;
     pointLight.shadow.mapSize.set(512, 512);
     scene.add(pointLight);
@@ -305,6 +296,7 @@ function buildProp(
     const size = 1 * scale;
     const mesh = new THREE.Mesh(new THREE.BoxGeometry(size, size, size), mat);
     mesh.position.set(x, y + size / 2, z);
+    if (prop.rotY !== undefined) mesh.rotation.y = prop.rotY;
     mesh.castShadow = true;
     mesh.receiveShadow = true;
     scene.add(mesh);
