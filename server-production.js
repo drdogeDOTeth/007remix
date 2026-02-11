@@ -9,8 +9,8 @@ import express from 'express';
 import path from 'path';
 import { fileURLToPath } from 'url';
 
-// Import the game room (using dynamic import for ESM)
-const { GameRoom } = await import('./server/game-room.js');
+// Import the compiled game room (using dynamic import for ESM)
+const { GameRoom } = await import('./server/dist/server/game-room.js');
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);

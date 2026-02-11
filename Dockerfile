@@ -28,11 +28,8 @@ COPY package*.json ./
 # Install production dependencies only
 RUN npm ci --only=production
 
-# Copy server code
-COPY server/ ./server/
-
-# Copy network types (needed by server)
-COPY src/network/network-events.ts ./src/network/network-events.ts
+# Copy compiled server code from builder stage
+COPY --from=frontend-builder /app/server/dist ./server/dist
 
 # Copy built frontend from builder stage
 COPY --from=frontend-builder /app/dist ./dist
