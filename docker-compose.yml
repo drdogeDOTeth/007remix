@@ -1,0 +1,56 @@
+# Coolify-compatible Docker Compose file for 007 Remix
+#
+# USAGE WITH COOLIFY:
+# 1. Create a new service in Coolify
+# 2. Select "Docker Compose" as the service type
+# 3. Paste this file content
+# 4. In Coolify UI, set these environment variables:
+#    - IMAGE_TAG (e.g., "main", "latest", "v1.0.0")
+#    - GITHUB_REPOSITORY (e.g., "yourusername/007remix")
+# 5. Deploy!
+#
+# Coolify will automatically:
+# - Assign a domain (accessible via $SERVICE_FQDN_GAME_3000)
+# - Configure SSL/TLS with Let's Encrypt
+# - Set up health checks and logging
+
+services:
+  game:
+    # Image from GitHub Container Registry
+    # Update GITHUB_REPOSITORY in Coolify environment variables
+    image: ghcr.io/${GITHUB_REPOSITORY:-yourusername/007remix}:${IMAGE_TAG:-main}
+
+    container_name: 007remix-game
+    restart: unless-stopped
+
+    # Expose port 3000 (serves both static files and Socket.IO)
+    ports:
+      - "3000:3000"
+
+    environment:
+      # Node environment
+      - NODE_ENV=production
+
+      # Port the server runs on (internal)
+      - PORT=3000
+
+      # Server URL for client Socket.IO connections
+      # Coolify magic variable: SERVICE_FQDN_GAME_3000 = https://your-assigned-domain.com
+      # This allows the client to connect to the same domain for WebSocket
+      - VITE_SERVER_URL=${SERVICE_FQDN_GAME_3000:-http://localhost:3000}
+
+    # Health check to ensure server is responding
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"require('http').get('http://localhost:3000', (r) => process.exit(r.statusCode === 200 ? 0 : 1))\""]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+    labels:
+      # Coolify management labels
+      - "coolify.managed=true"
+      - "coolify.name=007remix-game"
+
+      # Tell Coolify which port to expose (important for auto-domain assignment)
+      - "coolify.http.port=3000"

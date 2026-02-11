@@ -7,10 +7,14 @@
     "dev": "vite",
     "build": "tsc && vite build",
     "preview": "vite preview",
-    "server": "tsx server/server.ts"
+    "server": "tsx server/server.ts",
+    "start": "node server-production.js",
+    "docker:build": "docker build -t 007remix:latest .",
+    "docker:run": "docker run -p 3000:3000 -e NODE_ENV=production 007remix:latest"
   },
   "dependencies": {
     "@dimforge/rapier3d-compat": "^0.14.0",
+    "express": "^4.21.2",
     "socket.io-client": "^4.8.3",
     "three": "^0.172.0"
   },
