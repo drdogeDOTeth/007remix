@@ -1,51 +1,38 @@
 # Coolify-compatible Docker Compose file for 007 Remix
 #
-# USAGE WITH COOLIFY:
-# 1. Create a new service in Coolify
-# 2. Select "Docker Compose" as the service type
-# 3. Paste this file content
-# 4. In Coolify UI, set these environment variables:
-#    - IMAGE_TAG (e.g., "main", "latest", "v1.0.0")
-#    - GITHUB_REPOSITORY (e.g., "yourusername/007remix")
-# 5. Deploy!
+# DEPLOYMENT STEPS:
+# 1. In Coolify: New Resource → Service → Docker Compose
+# 2. Paste this compose file
+# 3. Set environment variables in Coolify UI:
+#    - GITHUB_REPOSITORY=howieduhzit/00doge
+#    - IMAGE_TAG=main
+# 4. After initial deployment, go to service → Domains
+# 5. Add your domain (e.g., game.yourdomain.com)
+# 6. Coolify will auto-configure SSL via Let's Encrypt
 #
-# Coolify will automatically:
-# - Assign a domain (accessible via $SERVICE_FQDN_GAME_3000)
-# - Configure SSL/TLS with Let's Encrypt
-# - Set up health checks and logging
+# IMPORTANT: Do NOT add ports: section - Coolify handles routing via Traefik
 
 services:
   game:
-    # Image from GitHub Container Registry
-    # Update GITHUB_REPOSITORY in Coolify environment variables
     image: ghcr.io/${GITHUB_REPOSITORY:-howieduhzit/00doge}:${IMAGE_TAG:-main}
 
     restart: unless-stopped
 
     environment:
-      # Node environment
+      # Node.js environment
       - NODE_ENV=production
 
-      # Port the server runs on (internal)
-      - PORT=3000
+      # Internal port (must match what server listens on)
+      - PORT=${PORT:-3000}
 
-      # Server URL for client Socket.IO connections
-      # Coolify magic variable: SERVICE_FQDN_GAME_3000 = https://your-assigned-domain.com
-      # This allows the client to connect to the same domain for WebSocket
-      - VITE_SERVER_URL=${SERVICE_FQDN_GAME_3000:-http://localhost:3000}
+      # Server URL for Socket.IO client connections
+      # Coolify magic variable SERVICE_FQDN_GAME provides the assigned domain
+      # Falls back to localhost for local testing
+      - VITE_SERVER_URL=${SERVICE_FQDN_GAME:-http://localhost:3000}
 
-    # Health check to ensure server is responding
     healthcheck:
-      test: ["CMD-SHELL", "node -e \"require('http').get('http://localhost:3000', (r) => process.exit(r.statusCode === 200 ? 0 : 1))\""]
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:3000 || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 40s
-
-    labels:
-      # Coolify management labels
-      - "coolify.managed=true"
-      - "coolify.name=007remix-game"
-
-      # Tell Coolify which port to expose (important for auto-domain assignment)
-      - "coolify.http.port=3000"
