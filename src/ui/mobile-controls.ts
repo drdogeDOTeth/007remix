@@ -4,12 +4,17 @@
  */
 
 import type { MobileInputState } from '../core/input-manager';
+import { SensitivitySettings } from '../core/sensitivity-settings';
 
 const STICK_DEADZONE = 0.15;
-const LOOK_SENSITIVITY = 0.5;
 
-function isTouchDevice(): boolean {
-  return 'ontouchstart' in window || navigator.maxTouchPoints > 0;
+/** True only on phones/tablets — touch-capable AND (small viewport OR coarse pointer). */
+function isMobileDevice(): boolean {
+  const hasTouch = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
+  if (!hasTouch) return false;
+  const narrow = window.matchMedia('(max-width: 900px)').matches;
+  const coarsePointer = window.matchMedia('(pointer: coarse)').matches;
+  return narrow || coarsePointer;
 }
 
 export class MobileControls {
@@ -51,14 +56,22 @@ export class MobileControls {
       display: none;
     `;
 
-    // Left: movement joystick
+    // Left: movement joystick + C/R buttons in a compact cluster
+    const leftCluster = document.createElement('div');
+    leftCluster.style.cssText = `
+      position: absolute;
+      bottom: 24px;
+      left: 20px;
+      display: flex;
+      flex-direction: column;
+      align-items: flex-start;
+      gap: 12px;
+      pointer-events: none;
+    `;
     const moveZone = document.createElement('div');
     moveZone.style.cssText = `
-      position: absolute;
-      bottom: 80px;
-      left: 20px;
-      width: 140px;
-      height: 140px;
+      width: 120px;
+      height: 120px;
       pointer-events: auto;
       touch-action: none;
       display: flex;
@@ -70,8 +83,8 @@ export class MobileControls {
       width: 100px;
       height: 100px;
       border-radius: 50%;
-      background: rgba(212, 175, 55, 0.25);
-      border: 2px solid rgba(212, 175, 55, 0.6);
+      background: rgba(212, 175, 55, 0.2);
+      border: 2px solid rgba(212, 175, 55, 0.5);
       position: relative;
       touch-action: none;
     `;
@@ -92,70 +105,72 @@ export class MobileControls {
     moveKnob.id = 'move-stick-knob';
     this.moveStickEl.appendChild(moveKnob);
     moveZone.appendChild(this.moveStickEl);
-    this.container.appendChild(moveZone);
+    leftCluster.appendChild(moveZone);
 
-    // Right: look touch zone (full right half, touch-drag)
+    // Sprint button (below joystick, same row as C/R)
+    this.sprintBtn = this.createButton('SPRINT', 100, 36);
+    this.sprintBtn.style.cssText += `
+      font-size: 10px;
+    `;
+    leftCluster.appendChild(this.sprintBtn);
+
+    // C and R in a horizontal row
+    const actionRow = document.createElement('div');
+    actionRow.style.cssText = `
+      display: flex;
+      gap: 10px;
+      pointer-events: auto;
+    `;
+    this.crouchBtn = this.createButton('C', 48, 48);
+    this.crouchBtn.style.cssText += `font-size: 14px;`;
+    this.reloadBtn = this.createButton('R', 48, 48);
+    this.reloadBtn.style.cssText += `font-size: 14px;`;
+    actionRow.appendChild(this.crouchBtn);
+    actionRow.appendChild(this.reloadBtn);
+    leftCluster.appendChild(actionRow);
+    this.container.appendChild(leftCluster);
+
+    // Right: look touch zone (covers right 50%, touch-drag to look)
     this.lookZoneEl = document.createElement('div');
     this.lookZoneEl.style.cssText = `
       position: absolute;
       top: 0; right: 0;
-      width: 55%;
+      width: 50%;
       height: 100%;
       pointer-events: auto;
       touch-action: none;
     `;
     this.container.appendChild(this.lookZoneEl);
 
-    // Fire button (bottom right)
-    this.fireBtn = this.createButton('FIRE', 90, 90);
+    // Right cluster: fire + jump stacked
+    const rightCluster = document.createElement('div');
+    rightCluster.style.cssText = `
+      position: absolute;
+      bottom: 24px;
+      right: 20px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 12px;
+      pointer-events: none;
+    `;
+    this.fireBtn = this.createButton('FIRE', 100, 100);
     this.fireBtn.style.cssText += `
-      bottom: 80px;
-      right: 24px;
       background: rgba(200, 60, 60, 0.6);
       border-color: #c44;
-    `;
-    this.container.appendChild(this.fireBtn);
-
-    // Jump (above fire)
-    this.jumpBtn = this.createButton('JUMP', 60, 60);
-    this.jumpBtn.style.cssText += `
-      bottom: 185px;
-      right: 44px;
-    `;
-    this.container.appendChild(this.jumpBtn);
-
-    // Crouch
-    this.crouchBtn = this.createButton('C', 44, 44);
-    this.crouchBtn.style.cssText += `
-      bottom: 85px;
-      left: 180px;
       font-size: 14px;
     `;
-    this.container.appendChild(this.crouchBtn);
-
-    // Reload
-    this.reloadBtn = this.createButton('R', 44, 44);
-    this.reloadBtn.style.cssText += `
-      bottom: 85px;
-      left: 235px;
-      font-size: 14px;
-    `;
-    this.container.appendChild(this.reloadBtn);
-
-    // Sprint
-    this.sprintBtn = this.createButton('SPRINT', 70, 36);
-    this.sprintBtn.style.cssText += `
-      bottom: 140px;
-      left: 20px;
-      font-size: 10px;
-    `;
-    this.container.appendChild(this.sprintBtn);
+    this.jumpBtn = this.createButton('JUMP', 72, 48);
+    this.jumpBtn.style.cssText += `font-size: 11px;`;
+    rightCluster.appendChild(this.jumpBtn);
+    rightCluster.appendChild(this.fireBtn);
+    this.container.appendChild(rightCluster);
 
     this.setupMoveStick();
     this.setupLookZone();
     this.setupButtons();
 
-    if (isTouchDevice()) {
+    if (isMobileDevice()) {
       document.body.appendChild(this.container);
     }
   }
@@ -164,9 +179,10 @@ export class MobileControls {
     const btn = document.createElement('div');
     btn.textContent = label;
     btn.style.cssText = `
-      position: absolute;
       width: ${w}px;
       height: ${h}px;
+      min-width: ${w}px;
+      min-height: ${h}px;
       display: flex;
       align-items: center;
       justify-content: center;
@@ -240,8 +256,9 @@ export class MobileControls {
       if (!this.lookTouchActive) return;
       e.preventDefault();
       const pos = this.getEventPos(e);
-      this.lookDelta.x += (pos.x - this.lookLastPos.x) * LOOK_SENSITIVITY;
-      this.lookDelta.y += (pos.y - this.lookLastPos.y) * LOOK_SENSITIVITY;
+      const sens = SensitivitySettings.getMobileSensitivity();
+      this.lookDelta.x += (pos.x - this.lookLastPos.x) * sens;
+      this.lookDelta.y += (pos.y - this.lookLastPos.y) * sens;
       this.lookLastPos = pos;
     };
     const onEnd = () => {
@@ -345,7 +362,7 @@ export class MobileControls {
   }
 
   show(): void {
-    if (isTouchDevice()) {
+    if (isMobileDevice()) {
       this.container.style.display = 'block';
     }
   }
@@ -360,6 +377,6 @@ export class MobileControls {
   }
 
   static isSupported(): boolean {
-    return isTouchDevice();
+    return isMobileDevice();
   }
 }

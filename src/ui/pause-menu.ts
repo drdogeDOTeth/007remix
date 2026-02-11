@@ -1,7 +1,10 @@
 /**
  * Pause menu overlay — Escape to toggle.
  * Resume or exit back to the start screen.
+ * Includes sensitivity sliders.
  */
+
+import { SensitivitySettings } from '../core/sensitivity-settings';
 
 export class PauseMenu {
   private overlay: HTMLDivElement;
@@ -34,11 +37,35 @@ export class PauseMenu {
     title.style.cssText = `
       font-size: 42px;
       letter-spacing: 8px;
-      margin-bottom: 40px;
+      margin-bottom: 24px;
       color: #d4af37;
       text-shadow: 0 0 12px rgba(212, 175, 55, 0.3);
     `;
     this.overlay.appendChild(title);
+
+    // Sensitivity section
+    const settingsSection = document.createElement('div');
+    settingsSection.style.cssText = `
+      margin-bottom: 28px;
+      padding: 16px 24px;
+      background: rgba(0,0,0,0.4);
+      border: 1px solid rgba(212, 175, 55, 0.3);
+      border-radius: 4px;
+    `;
+    const settingsTitle = document.createElement('div');
+    settingsTitle.textContent = 'SENSITIVITY';
+    settingsTitle.style.cssText = `
+      font-size: 12px;
+      letter-spacing: 4px;
+      margin-bottom: 16px;
+      color: rgba(212, 175, 55, 0.9);
+    `;
+    settingsSection.appendChild(settingsTitle);
+    const s = SensitivitySettings.get();
+    settingsSection.appendChild(this.createSlider('Mouse', s.mouse, (v) => SensitivitySettings.set({ mouse: v })));
+    settingsSection.appendChild(this.createSlider('Gamepad', s.gamepad, (v) => SensitivitySettings.set({ gamepad: v })));
+    settingsSection.appendChild(this.createSlider('Mobile', s.mobile, (v) => SensitivitySettings.set({ mobile: v })));
+    this.overlay.appendChild(settingsSection);
 
     const btnContainer = document.createElement('div');
     btnContainer.style.cssText = `
@@ -77,6 +104,41 @@ export class PauseMenu {
     this.overlay.appendChild(hint);
 
     document.body.appendChild(this.overlay);
+  }
+
+  private createSlider(label: string, value: number, onChange: (v: number) => void): HTMLDivElement {
+    const row = document.createElement('div');
+    row.style.cssText = `display: flex; align-items: center; gap: 12px; margin-bottom: 10px; min-width: 220px;`;
+    const lab = document.createElement('label');
+    lab.textContent = label;
+    lab.style.cssText = `width: 70px; font-size: 12px; letter-spacing: 1px;`;
+    const input = document.createElement('input');
+    input.type = 'range';
+    input.min = '0';
+    input.max = '100';
+    input.value = String(value);
+    input.style.cssText = `
+      flex: 1;
+      height: 6px;
+      -webkit-appearance: none;
+      appearance: none;
+      background: rgba(212, 175, 55, 0.2);
+      border-radius: 3px;
+      outline: none;
+    `;
+    input.addEventListener('input', () => {
+      const v = parseInt(input.value, 10);
+      onChange(v);
+    });
+    const valSpan = document.createElement('span');
+    valSpan.style.cssText = `width: 28px; font-size: 11px; color: rgba(255,255,255,0.7);`;
+    const updateVal = () => { valSpan.textContent = `${input.value}%`; };
+    input.addEventListener('input', updateVal);
+    updateVal();
+    row.appendChild(lab);
+    row.appendChild(input);
+    row.appendChild(valSpan);
+    return row;
   }
 
   private createButton(text: string): HTMLButtonElement {

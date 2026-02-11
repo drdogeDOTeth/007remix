@@ -1,3 +1,5 @@
+import { SensitivitySettings } from './sensitivity-settings';
+
 /** Virtual input state from mobile touch controls. */
 export interface MobileInputState {
   moveX: number;
@@ -31,8 +33,6 @@ export class InputManager {
   private _scrollDelta = 0;
   private keyJustPressed = new Set<string>();
 
-  /** Gamepad look sensitivity (right stick → pixel-like delta) */
-  private static readonly GAMEPAD_LOOK_SENS = 180;
   /** Stick deadzone */
   private static readonly DEADZONE = 0.2;
   /** Previous gamepad button state for "just pressed" */
@@ -111,18 +111,29 @@ export class InputManager {
     if (this._mouseDown) return true;
     const m = this.mobileInput?.();
     if (m != null && m.fire) return true;
-    const gp = navigator.getGamepads?.()?.[0];
-    if (gp?.connected && gp.axes.length > 7 && gp.axes[7] > 0.3) return true;
-    return false;
+    return this.getGamepadTriggerValue('rt') > 0.2;
   }
 
   get rightMouseDown(): boolean {
     if (this._rightMouseDown) return true;
     const m = this.mobileInput?.();
     if (m != null && m.aim) return true;
+    return this.getGamepadTriggerValue('lt') > 0.2;
+  }
+
+  /** RT=fire, LT=aim. Check buttons[6/7].value (0–1) and axes[6/7] (varies by controller). */
+  private getGamepadTriggerValue(which: 'lt' | 'rt'): number {
     const gp = navigator.getGamepads?.()?.[0];
-    if (gp?.connected && gp.axes.length > 6 && gp.axes[6] > 0.3) return true;
-    return false;
+    if (!gp?.connected) return 0;
+    const btnIdx = which === 'lt' ? 6 : 7;
+    const axisIdx = which === 'lt' ? 6 : 7;
+    const btnVal = gp.buttons[btnIdx]?.value;
+    if (typeof btnVal === 'number') return btnVal;
+    if (gp.axes.length > axisIdx) {
+      const a = gp.axes[axisIdx];
+      return a > 0 ? a : (a < 0 ? (a + 1) / 2 : 0);
+    }
+    return 0;
   }
 
   /** Returns -1 (scroll up), 0 (none), or 1 (scroll down) */
@@ -139,9 +150,9 @@ export class InputManager {
     const pad = gp?.[0] ?? null;
 
     if (pad?.connected) {
-      // Left stick → WASD
+      // Left stick → WASD (axes[1]: neg = up/forward, pos = down/back)
       const lx = this.applyDeadzone(pad.axes[0]);
-      const ly = this.applyDeadzone(-pad.axes[1]);
+      const ly = this.applyDeadzone(pad.axes[1]);
       if (ly < -InputManager.DEADZONE) this.keys.add('w');
       else this.keys.delete('w');
       if (ly > InputManager.DEADZONE) this.keys.add('s');
@@ -151,11 +162,12 @@ export class InputManager {
       if (lx > InputManager.DEADZONE) this.keys.add('d');
       else this.keys.delete('d');
 
-      // Right stick → look
+      // Right stick → look (axes[3] sign varies by controller; negate to fix inverted Y)
       const rx = this.applyDeadzone(pad.axes[2]);
-      const ry = this.applyDeadzone(-pad.axes[3]);
-      this.mouseX += rx * InputManager.GAMEPAD_LOOK_SENS * dt * 60;
-      this.mouseY += ry * InputManager.GAMEPAD_LOOK_SENS * dt * 60;
+      const ry = this.applyDeadzone(pad.axes[3]);
+      const sens = SensitivitySettings.getGamepadSensitivity();
+      this.mouseX += rx * sens * dt * 60;
+      this.mouseY += ry * sens * dt * 60;
 
       // Triggers: handled in mouseDown/rightMouseDown getters
 

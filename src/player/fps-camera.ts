@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { InputManager } from '../core/input-manager';
+import { SensitivitySettings } from '../core/sensitivity-settings';
 
-const SENSITIVITY = 0.002;
 const PITCH_LIMIT = Math.PI / 2 - 0.01; // Just under 90 degrees
 
 export class FPSCamera {
@@ -20,8 +20,9 @@ export class FPSCamera {
   }
 
   update(input: InputManager): void {
-    this.yaw -= input.mouseMovementX * SENSITIVITY;
-    this.pitch -= input.mouseMovementY * SENSITIVITY;
+    const sens = SensitivitySettings.getMouseSensitivity();
+    this.yaw -= input.mouseMovementX * sens;
+    this.pitch -= input.mouseMovementY * sens;
     this.pitch = Math.max(-PITCH_LIMIT, Math.min(PITCH_LIMIT, this.pitch));
 
     // Build a quaternion from yaw and pitch
