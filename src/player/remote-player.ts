@@ -25,6 +25,13 @@ export class RemotePlayer {
   private deathAnimationProgress = 0;
   private currentWeaponType: WeaponType = 'pistol';
   private weaponViewModel: WeaponViewModel;
+  private flashlight: THREE.SpotLight;
+  private flashlightOn = false;
+
+  // Smoothed position for even smoother rendering
+  private smoothedPosition = new THREE.Vector3();
+  private smoothedRotation = 0;
+  private hasInitialPosition = false;
 
   constructor(id: string, username: string, scene: THREE.Scene, physics: PhysicsWorld) {
     this.id = id;
@@ -63,6 +70,13 @@ export class RemotePlayer {
     this.weaponViewModel = new WeaponViewModel();
     const weaponMesh = this.weaponViewModel.buildWeaponMeshForPreview('pistol', 'default');
     setPlayerWeapon(this.model, weaponMesh);
+
+    // Create flashlight (spotlight attached to model)
+    this.flashlight = new THREE.SpotLight(0xffe8cc, 0, 30, Math.PI / 6, 0.35, 1.5);
+    this.flashlight.position.set(0, 1.5, 0); // At head height
+    this.flashlight.target.position.set(0, 1.5, 5); // Point forward (positive Z)
+    this.model.add(this.flashlight);
+    this.model.add(this.flashlight.target);
   }
 
   /**
@@ -109,7 +123,30 @@ export class RemotePlayer {
     const interpolatedState = this.interpolationBuffer.getInterpolatedState(renderTime);
 
     if (interpolatedState) {
-      // Update physics collider position (for hit detection)
+      // Initialize smoothed position on first update
+      if (!this.hasInitialPosition) {
+        this.smoothedPosition.set(
+          interpolatedState.position.x,
+          interpolatedState.position.y,
+          interpolatedState.position.z
+        );
+        this.smoothedRotation = interpolatedState.rotation;
+        this.hasInitialPosition = true;
+      }
+
+      // Apply exponential smoothing for extra smooth movement (lerp factor: 0.3 = aggressive smoothing)
+      const smoothFactor = 0.3;
+      this.smoothedPosition.x += (interpolatedState.position.x - this.smoothedPosition.x) * smoothFactor;
+      this.smoothedPosition.y += (interpolatedState.position.y - this.smoothedPosition.y) * smoothFactor;
+      this.smoothedPosition.z += (interpolatedState.position.z - this.smoothedPosition.z) * smoothFactor;
+
+      // Smooth rotation (handle wrapping)
+      let rotDiff = interpolatedState.rotation - this.smoothedRotation;
+      if (rotDiff > Math.PI) rotDiff -= Math.PI * 2;
+      if (rotDiff < -Math.PI) rotDiff += Math.PI * 2;
+      this.smoothedRotation += rotDiff * smoothFactor;
+
+      // Update physics collider position (for hit detection) - use interpolated (not smoothed) for accuracy
       this.rigidBody.setTranslation(
         {
           x: interpolatedState.position.x,
@@ -119,18 +156,18 @@ export class RemotePlayer {
         true
       );
 
-      // Update visual model position
+      // Update visual model position using smoothed values
       // Offset Y position so feet touch ground (model feet are at +0.35 from root,
       // capsule center is at ~0.9-1.0, total offset ~1.05)
       this.model.position.set(
-        interpolatedState.position.x,
-        interpolatedState.position.y - 1.05,
-        interpolatedState.position.z
+        this.smoothedPosition.x,
+        this.smoothedPosition.y - 1.05,
+        this.smoothedPosition.z
       );
 
       // Update rotation (yaw only, players rotate around Y axis)
       // Add PI to flip model 180° since model faces +Z but camera yaw assumes -Z forward
-      this.model.rotation.y = interpolatedState.rotation + Math.PI;
+      this.model.rotation.y = this.smoothedRotation + Math.PI;
 
       // Update shadow position
       this.shadowMesh.position.x = interpolatedState.position.x;
@@ -173,6 +210,14 @@ export class RemotePlayer {
    */
   getColliderHandle(): number {
     return this.collider.handle;
+  }
+
+  /**
+   * Set flashlight state (on/off).
+   */
+  setFlashlight(isOn: boolean): void {
+    this.flashlightOn = isOn;
+    this.flashlight.intensity = isOn ? 40 : 0;
   }
 
   /**

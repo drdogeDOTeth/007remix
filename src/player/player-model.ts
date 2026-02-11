@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { globalLightPool } from '../core/light-pool';
 
 /**
  * Creates a low-poly 3D player character model for remote players.
@@ -109,13 +110,33 @@ export function buildPlayerModel(playerId: string): THREE.Group {
   rightArm.add(rightArmMesh);
 
   // Hands (attached to arms, not hips)
-  const leftHand = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.1, 0.1), skinMat);
+  const leftHand = new THREE.Group();
   leftHand.position.set(0, -0.22, 0); // Relative to arm position
   leftArm.add(leftHand);
 
-  const rightHand = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.1, 0.1), skinMat);
+  const leftPalm = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.08, 0.08), skinMat);
+  leftHand.add(leftPalm);
+
+  // Left fingers
+  for (let i = 0; i < 4; i++) {
+    const finger = new THREE.Mesh(new THREE.BoxGeometry(0.02, 0.06, 0.02), skinMat);
+    finger.position.set(-0.03 + i * 0.02, -0.07, 0.03);
+    leftHand.add(finger);
+  }
+
+  const rightHand = new THREE.Group();
   rightHand.position.set(0, -0.22, 0); // Relative to arm position
   rightArm.add(rightHand);
+
+  const rightPalm = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.08, 0.08), skinMat);
+  rightHand.add(rightPalm);
+
+  // Right fingers
+  for (let i = 0; i < 4; i++) {
+    const finger = new THREE.Mesh(new THREE.BoxGeometry(0.02, 0.06, 0.02), skinMat);
+    finger.position.set(-0.03 + i * 0.02, -0.07, 0.03);
+    rightHand.add(finger);
+  }
 
   // Legs with knee joints for bending animation
   // Left leg
@@ -175,13 +196,13 @@ export function buildPlayerModel(playerId: string): THREE.Group {
   rightLowerLeg.add(rightBoot);
 
   // Weapon will be added separately via setWeapon() method
-  // Store weapon attachment point (positioned for third-person view, right hand)
+  // Store weapon attachment point (positioned for third-person view, LEFT hand grip)
   root.userData.weaponAttachPoint = {
-    x: 0.26,
-    y: 0.15,
-    z: 0.1,
+    x: -0.26, // LEFT hand (negative X)
+    y: 0.08,  // Hand height (palm position)
+    z: 0.2,   // Grip positioned forward in front of body
     rotationX: Math.PI / 2, // Point forward
-    rotationY: 0,
+    rotationY: Math.PI,     // Flip 180 degrees to face forward
     rotationZ: 0
   };
 
@@ -218,6 +239,12 @@ export function setPlayerWeapon(model: THREE.Group, weaponMesh: THREE.Group): vo
     weaponMesh.position.set(attachPoint.x, attachPoint.y, attachPoint.z);
     weaponMesh.rotation.set(attachPoint.rotationX, attachPoint.rotationY, attachPoint.rotationZ);
     weaponMesh.scale.setScalar(0.7); // Scale down for third-person view
+
+    // Ensure weapon is on default layer (layer 0) for third-person visibility
+    weaponMesh.traverse((child) => {
+      child.layers.set(0);
+    });
+
     hips.add(weaponMesh);
     model.userData.weapon = weaponMesh;
   }
@@ -287,7 +314,7 @@ export function animatePlayerMovement(model: THREE.Group, time: number, isMoving
 }
 
 /**
- * Play weapon firing animation (recoil).
+ * Play weapon firing animation (recoil + muzzle flash).
  * Call this when a remote player fires their weapon.
  */
 export function playFireAnimation(model: THREE.Group): void {
@@ -305,6 +332,12 @@ export function playFireAnimation(model: THREE.Group): void {
     attachPoint.rotationY,
     attachPoint.rotationZ
   );
+
+  // Muzzle flash (pooled point light at weapon tip)
+  const muzzleFlash = globalLightPool.acquire(0xffaa44, 8, 4, 50);
+  muzzleFlash.position.copy(weapon.position);
+  muzzleFlash.position.z += 0.3; // In front of weapon
+  model.add(muzzleFlash);
 
   // Return to original position
   setTimeout(() => {

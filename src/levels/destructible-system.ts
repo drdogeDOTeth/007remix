@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import RAPIER from '@dimforge/rapier3d-compat';
 import { PhysicsWorld } from '../core/physics-world';
+import { globalLightPool } from '../core/light-pool';
 
 /**
  * Destructible prop system — crates and barrels take damage from gunfire and explosions.
@@ -112,9 +113,15 @@ export class DestructibleSystem {
 
   /**
    * Called when a prop is destroyed. Use for sounds, chain explosions, etc.
-   * (type, position, isBarrel)
+   * (type, position)
    */
   onPropDestroyed: ((type: string, position: THREE.Vector3) => void) | null = null;
+
+  /**
+   * Called when a prop is destroyed (with full prop data for networking).
+   * (prop)
+   */
+  onPropDestroyedFull: ((prop: DestructibleProp) => void) | null = null;
 
   /**
    * Called when a barrel explodes — deal area damage to enemies / player.
@@ -216,6 +223,9 @@ export class DestructibleSystem {
   }
 
   private destroy(prop: DestructibleProp): void {
+    // Notify for networking (before removal)
+    this.onPropDestroyedFull?.(prop);
+
     // Remove visual
     this.scene.remove(prop.mesh);
     // Dispose geometry+material on the mesh
@@ -257,7 +267,7 @@ export class DestructibleSystem {
   }
 
   private spawnBarrelFlash(pos: THREE.Vector3): void {
-    const light = new THREE.PointLight(0xff6600, 60, 8);
+    const light = globalLightPool.acquire(0xff6600, 60, 8);
     light.position.copy(pos);
     light.position.y += 0.5;
     this.scene.add(light);
@@ -380,7 +390,7 @@ export class DestructibleSystem {
       bf.flash.scale.setScalar(1 + t * 1.5);
       if (t >= 1) {
         this.scene.remove(bf.light);
-        bf.light.dispose();
+        globalLightPool.release(bf.light);
         this.scene.remove(bf.flash);
         bf.geo.dispose();
         bf.mat.dispose();

@@ -69,6 +69,26 @@ class GameServer {
         this.gameRoom.handleWeaponFire(event);
       });
 
+      // Grenade throw event (Phase 5)
+      socket.on('grenade:throw', (event: any) => {
+        this.gameRoom.handleGrenadeThrow(event);
+      });
+
+      // Grenade explosion event (Phase 5)
+      socket.on('grenade:explosion', (event: any) => {
+        this.gameRoom.handleGrenadeExplosion(event);
+      });
+
+      // Flashlight toggle event (Phase 5)
+      socket.on('flashlight:toggle', (event: any) => {
+        this.gameRoom.handleFlashlightToggle(event);
+      });
+
+      // Destructible destroyed event (Phase 5)
+      socket.on('destructible:destroyed', (event: any) => {
+        this.gameRoom.handleDestructibleDestroyed(event);
+      });
+
       // Player disconnected
       socket.on('disconnect', () => {
         console.log(`[Server] Client disconnected: ${socket.id}`);

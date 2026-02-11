@@ -1,5 +1,14 @@
 import { ServerPlayerState, createPlayerState } from './player-state';
-import type { WeaponFireEvent, DamageEvent, PlayerDeathEvent, PlayerRespawnEvent } from '../src/network/network-events';
+import type {
+  WeaponFireEvent,
+  DamageEvent,
+  PlayerDeathEvent,
+  PlayerRespawnEvent,
+  GrenadeThrowEvent,
+  GrenadeExplosionEvent,
+  FlashlightToggleEvent,
+  DestructibleDestroyedEvent,
+} from '../src/network/network-events';
 
 /**
  * GameRoom manages a single multiplayer session/match.
@@ -10,6 +19,13 @@ export class GameRoom {
   private readonly updateRate = 20; // Hz
   private updateInterval: NodeJS.Timeout | null = null;
   private respawnTimers: Map<string, NodeJS.Timeout> = new Map(); // Player ID -> respawn timer
+
+  // Anti-cheat: Movement speed validation
+  private readonly MAX_SPEED = 9.9; // units/second (sprint speed)
+  private readonly SPEED_TOLERANCE = 1.5; // 50% tolerance for network jitter, lag, edge cases
+
+  // Anti-cheat: Fire rate validation
+  private lastFireTime: Map<string, number> = new Map(); // Player ID -> last fire timestamp
 
   /**
    * Spawn points for players (random selection).
@@ -60,6 +76,9 @@ export class GameRoom {
         this.respawnTimers.delete(id);
       }
 
+      // Clear fire rate tracking
+      this.lastFireTime.delete(id);
+
       this.players.delete(id);
       console.log(`[GameRoom] Player ${player.username} (${id}) left. Total players: ${this.players.size}`);
     }
@@ -67,13 +86,39 @@ export class GameRoom {
 
   /**
    * Update a player's state from client input.
+   * Validates movement speed to prevent speedhacking.
    */
   updatePlayerState(id: string, update: Partial<ServerPlayerState>): void {
     const player = this.players.get(id);
     if (!player) return;
 
-    // Update only provided fields
-    if (update.position) player.position = update.position;
+    // Validate position update (anti-cheat: movement speed check)
+    if (update.position) {
+      const now = Date.now();
+      const timeDelta = (now - player.lastUpdateTime) / 1000; // seconds
+
+      // Calculate distance moved
+      const distance = this.calculateDistance(player.position, update.position);
+
+      // Calculate maximum allowed distance based on time and max speed (with tolerance)
+      const maxAllowedDistance = this.MAX_SPEED * this.SPEED_TOLERANCE * timeDelta;
+
+      if (distance > maxAllowedDistance && timeDelta > 0.016) {
+        // Reject suspicious movement (unless it's the first update or very rapid updates)
+        const speed = distance / timeDelta;
+        console.warn(
+          `[GameRoom] Rejected suspicious movement from ${player.username}: ` +
+          `${distance.toFixed(2)} units in ${(timeDelta * 1000).toFixed(0)}ms ` +
+          `(${speed.toFixed(2)} units/s, max allowed: ${(this.MAX_SPEED * this.SPEED_TOLERANCE).toFixed(2)})`
+        );
+        // Don't update position, but continue with other updates
+      } else {
+        // Valid movement, update position
+        player.position = update.position;
+      }
+    }
+
+    // Update other fields (always allowed)
     if (update.rotation !== undefined) player.rotation = update.rotation;
     if (update.health !== undefined) player.health = update.health;
     if (update.armor !== undefined) player.armor = update.armor;
@@ -111,7 +156,7 @@ export class GameRoom {
 
   /**
    * Handle weapon fire event from client (Phase 3).
-   * Validates hit and broadcasts damage if confirmed.
+   * Validates fire rate and hit, broadcasts damage if confirmed.
    */
   handleWeaponFire(event: WeaponFireEvent): void {
     const shooter = this.players.get(event.playerId);
@@ -119,6 +164,24 @@ export class GameRoom {
       console.log(`[GameRoom] Weapon fire from unknown player: ${event.playerId}`);
       return;
     }
+
+    // Anti-cheat: Validate fire rate
+    const now = Date.now();
+    const lastFire = this.lastFireTime.get(event.playerId) ?? 0;
+    const timeSinceLastFire = now - lastFire;
+    const minInterval = this.getWeaponFireInterval(event.weaponType);
+    const tolerance = 0.9; // 10% tolerance for network lag
+
+    if (timeSinceLastFire < minInterval * tolerance) {
+      console.warn(
+        `[GameRoom] Rejected rapid fire from ${shooter.username}: ` +
+        `${timeSinceLastFire}ms since last shot (min: ${minInterval}ms for ${event.weaponType})`
+      );
+      return; // Reject this shot
+    }
+
+    // Track fire time
+    this.lastFireTime.set(event.playerId, now);
 
     console.log(`[GameRoom] ${shooter.username} fired ${event.weaponType}, hit claim: ${event.hitPlayerId ?? 'none'}`);
 
@@ -286,6 +349,20 @@ export class GameRoom {
   }
 
   /**
+   * Get weapon minimum fire interval (ms between shots).
+   */
+  private getWeaponFireInterval(weaponType: string): number {
+    const fireRates: Record<string, number> = {
+      pistol: 3, // 3 rounds/second
+      rifle: 8, // 8 rounds/second
+      shotgun: 1.2, // 1.2 rounds/second
+      sniper: 0.8, // 0.8 rounds/second
+    };
+    const rate = fireRates[weaponType] ?? 3;
+    return 1000 / rate; // Convert to ms between shots
+  }
+
+  /**
    * Start the broadcast loop that sends game state to all clients.
    */
   private startBroadcastLoop(): void {
@@ -300,6 +377,143 @@ export class GameRoom {
         this.onBroadcast('game:state:snapshot', snapshot);
       }
     }, intervalMs);
+  }
+
+  /**
+   * Handle grenade throw event from client.
+   * Validates and broadcasts to all clients for synchronized grenade physics.
+   */
+  handleGrenadeThrow(event: GrenadeThrowEvent): void {
+    const player = this.players.get(event.playerId);
+    if (!player) {
+      console.log(`[GameRoom] Grenade throw from unknown player: ${event.playerId}`);
+      return;
+    }
+
+    console.log(`[GameRoom] ${player.username} threw ${event.grenadeType} grenade`);
+
+    // Broadcast grenade throw to all clients
+    this.onBroadcast?.('grenade:throw', event);
+  }
+
+  /**
+   * Handle grenade explosion event.
+   * Calculates damage to all players in radius and broadcasts explosion.
+   */
+  handleGrenadeExplosion(event: GrenadeExplosionEvent): void {
+    const thrower = this.players.get(event.playerId);
+    if (!thrower) return;
+
+    console.log(`[GameRoom] ${thrower.username}'s ${event.grenadeType} grenade exploded`);
+
+    // Broadcast explosion to all clients (for visuals)
+    this.onBroadcast?.('grenade:explosion', event);
+
+    // Calculate damage to players
+    if (event.grenadeType === 'frag') {
+      const explosionRadius = 4;
+      const explosionDamage = 80;
+
+      this.players.forEach((victim, victimId) => {
+        if (victim.health <= 0) return; // Skip dead players
+
+        const distance = this.calculateDistance(event.position, victim.position);
+        if (distance <= explosionRadius) {
+          // Falloff damage (full at center, 0 at edge)
+          const falloff = 1 - distance / explosionRadius;
+          const damage = explosionDamage * falloff;
+
+          // Apply damage
+          this.applyDamage(victim, damage);
+
+          // Broadcast damage event
+          const damageEvent: DamageEvent = {
+            shooterId: event.playerId,
+            victimId,
+            damage,
+            wasHeadshot: false,
+            timestamp: Date.now(),
+          };
+          this.onBroadcast?.('player:damaged', damageEvent);
+
+          // Check for death
+          if (victim.health <= 0) {
+            const deathEvent: PlayerDeathEvent = {
+              victimId,
+              killerId: event.playerId,
+              timestamp: Date.now(),
+            };
+            this.onBroadcast?.('player:died', deathEvent);
+            console.log(`[GameRoom] Player ${victim.username} killed by ${thrower.username}'s grenade`);
+            this.scheduleRespawn(victimId);
+          }
+        }
+      });
+    }
+    // Gas grenades handle damage per-frame on client (based on tactical overlay)
+  }
+
+  /**
+   * Handle flashlight toggle event from client.
+   * Broadcasts to all clients so remote players see flashlight cone.
+   */
+  handleFlashlightToggle(event: FlashlightToggleEvent): void {
+    const player = this.players.get(event.playerId);
+    if (!player) return;
+
+    console.log(`[GameRoom] ${player.username} flashlight: ${event.isOn ? 'ON' : 'OFF'}`);
+
+    // Broadcast flashlight state to all clients
+    this.onBroadcast?.('flashlight:toggle', event);
+  }
+
+  /**
+   * Handle destructible prop destroyed event.
+   * Broadcasts to all clients so everyone sees the destruction.
+   */
+  handleDestructibleDestroyed(event: DestructibleDestroyedEvent): void {
+    console.log(`[GameRoom] Destructible ${event.type} destroyed at (${event.position.x}, ${event.position.y}, ${event.position.z})`);
+
+    // Broadcast destruction to all clients
+    this.onBroadcast?.('destructible:destroyed', event);
+
+    // If barrel, trigger explosion damage to players
+    if (event.type === 'barrel') {
+      const barrelExplosionRadius = 3;
+      const barrelExplosionDamage = 50;
+
+      this.players.forEach((victim, victimId) => {
+        if (victim.health <= 0) return;
+
+        const distance = this.calculateDistance(event.position, victim.position);
+        if (distance <= barrelExplosionRadius) {
+          const falloff = 1 - distance / barrelExplosionRadius;
+          const damage = barrelExplosionDamage * falloff;
+
+          this.applyDamage(victim, damage);
+
+          const damageEvent: DamageEvent = {
+            shooterId: '', // No specific shooter for barrel explosions
+            victimId,
+            damage,
+            wasHeadshot: false,
+            timestamp: Date.now(),
+          };
+          this.onBroadcast?.('player:damaged', damageEvent);
+
+          if (victim.health <= 0) {
+            const deathEvent: PlayerDeathEvent = {
+              victimId,
+              killerId: '', // Killed by environment
+              timestamp: Date.now(),
+            };
+            this.onBroadcast?.('player:died', deathEvent);
+            console.log(`[GameRoom] Player ${victim.username} killed by barrel explosion`);
+            this.scheduleRespawn(victimId);
+          }
+        }
+      });
+    }
   }
 
   /**

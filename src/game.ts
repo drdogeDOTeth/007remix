@@ -4,11 +4,13 @@ import { GameLoop } from './core/game-loop';
 import { InputManager } from './core/input-manager';
 import { PhysicsWorld } from './core/physics-world';
 import { EventBus } from './core/event-bus';
+import { globalLightPool } from './core/light-pool';
 import { FPSCamera } from './player/fps-camera';
 import { PlayerController } from './player/player-controller';
 import { WeaponManager } from './weapons/weapon-manager';
 import { ProjectileSystem } from './weapons/projectile-system';
 import { GrenadeSystem } from './weapons/grenade-system';
+import { BloodSplatterSystem } from './weapons/blood-splatter';
 import { EnemyManager } from './enemies/enemy-manager';
 import { PickupSystem } from './levels/pickup-system';
 import { DoorSystem } from './levels/door-system';
@@ -64,6 +66,7 @@ export class Game {
   private weaponManager: WeaponManager;
   private projectileSystem: ProjectileSystem;
   private grenadeSystem: GrenadeSystem;
+  private bloodSplatterSystem: BloodSplatterSystem;
   private enemyManager: EnemyManager;
   private pickupSystem: PickupSystem;
   private gasGrenadeCount = 3;
@@ -174,6 +177,9 @@ export class Game {
     this.grenadeSystem.setEnemyManager(this.enemyManager);
     this.grenadeSystem.setPlayerCollider(this.player.getCollider());
 
+    // Blood splatter system (visual effect for player hits)
+    this.bloodSplatterSystem = new BloodSplatterSystem(this.scene);
+
     // Destructible system (crates, barrels)
     this.destructibleSystem = new DestructibleSystem(this.scene, this.physics);
 
@@ -253,6 +259,18 @@ export class Game {
       this.destructibleSystem.damageInRadius(position, radius, damage);
     };
 
+    // When grenade lands: send explosion event to server in multiplayer
+    this.grenadeSystem.onGrenadeLanded = (position, type) => {
+      if (this.networkMode === 'client' && this.networkManager) {
+        this.networkManager.sendGrenadeExplosion({
+          playerId: this.networkManager.playerId!,
+          timestamp: performance.now(),
+          grenadeType: type,
+          position: { x: position.x, y: position.y, z: position.z },
+        });
+      }
+    };
+
     // When a barrel explodes: damage enemies and player in radius
     this.destructibleSystem.onBarrelExplode = (position, radius, damage) => {
       // Damage enemies
@@ -276,6 +294,21 @@ export class Game {
     // Destruction sounds
     this.destructibleSystem.onPropDestroyed = (type, _position) => {
       playDestruction(type);
+    };
+
+    // When destructible is destroyed: send event to server in multiplayer
+    this.destructibleSystem.onPropDestroyedFull = (prop) => {
+      if (this.networkMode === 'client' && this.networkManager) {
+        // Generate prop ID from position (for simplicity, in production use UUID)
+        const propId = `${prop.type}_${Math.floor(prop.position.x * 10)}_${Math.floor(prop.position.y * 10)}_${Math.floor(prop.position.z * 10)}`;
+
+        this.networkManager.sendDestructibleDestroyed({
+          propId,
+          position: { x: prop.position.x, y: prop.position.y, z: prop.position.z },
+          type: prop.type,
+          timestamp: performance.now(),
+        });
+      }
     };
 
     // Loot drops from destroyed props
@@ -334,7 +367,7 @@ export class Game {
         this.remotePlayerManager?.updateFromSnapshot(snapshot);
       };
 
-      // Handle weapon fire events (Phase 4: animations)
+      // Handle weapon fire events (Phase 4: animations + spatial audio)
       this.networkManager.onWeaponFire = (event) => {
         const isLocalPlayer = event.playerId === this.networkManager?.playerId;
 
@@ -343,6 +376,17 @@ export class Game {
           const remotePlayer = this.remotePlayerManager?.getPlayer(event.playerId);
           if (remotePlayer) {
             remotePlayer.playFireAnimation();
+
+            // Play spatial audio for remote gunshot
+            const soundPosition = remotePlayer.getPosition();
+            const listenerPosition = this.player.getPosition();
+            // Map weapon name to sound type
+            const weaponType = event.weaponType.toLowerCase().replace(/\s+/g, '-') as any;
+            (async () => {
+              const { playPositionalGunshot } = await import('./audio/sound-effects');
+              playPositionalGunshot(weaponType, soundPosition, listenerPosition);
+            })();
+
             console.log(`[Game] Remote player ${event.playerId} fired weapon`);
           }
         }
@@ -366,6 +410,21 @@ export class Game {
             this.hitMarker.showHeadshot();
           } else {
             this.hitMarker.show();
+          }
+        }
+
+        // Show blood splatter for remote player hits
+        if (!isLocalPlayer && this.remotePlayerManager) {
+          const remotePlayer = this.remotePlayerManager.getPlayer(event.victimId);
+          if (remotePlayer) {
+            const position = remotePlayer.getPosition();
+            // Get shooter direction (approximate - from shooter to victim)
+            const shooter = this.remotePlayerManager.getPlayer(event.shooterId);
+            const direction = new THREE.Vector3(0, 0, 1); // Default forward
+            if (shooter) {
+              direction.subVectors(position, shooter.getPosition()).normalize();
+            }
+            this.bloodSplatterSystem.spawn(position, direction, 8);
           }
         }
       };
@@ -426,6 +485,79 @@ export class Game {
             remotePlayer.resetAfterRespawn();
           }
           console.log(`[Game] Player ${event.playerId} respawned`);
+        }
+      };
+
+      // Handle grenade throw events (Phase 5)
+      this.networkManager.onGrenadeThrow = (event) => {
+        const isLocalPlayer = event.playerId === this.networkManager?.playerId;
+
+        // Don't throw grenade for local player (already thrown locally)
+        if (!isLocalPlayer) {
+          const origin = new THREE.Vector3(event.origin.x, event.origin.y, event.origin.z);
+          const direction = new THREE.Vector3(event.direction.x, event.direction.y, event.direction.z);
+          this.grenadeSystem.throw(origin, direction, event.grenadeType);
+          console.log(`[Game] Remote player ${event.playerId} threw ${event.grenadeType} grenade`);
+        }
+      };
+
+      // Handle grenade explosion events (Phase 5)
+      this.networkManager.onGrenadeExplosion = (event) => {
+        const isLocalPlayer = event.playerId === this.networkManager?.playerId;
+
+        // Show explosion visual for all players (server handles damage)
+        // Note: local player already spawned explosion via grenadeLanded callback
+        if (!isLocalPlayer) {
+          const position = new THREE.Vector3(event.position.x, event.position.y, event.position.z);
+          if (event.grenadeType === 'frag') {
+            this.grenadeSystem.spawnExplosion(position);
+          }
+          // Gas clouds are already spawned by grenade physics simulation
+        }
+      };
+
+      // Handle flashlight toggle events (Phase 5)
+      this.networkManager.onFlashlightToggle = (event) => {
+        const isLocalPlayer = event.playerId === this.networkManager?.playerId;
+
+        // Update remote player's flashlight
+        if (!isLocalPlayer) {
+          const remotePlayer = this.remotePlayerManager?.getPlayer(event.playerId);
+          if (remotePlayer) {
+            remotePlayer.setFlashlight(event.isOn);
+            console.log(`[Game] Remote player ${event.playerId} flashlight: ${event.isOn ? 'ON' : 'OFF'}`);
+          }
+        }
+      };
+
+      // Handle destructible destroyed events (Phase 5)
+      this.networkManager.onDestructibleDestroyed = (event) => {
+        console.log(`[Game] Remote destructible ${event.type} destroyed at (${event.position.x}, ${event.position.y}, ${event.position.z})`);
+
+        // Find and destroy the matching prop by position (within 0.5 unit tolerance)
+        if (this.level?.destructibleSystem) {
+          const destructibleSystem = this.level.destructibleSystem as any;
+          const props = destructibleSystem.props as any[];
+          const eventPos = new THREE.Vector3(event.position.x, event.position.y, event.position.z);
+
+          for (const prop of props) {
+            if (prop.health > 0 && prop.type === event.type) {
+              const distance = prop.position.distanceTo(eventPos);
+              if (distance < 0.5) {
+                // Temporarily disable callback to prevent echo loop
+                const originalCallback = destructibleSystem.onPropDestroyedFull;
+                destructibleSystem.onPropDestroyedFull = null;
+
+                // Destroy this prop
+                destructibleSystem.destroy(prop);
+                console.log(`[Game] Destroyed remote ${prop.type} at distance ${distance.toFixed(2)}`);
+
+                // Restore callback
+                destructibleSystem.onPropDestroyedFull = originalCallback;
+                break;
+              }
+            }
+          }
         }
       };
 
@@ -652,12 +784,34 @@ export class Game {
       this.fpsCamera.getLookDirection(this._throwDir);
       this.grenadeSystem.throw(this._throwOrigin, this._throwDir, 'gas');
       this.gasGrenadeCount--;
+
+      // Send grenade throw event in multiplayer
+      if (this.networkMode === 'client' && this.networkManager) {
+        this.networkManager.sendGrenadeThrow({
+          playerId: this.networkManager.playerId!,
+          timestamp: performance.now(),
+          grenadeType: 'gas',
+          origin: { x: this._throwOrigin.x, y: this._throwOrigin.y, z: this._throwOrigin.z },
+          direction: { x: this._throwDir.x, y: this._throwDir.y, z: this._throwDir.z },
+        });
+      }
     }
     if (this.input.wasKeyJustPressed('f') && this.fragGrenadeCount > 0) {
       this._throwOrigin.copy(this.fpsCamera.camera.position);
       this.fpsCamera.getLookDirection(this._throwDir);
       this.grenadeSystem.throw(this._throwOrigin, this._throwDir, 'frag');
       this.fragGrenadeCount--;
+
+      // Send grenade throw event in multiplayer
+      if (this.networkMode === 'client' && this.networkManager) {
+        this.networkManager.sendGrenadeThrow({
+          playerId: this.networkManager.playerId!,
+          timestamp: performance.now(),
+          grenadeType: 'frag',
+          origin: { x: this._throwOrigin.x, y: this._throwOrigin.y, z: this._throwOrigin.z },
+          direction: { x: this._throwDir.x, y: this._throwDir.y, z: this._throwDir.z },
+        });
+      }
     }
 
     // Update enemy manager with player state
@@ -687,6 +841,12 @@ export class Game {
     );
     this.grenadeSystem.update(dt, this.fpsCamera.camera);
 
+    // Blood splatter system: update particle effects
+    this.bloodSplatterSystem.update(dt);
+
+    // Light pool: auto-release expired pooled lights (muzzle flashes, etc.)
+    globalLightPool.update();
+
     // Destructible props: debris physics + cleanup
     this.destructibleSystem.update(dt);
 
@@ -702,6 +862,15 @@ export class Game {
     if (this.input.wasKeyJustPressed('v')) {
       this.flashlightOn = !this.flashlightOn;
       this.flashlight.intensity = this.flashlightOn ? 40 : 0;
+
+      // Send flashlight toggle event in multiplayer
+      if (this.networkMode === 'client' && this.networkManager) {
+        this.networkManager.sendFlashlightToggle({
+          playerId: this.networkManager.playerId!,
+          isOn: this.flashlightOn,
+          timestamp: performance.now(),
+        });
+      }
     }
 
     // Damage indicator
@@ -719,11 +888,24 @@ export class Game {
     this.hud.updateArmor(this.player.armor);
     this.hud.updateGrenades(this.gasGrenadeCount, this.fragGrenadeCount);
     this.hud.updateWeapon(this.weaponManager.currentWeapon);
+    // Show ping only in multiplayer
+    if (this.networkMode === 'client' && this.networkManager) {
+      this.hud.updatePing(this.networkManager.ping);
+    } else {
+      this.hud.updatePing(null);
+    }
     this.hud.update(dt);
 
     // Multiplayer: Send player state to server + update remote players
     if (this.networkMode === 'client' && this.networkManager) {
-      // Send local player state at configured rate (20Hz by default)
+      // Variable update rate: faster when moving, slower when idle (bandwidth optimization)
+      const isMoving = this.input.isKeyDown('w') || this.input.isKeyDown('a') ||
+                       this.input.isKeyDown('s') || this.input.isKeyDown('d');
+      this.networkUpdateRate = isMoving
+        ? NetworkConfig.UPDATE_RATES.PLAYER_STATE
+        : NetworkConfig.UPDATE_RATES.PLAYER_STATE_IDLE;
+
+      // Send local player state at configured rate
       const now = performance.now();
       const updateInterval = 1000 / this.networkUpdateRate;
       if (now - this.lastNetworkUpdate >= updateInterval) {
@@ -736,8 +918,7 @@ export class Game {
           armor: this.player.armor,
           currentWeapon: this.weaponManager.currentWeapon.stats.name.toLowerCase().replace(/\s+/g, '-') as any,
           crouching: this.player.isCrouching,
-          isMoving: this.input.isKeyDown('w') || this.input.isKeyDown('a') ||
-                    this.input.isKeyDown('s') || this.input.isKeyDown('d'),
+          isMoving,
           timestamp: now,
         });
         this.lastNetworkUpdate = now;

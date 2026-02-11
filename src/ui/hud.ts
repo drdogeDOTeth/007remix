@@ -7,6 +7,7 @@ export class HUD {
   private hudEl: HTMLElement;
   private armorEl: HTMLElement;
   private grenadeEl: HTMLElement;
+  private pingEl: HTMLElement;
 
   private crosshairFlashTimer = 0;
 
@@ -43,6 +44,21 @@ export class HUD {
       pointer-events: none;
     `;
     this.hudEl.appendChild(this.grenadeEl);
+
+    // Ping display (top-right corner)
+    this.pingEl = document.createElement('div');
+    this.pingEl.id = 'ping-display';
+    this.pingEl.style.cssText = `
+      position: absolute;
+      top: 20px;
+      right: 20px;
+      font-size: 14px;
+      font-family: 'Courier New', monospace;
+      color: #8f8;
+      pointer-events: none;
+      visibility: hidden;
+    `;
+    this.hudEl.appendChild(this.pingEl);
   }
 
   show(): void {
@@ -75,6 +91,27 @@ export class HUD {
   updateGrenades(gasCount: number, fragCount: number): void {
     this.grenadeEl.textContent = `G [Gas]: ${gasCount}  ·  F [Frag]: ${fragCount}`;
     this.grenadeEl.style.visibility = gasCount >= 0 || fragCount >= 0 ? 'visible' : 'hidden';
+  }
+
+  updatePing(ping: number | null): void {
+    if (ping === null || ping < 0) {
+      this.pingEl.style.visibility = 'hidden';
+      return;
+    }
+
+    this.pingEl.style.visibility = 'visible';
+    this.pingEl.textContent = `PING: ${Math.round(ping)}ms`;
+
+    // Color code based on connection quality
+    if (ping < 50) {
+      this.pingEl.style.color = '#8f8'; // Green - excellent
+    } else if (ping < 100) {
+      this.pingEl.style.color = '#ff8'; // Yellow - good
+    } else if (ping < 200) {
+      this.pingEl.style.color = '#fa8'; // Orange - fair
+    } else {
+      this.pingEl.style.color = '#f88'; // Red - poor
+    }
   }
 
   updateWeapon(weapon: WeaponBase): void {

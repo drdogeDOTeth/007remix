@@ -657,3 +657,83 @@ export function playReload(): void {
   slide.start(now + 0.95);
   slide.stop(now + 1.05);
 }
+
+/**
+ * Play a positioned gunshot sound for remote players.
+ * Uses Web Audio API's PannerNode for 3D spatial audio.
+ * @param type Weapon type
+ * @param position World position where the sound originates
+ * @param listenerPosition Camera/player position (the listener)
+ */
+export function playPositionalGunshot(
+  type: WeaponSoundType,
+  position: { x: number; y: number; z: number },
+  listenerPosition: { x: number; y: number; z: number }
+): void {
+  const ctx = getAudioCtx();
+  const now = ctx.currentTime;
+
+  // Set listener position
+  if (ctx.listener.positionX) {
+    ctx.listener.positionX.setValueAtTime(listenerPosition.x, now);
+    ctx.listener.positionY.setValueAtTime(listenerPosition.y, now);
+    ctx.listener.positionZ.setValueAtTime(listenerPosition.z, now);
+  } else {
+    // Fallback for older browsers
+    ctx.listener.setPosition(listenerPosition.x, listenerPosition.y, listenerPosition.z);
+  }
+
+  // Create panner for 3D positioning
+  const panner = ctx.createPanner();
+  panner.panningModel = 'HRTF';
+  panner.distanceModel = 'inverse';
+  panner.refDistance = 1;
+  panner.maxDistance = 100;
+  panner.rolloffFactor = 1.5;
+  panner.coneInnerAngle = 360;
+  panner.coneOuterAngle = 360;
+  panner.coneOuterGain = 0;
+
+  // Set sound source position
+  if (panner.positionX) {
+    panner.positionX.setValueAtTime(position.x, now);
+    panner.positionY.setValueAtTime(position.y, now);
+    panner.positionZ.setValueAtTime(position.z, now);
+  } else {
+    // Fallback for older browsers
+    panner.setPosition(position.x, position.y, position.z);
+  }
+
+  // Create a simple gunshot sound (simplified version)
+  // Transient crack
+  const noise = makeNoise(ctx, 0.06, 5);
+  const hp = ctx.createBiquadFilter();
+  hp.type = 'highpass';
+  hp.frequency.value = 800;
+  const crack = ctx.createGain();
+  crack.gain.setValueAtTime(0.6, now);
+  crack.gain.exponentialRampToValueAtTime(0.001, now + 0.05);
+
+  noise.connect(hp);
+  hp.connect(crack);
+  crack.connect(panner);
+  panner.connect(ctx.destination);
+  noise.start(now);
+  noise.stop(now + 0.06);
+
+  // Body thump
+  const body = makeNoise(ctx, 0.1, 3);
+  const bodyLp = ctx.createBiquadFilter();
+  bodyLp.type = 'lowpass';
+  bodyLp.frequency.setValueAtTime(400, now);
+  bodyLp.frequency.exponentialRampToValueAtTime(150, now + 0.08);
+  const bodyG = ctx.createGain();
+  bodyG.gain.setValueAtTime(0.5, now);
+  bodyG.gain.exponentialRampToValueAtTime(0.001, now + 0.1);
+
+  body.connect(bodyLp);
+  bodyLp.connect(bodyG);
+  bodyG.connect(panner);
+  body.start(now);
+  body.stop(now + 0.1);
+}

@@ -18,6 +18,7 @@ interface Snapshot {
 export class InterpolationBuffer {
   private snapshots: Snapshot[] = [];
   private interpolationDelay: number; // ms
+  private baseTime: number = 0; // Base time offset
 
   /**
    * @param interpolationDelay How far behind real-time to render (default: 100ms)
@@ -32,10 +33,13 @@ export class InterpolationBuffer {
    * @param state Player state at this timestamp
    */
   addSnapshot(timestamp: number, state: PlayerStateUpdate): void {
-    this.snapshots.push({ timestamp, state });
+    // Use local performance.now() for consistent timing
+    const localTimestamp = performance.now();
 
-    // Keep only last 5 snapshots (250ms of history)
-    if (this.snapshots.length > 5) {
+    this.snapshots.push({ timestamp: localTimestamp, state });
+
+    // Keep only last 10 snapshots (500ms of history for better interpolation)
+    if (this.snapshots.length > 10) {
       this.snapshots.shift();
     }
   }
@@ -46,9 +50,13 @@ export class InterpolationBuffer {
    * @param renderTime Current time (performance.now())
    */
   getInterpolatedState(renderTime: number): PlayerStateUpdate | null {
-    if (this.snapshots.length < 2) {
-      // Not enough snapshots yet, return latest if available
-      return this.snapshots.length > 0 ? this.snapshots[0].state : null;
+    if (this.snapshots.length === 0) {
+      return null;
+    }
+
+    if (this.snapshots.length === 1) {
+      // Only one snapshot, return it as-is
+      return this.snapshots[0].state;
     }
 
     // Target time is renderTime minus interpolation delay
@@ -69,7 +77,19 @@ export class InterpolationBuffer {
       }
     }
 
-    // If we couldn't find a bracket, use the two most recent
+    // If target time is ahead of all snapshots, extrapolate from last two
+    if (!from && !to && targetTime > this.snapshots[this.snapshots.length - 1].timestamp) {
+      from = this.snapshots[this.snapshots.length - 2];
+      to = this.snapshots[this.snapshots.length - 1];
+    }
+
+    // If target time is before all snapshots, use first two
+    if (!from && !to && targetTime < this.snapshots[0].timestamp) {
+      from = this.snapshots[0];
+      to = this.snapshots[1];
+    }
+
+    // Fallback: use two most recent
     if (!from || !to) {
       from = this.snapshots[this.snapshots.length - 2];
       to = this.snapshots[this.snapshots.length - 1];
@@ -78,7 +98,10 @@ export class InterpolationBuffer {
     // Calculate interpolation factor (0 to 1)
     const duration = to.timestamp - from.timestamp;
     const elapsed = targetTime - from.timestamp;
-    const t = duration > 0 ? Math.max(0, Math.min(1, elapsed / duration)) : 0;
+    let t = duration > 0 ? elapsed / duration : 0;
+
+    // Clamp t to prevent extrapolation artifacts
+    t = Math.max(0, Math.min(1.2, t)); // Allow slight extrapolation for smoother motion
 
     // Linearly interpolate position and rotation
     return {

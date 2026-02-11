@@ -65,6 +65,8 @@ export class GrenadeSystem {
   onPlayerInGas: ((damage: number) => void) | null = null;
   /** Called when a frag grenade explodes — for damaging destructible props, etc. (position, radius, damage) */
   onExplosion: ((position: THREE.Vector3, radius: number, damage: number) => void) | null = null;
+  /** Called when a grenade lands (for multiplayer sync). (position, type) */
+  onGrenadeLanded: ((position: THREE.Vector3, type: GrenadeType) => void) | null = null;
   private readonly _playerPos = new THREE.Vector3();
   private thrown: ThrownGrenade[] = [];
   private clouds: GasCloud[] = [];
@@ -267,6 +269,10 @@ export class GrenadeSystem {
         this.scene.remove(g.mesh);
         this.thrown.splice(i, 1);
         const impactPos = new THREE.Vector3(g.position.x, groundY + 0.1, g.position.z);
+
+        // Notify callback (for multiplayer sync)
+        this.onGrenadeLanded?.(impactPos, g.type);
+
         if (g.type === 'gas') {
           this.spawnGasCloud(impactPos);
         } else {

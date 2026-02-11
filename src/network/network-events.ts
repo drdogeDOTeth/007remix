@@ -87,6 +87,46 @@ export interface PlayerRespawnEvent {
 }
 
 /**
+ * Grenade throw event sent from client to server.
+ */
+export interface GrenadeThrowEvent {
+  playerId: string;
+  timestamp: number;
+  grenadeType: 'gas' | 'frag';
+  origin: { x: number; y: number; z: number };
+  direction: { x: number; y: number; z: number };
+}
+
+/**
+ * Grenade explosion event broadcast by server.
+ */
+export interface GrenadeExplosionEvent {
+  playerId: string; // Who threw it
+  timestamp: number;
+  grenadeType: 'gas' | 'frag';
+  position: { x: number; y: number; z: number };
+}
+
+/**
+ * Flashlight toggle event.
+ */
+export interface FlashlightToggleEvent {
+  playerId: string;
+  isOn: boolean;
+  timestamp: number;
+}
+
+/**
+ * Destructible prop destroyed event.
+ */
+export interface DestructibleDestroyedEvent {
+  propId: string; // Unique ID for the prop
+  position: { x: number; y: number; z: number };
+  type: 'crate' | 'crate_metal' | 'barrel';
+  timestamp: number;
+}
+
+/**
  * Event types for Socket.IO communication.
  */
 export enum NetworkEventType {
@@ -103,4 +143,10 @@ export enum NetworkEventType {
   PLAYER_DAMAGED = 'player:damaged',
   PLAYER_DIED = 'player:died',
   PLAYER_RESPAWNED = 'player:respawned',
+
+  // Equipment events (Phase 5)
+  GRENADE_THROW = 'grenade:throw',
+  GRENADE_EXPLOSION = 'grenade:explosion',
+  FLASHLIGHT_TOGGLE = 'flashlight:toggle',
+  DESTRUCTIBLE_DESTROYED = 'destructible:destroyed',
 }

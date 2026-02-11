@@ -10,6 +10,10 @@ import {
   DamageEvent,
   PlayerDeathEvent,
   PlayerRespawnEvent,
+  GrenadeThrowEvent,
+  GrenadeExplosionEvent,
+  FlashlightToggleEvent,
+  DestructibleDestroyedEvent,
 } from './network-events';
 
 /**
@@ -22,6 +26,12 @@ export class NetworkManager {
   private connected = false;
   private _playerId: string | null = null;
   private username: string;
+
+  // Ping tracking
+  private _ping = 0; // Current ping in milliseconds
+  private lastPingUpdate = 0; // Timestamp of last ping calculation
+  private pingSmoothing = 0.3; // Smoothing factor for ping (0-1, lower = smoother)
+  private sentTimestamps: Map<number, number> = new Map(); // Sequence -> sent timestamp
 
   /**
    * Callbacks for network events.
@@ -36,6 +46,12 @@ export class NetworkManager {
   onPlayerDied: ((event: PlayerDeathEvent) => void) | null = null;
   onPlayerRespawned: ((event: PlayerRespawnEvent) => void) | null = null;
 
+  // Equipment event callbacks (Phase 5)
+  onGrenadeThrow: ((event: GrenadeThrowEvent) => void) | null = null;
+  onGrenadeExplosion: ((event: GrenadeExplosionEvent) => void) | null = null;
+  onFlashlightToggle: ((event: FlashlightToggleEvent) => void) | null = null;
+  onDestructibleDestroyed: ((event: DestructibleDestroyedEvent) => void) | null = null;
+
   constructor(username: string = 'Player') {
     this.username = username;
   }
@@ -45,6 +61,13 @@ export class NetworkManager {
    */
   get playerId(): string | null {
     return this._playerId;
+  }
+
+  /**
+   * Get current ping in milliseconds.
+   */
+  get ping(): number {
+    return this._ping;
   }
 
   /**
@@ -110,6 +133,27 @@ export class NetworkManager {
 
       // Game state snapshot (broadcast from server)
       this.socket.on(NetworkEventType.GAME_STATE_SNAPSHOT, (snapshot: GameStateSnapshot) => {
+        // Calculate ping (roundtrip time)
+        const now = performance.now();
+        const sentTime = this.sentTimestamps.get(snapshot.timestamp);
+        if (sentTime) {
+          const rawPing = now - sentTime;
+          // Smooth ping to avoid jitter
+          this._ping = this._ping === 0
+            ? rawPing
+            : this._ping * (1 - this.pingSmoothing) + rawPing * this.pingSmoothing;
+          this.lastPingUpdate = now;
+          this.sentTimestamps.delete(snapshot.timestamp);
+        }
+
+        // Clean up old timestamps (older than 5 seconds)
+        const cutoff = now - 5000;
+        for (const [timestamp, sentTime] of this.sentTimestamps.entries()) {
+          if (sentTime < cutoff) {
+            this.sentTimestamps.delete(timestamp);
+          }
+        }
+
         this.onGameStateSnapshot?.(snapshot);
       });
 
@@ -128,6 +172,23 @@ export class NetworkManager {
 
       this.socket.on(NetworkEventType.PLAYER_RESPAWNED, (event: PlayerRespawnEvent) => {
         this.onPlayerRespawned?.(event);
+      });
+
+      // Equipment events (Phase 5)
+      this.socket.on(NetworkEventType.GRENADE_THROW, (event: GrenadeThrowEvent) => {
+        this.onGrenadeThrow?.(event);
+      });
+
+      this.socket.on(NetworkEventType.GRENADE_EXPLOSION, (event: GrenadeExplosionEvent) => {
+        this.onGrenadeExplosion?.(event);
+      });
+
+      this.socket.on(NetworkEventType.FLASHLIGHT_TOGGLE, (event: FlashlightToggleEvent) => {
+        this.onFlashlightToggle?.(event);
+      });
+
+      this.socket.on(NetworkEventType.DESTRUCTIBLE_DESTROYED, (event: DestructibleDestroyedEvent) => {
+        this.onDestructibleDestroyed?.(event);
       });
     });
   }
@@ -151,6 +212,10 @@ export class NetworkManager {
    */
   sendPlayerState(state: PlayerStateUpdate): void {
     if (!this.isConnected) return;
+    // Track send time for ping calculation
+    if (state.timestamp) {
+      this.sentTimestamps.set(state.timestamp, performance.now());
+    }
     this.socket!.emit(NetworkEventType.PLAYER_STATE_UPDATE, state);
   }
 
@@ -159,22 +224,41 @@ export class NetworkManager {
    * Server will validate hit and broadcast damage if confirmed.
    */
   sendWeaponFire(event: WeaponFireEvent): void {
-    console.log('[NetworkManager] sendWeaponFire called:', {
-      isConnected: this.isConnected,
-      socketExists: this.socket !== null,
-      connected: this.connected,
-      playerId: this._playerId,
-      hitPlayerId: event.hitPlayerId,
-    });
-
-    if (!this.isConnected) {
-      console.warn('[NetworkManager] Cannot send weapon fire - not connected');
-      return;
-    }
-
-    console.log('[NetworkManager] Emitting weapon:fire event to server');
+    if (!this.isConnected) return;
     this.socket!.emit(NetworkEventType.WEAPON_FIRE, event);
-    console.log('[NetworkManager] weapon:fire event emitted');
+  }
+
+  /**
+   * Send grenade throw event to server (Phase 5).
+   */
+  sendGrenadeThrow(event: GrenadeThrowEvent): void {
+    if (!this.isConnected) return;
+    this.socket!.emit(NetworkEventType.GRENADE_THROW, event);
+  }
+
+  /**
+   * Send grenade explosion event to server (Phase 5).
+   * Server will calculate damage to players in radius.
+   */
+  sendGrenadeExplosion(event: GrenadeExplosionEvent): void {
+    if (!this.isConnected) return;
+    this.socket!.emit(NetworkEventType.GRENADE_EXPLOSION, event);
+  }
+
+  /**
+   * Send flashlight toggle event to server (Phase 5).
+   */
+  sendFlashlightToggle(event: FlashlightToggleEvent): void {
+    if (!this.isConnected) return;
+    this.socket!.emit(NetworkEventType.FLASHLIGHT_TOGGLE, event);
+  }
+
+  /**
+   * Send destructible destroyed event to server (Phase 5).
+   */
+  sendDestructibleDestroyed(event: DestructibleDestroyedEvent): void {
+    if (!this.isConnected) return;
+    this.socket!.emit(NetworkEventType.DESTRUCTIBLE_DESTROYED, event);
   }
 
   /**
@@ -189,5 +273,9 @@ export class NetworkManager {
     this.onPlayerDamaged = null;
     this.onPlayerDied = null;
     this.onPlayerRespawned = null;
+    this.onGrenadeThrow = null;
+    this.onGrenadeExplosion = null;
+    this.onFlashlightToggle = null;
+    this.onDestructibleDestroyed = null;
   }
 }
