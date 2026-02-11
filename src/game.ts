@@ -119,6 +119,7 @@ export class Game {
   private lastNetworkUpdate = 0;
   private networkUpdateRate = NetworkConfig.UPDATE_RATES.PLAYER_STATE; // Hz
   private localPlayerKills = 0;
+  private processedDestructibleIds = new Set<string>();
 
   /** Called when all objectives are done and player reaches extraction (mission:complete). */
   onMissionComplete: (() => void) | null = null;
@@ -376,6 +377,7 @@ export class Game {
       this.networkManager.onGameStateSnapshot = (snapshot) => {
         this.remotePlayerManager?.updateFromSnapshot(snapshot);
         this.updateScoreboardFromSnapshot(snapshot);
+        this.syncDestroyedDestructibles(snapshot.destroyedDestructibles);
       };
 
       // Handle weapon fire events (Phase 4: animations + spatial audio)
@@ -459,6 +461,11 @@ export class Game {
           if (victimPlayer) {
             victimPlayer.playDeathAnimation();
           }
+        }
+
+        // Optimistic kill count update for local player (server snapshot will confirm)
+        if (event.killerId === this.networkManager?.playerId) {
+          this.localPlayerKills += 1;
         }
 
         // Add to kill feed (with weapon type from server)
@@ -553,10 +560,13 @@ export class Game {
 
       // Handle destructible destroyed events (Phase 5)
       this.networkManager.onDestructibleDestroyed = (event) => {
+        if (this.processedDestructibleIds.has(event.propId)) return;
+        this.processedDestructibleIds.add(event.propId);
+
         const destroyed = this.destructibleSystem.destroyByPositionAndType(
           event.position,
           event.type,
-          0.5,
+          1.0, // Wider tolerance for position sync
           true
         );
         if (destroyed) {
@@ -689,6 +699,18 @@ export class Game {
   /**
    * Update scoreboard from server game state snapshot (multiplayer only).
    */
+  /**
+   * Apply destroyed destructibles from server (for new joiners + sync).
+   */
+  private syncDestroyedDestructibles(destroyed?: Array<{ propId: string; position: { x: number; y: number; z: number }; type: 'crate' | 'crate_metal' | 'barrel' }>): void {
+    if (!destroyed) return;
+    for (const d of destroyed) {
+      if (this.processedDestructibleIds.has(d.propId)) continue;
+      this.processedDestructibleIds.add(d.propId);
+      this.destructibleSystem.destroyByPositionAndType(d.position, d.type, 1.0, true);
+    }
+  }
+
   private updateScoreboardFromSnapshot(snapshot: { players: Record<string, { playerId?: string; username?: string; kills?: number; deaths?: number }> }): void {
     if (!this.networkManager) return;
 

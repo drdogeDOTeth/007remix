@@ -42,11 +42,21 @@ export interface PlayerStateUpdate {
 export type WeaponType = 'pistol' | 'rifle' | 'shotgun' | 'sniper';
 
 /**
+ * Destructible prop destroyed record (for sync).
+ */
+export interface DestroyedDestructible {
+  propId: string;
+  position: { x: number; y: number; z: number };
+  type: 'crate' | 'crate_metal' | 'barrel';
+}
+
+/**
  * Full game state snapshot broadcast from server to all clients (20Hz).
  */
 export interface GameStateSnapshot {
   timestamp: number;
   players: Record<string, PlayerStateUpdate>;
+  destroyedDestructibles?: DestroyedDestructible[]; // For new joiners + sync
 }
 
 /**

@@ -259,14 +259,14 @@ export function animatePlayerMovement(model: THREE.Group, time: number, isMoving
   if (!hips) return;
 
   // Get body parts for animation
-  // Order: torso, head, leftEye, rightEye, leftArm, rightArm, leftHand, rightHand, leftUpperLeg, rightUpperLeg, weapon
-  const leftArm = hips.children[4];
-  const rightArm = hips.children[5];
-  const leftUpperLeg = hips.children[8] as THREE.Group;
-  const rightUpperLeg = hips.children[9] as THREE.Group;
+  // Order: 0=torso, 1=vest, 2=head, 3=leftEye, 4=rightEye, 5=leftArm, 6=rightArm, 7=leftUpperLeg, 8=rightUpperLeg
+  const leftArm = hips.children[5];
+  const rightArm = hips.children[6];
+  const leftUpperLeg = hips.children[7] as THREE.Group;
+  const rightUpperLeg = hips.children[8] as THREE.Group;
 
-  // Get lower legs (knee joints) from inside upper legs
-  const leftLowerLeg = leftUpperLeg?.children[1] as THREE.Group; // Second child after thigh mesh
+  // Get lower legs (knee joints) from inside upper legs: 0=thigh mesh, 1=lowerLeg group
+  const leftLowerLeg = leftUpperLeg?.children[1] as THREE.Group;
   const rightLowerLeg = rightUpperLeg?.children[1] as THREE.Group;
 
   if (isMoving) {

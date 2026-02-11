@@ -32,6 +32,10 @@ export class GameRoom {
   private readonly KILLS_TO_WIN = 25;
   private gameOver = false;
 
+  // Destructible sync: track all destroyed props for new joiners
+  private destroyedDestructibles: Array<{ propId: string; position: { x: number; y: number; z: number }; type: 'crate' | 'crate_metal' | 'barrel' }> = [];
+  private destroyedPropIds = new Set<string>();
+
   /**
    * Spawn points for players (random selection).
    * TODO: Load from level data.
@@ -136,11 +140,24 @@ export class GameRoom {
 
   /**
    * Get all player states (for broadcasting).
+   * Explicitly serialize to ensure kills/deaths are included over the wire.
    */
-  getAllPlayerStates(): Record<string, ServerPlayerState> {
-    const states: Record<string, ServerPlayerState> = {};
+  getAllPlayerStates(): Record<string, Record<string, unknown>> {
+    const states: Record<string, Record<string, unknown>> = {};
     this.players.forEach((player, id) => {
-      states[id] = player;
+      states[id] = {
+        playerId: player.id,
+        username: player.username,
+        position: player.position,
+        rotation: player.rotation,
+        health: player.health,
+        armor: player.armor,
+        currentWeapon: player.currentWeapon,
+        crouching: player.crouching,
+        isMoving: player.isMoving,
+        kills: player.kills,
+        deaths: player.deaths,
+      };
     });
     return states;
   }
@@ -395,6 +412,7 @@ export class GameRoom {
         const snapshot = {
           timestamp: Date.now(),
           players: this.getAllPlayerStates(),
+          destroyedDestructibles: this.destroyedDestructibles, // Sync for new joiners
         };
         this.onBroadcast('game:state:snapshot', snapshot);
       }
@@ -510,6 +528,16 @@ export class GameRoom {
    * Broadcasts to all clients so everyone sees the destruction.
    */
   handleDestructibleDestroyed(event: DestructibleDestroyedEvent): void {
+    // Dedupe: ignore if we've already processed this prop
+    if (this.destroyedPropIds.has(event.propId)) return;
+    this.destroyedPropIds.add(event.propId);
+
+    this.destroyedDestructibles.push({
+      propId: event.propId,
+      position: event.position,
+      type: event.type,
+    });
+
     console.log(`[GameRoom] Destructible ${event.type} destroyed at (${event.position.x}, ${event.position.y}, ${event.position.z})`);
 
     // Broadcast destruction to all clients
@@ -574,5 +602,7 @@ export class GameRoom {
 
     this.gameOver = false;
     this.players.clear();
+    this.destroyedDestructibles = [];
+    this.destroyedPropIds.clear();
   }
 }
