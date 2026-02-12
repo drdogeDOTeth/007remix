@@ -3,13 +3,20 @@
  * Same interface as EnemyModel: mesh, shadowMesh, update(), play(), triggerHitFlash().
  * Uses animation clips when present; otherwise stays in default pose.
  * Uses SkeletonUtils.clone for proper per-instance skeleton (required for animation).
+ * For VRM: copies normalized→raw each frame so animations apply to the mesh.
  */
 
 import * as THREE from 'three';
 import { clone as cloneSkinned } from 'three/examples/jsm/utils/SkeletonUtils.js';
+import { VRMHumanBoneList } from '@pixiv/three-vrm';
 import type { LoadedCharacter } from '../../core/model-loader';
+import type { VRM } from '@pixiv/three-vrm';
+import { isLoadedVRM } from '../../core/model-loader';
+import { solveTwoBoneIK } from '../../core/two-bone-ik';
 
 const TARGET_HEIGHT = 1.7;
+/** How far to sink the model (meters) during death — pose JSON has no position data */
+const DEATH_SINK = 0.9;
 
 function getSceneAndAnimations(char: LoadedCharacter): { scene: THREE.Group; animations: THREE.AnimationClip[] } {
   return { scene: char.scene, animations: char.animations };
@@ -48,6 +55,91 @@ function findSkinnedMesh(obj: THREE.Object3D): THREE.SkinnedMesh | null {
   return null;
 }
 
+/** VRM normalized→raw copy params (from VRMHumanoidRig internals). */
+type VRMCopyParams = {
+  bones: { boneName: string; rawName: string; normName: string; parentWorldRot: THREE.Quaternion; boneRot: THREE.Quaternion }[];
+};
+
+function buildVRMCopyParams(vrm: VRM): VRMCopyParams | null {
+  const humanoid = vrm.humanoid;
+  if (!humanoid) return null;
+  const rig = (humanoid as { _normalizedHumanBones?: { _parentWorldRotations?: Record<string, THREE.Quaternion>; _boneRotations?: Record<string, THREE.Quaternion> } })._normalizedHumanBones;
+  if (!rig?._parentWorldRotations || !rig?._boneRotations) return null;
+
+  const bones: VRMCopyParams['bones'] = [];
+  for (const boneName of VRMHumanBoneList) {
+    const rawNode = humanoid.getRawBoneNode(boneName as never);
+    const normNode = humanoid.getNormalizedBoneNode(boneName as never);
+    const parentWorldRot = rig._parentWorldRotations[boneName];
+    const boneRot = rig._boneRotations[boneName];
+    if (rawNode && normNode && parentWorldRot && boneRot)
+      bones.push({ boneName, rawName: rawNode.name, normName: normNode.name, parentWorldRot: parentWorldRot.clone(), boneRot: boneRot.clone() });
+  }
+  return { bones };
+}
+
+const _copyQ = new THREE.Quaternion();
+const _copyV = new THREE.Vector3();
+const _copyM = new THREE.Matrix4();
+
+function copyNormalizedToRaw(mesh: THREE.Object3D, params: VRMCopyParams, copyHipsPosition: boolean): void {
+  for (const { boneName, rawName, normName, parentWorldRot, boneRot } of params.bones) {
+    const rawNode = mesh.getObjectByName(rawName);
+    const normNode = mesh.getObjectByName(normName);
+    if (!rawNode || !normNode) continue;
+
+    _copyQ.copy(parentWorldRot).invert();
+    rawNode.quaternion.copy(normNode.quaternion).multiply(parentWorldRot).premultiply(_copyQ).multiply(boneRot);
+
+    // Hips position copy only for death/hit — body collapses to ground. Skip for walk (causes invisibility).
+    if (copyHipsPosition && boneName === 'hips' && rawNode.parent) {
+      normNode.getWorldPosition(_copyV);
+      rawNode.parent.updateWorldMatrix(true, false);
+      rawNode.position.copy(_copyV.applyMatrix4(_copyM.copy(rawNode.parent.matrixWorld).invert()));
+    }
+  }
+}
+
+/** Leg chain for foot IK: upper, lower, foot raw bone names */
+type FootIKParams = { left: [string, string, string]; right: [string, string, string] };
+
+function buildFootIKParams(vrm: VRM): FootIKParams | null {
+  const humanoid = vrm.humanoid;
+  if (!humanoid) return null;
+  const leftUpper = humanoid.getRawBoneNode('leftUpperLeg' as never);
+  const leftLower = humanoid.getRawBoneNode('leftLowerLeg' as never);
+  const leftFoot = humanoid.getRawBoneNode('leftFoot' as never);
+  const rightUpper = humanoid.getRawBoneNode('rightUpperLeg' as never);
+  const rightLower = humanoid.getRawBoneNode('rightLowerLeg' as never);
+  const rightFoot = humanoid.getRawBoneNode('rightFoot' as never);
+  if (!leftUpper || !leftLower || !leftFoot || !rightUpper || !rightLower || !rightFoot) return null;
+  return {
+    left: [leftUpper.name, leftLower.name, leftFoot.name],
+    right: [rightUpper.name, rightLower.name, rightFoot.name],
+  };
+}
+
+const _posA = new THREE.Vector3();
+const _posB = new THREE.Vector3();
+const _posC = new THREE.Vector3();
+const _posT = new THREE.Vector3();
+const _floorY = new THREE.Vector3();
+
+function applyFootIK(mesh: THREE.Object3D, ik: FootIKParams, floorY: number): void {
+  mesh.updateMatrixWorld(true);
+  for (const [upperName, lowerName, footName] of [ik.left, ik.right]) {
+    const upper = mesh.getObjectByName(upperName);
+    const lower = mesh.getObjectByName(lowerName);
+    const foot = mesh.getObjectByName(footName);
+    if (!upper || !lower || !foot) continue;
+    upper.getWorldPosition(_posA);
+    lower.getWorldPosition(_posB);
+    foot.getWorldPosition(_posC);
+    _posT.set(_posC.x, floorY, _posC.z);
+    solveTwoBoneIK(_posA, _posB, _posC, _posT, upper, lower);
+  }
+}
+
 export class EnemyCustomModel {
   readonly mesh: THREE.Group;
   readonly shadowMesh: THREE.Mesh;
@@ -57,9 +149,16 @@ export class EnemyCustomModel {
   private mixer: THREE.AnimationMixer | null = null;
   private clipMap = new Map<string, { clip: THREE.AnimationClip; duration: number }>();
   private currentAction: THREE.AnimationAction | null = null;
+  private vrmCopyParams: VRMCopyParams | null = null;
+  private footIKParams: FootIKParams | null = null;
+  private meshBaseY = 0;
 
   constructor(char: LoadedCharacter) {
     const { scene, animations } = getSceneAndAnimations(char);
+    if (isLoadedVRM(char)) {
+      this.vrmCopyParams = buildVRMCopyParams(char.vrm);
+      this.footIKParams = buildFootIKParams(char.vrm);
+    }
     try {
       this.mesh = cloneSkinned(scene) as THREE.Group;
     } catch {
@@ -78,7 +177,8 @@ export class EnemyCustomModel {
     const center = box.getCenter(new THREE.Vector3());
     const scale = TARGET_HEIGHT / Math.max(size.y, 0.01);
     this.mesh.scale.setScalar(scale);
-    this.mesh.position.set(-center.x * scale, -box.min.y * scale, -center.z * scale);
+    this.meshBaseY = -box.min.y * scale;
+    this.mesh.position.set(-center.x * scale, this.meshBaseY, -center.z * scale);
 
     collectMeshes(this.mesh, this.hitFlashMeshes);
     for (const m of this.hitFlashMeshes) {
@@ -89,9 +189,9 @@ export class EnemyCustomModel {
     }
 
     if (animations?.length) {
-      const skinnedMesh = findSkinnedMesh(this.mesh);
-      const mixerRoot = skinnedMesh ?? this.mesh;
-      this.mixer = new THREE.AnimationMixer(mixerRoot);
+      // Use full scene root as mixer root so PropertyBinding can find all nodes.
+      // VRM normalized bones (Normalized_Hips, etc.) live in a separate hierarchy from the SkinnedMesh.
+      this.mixer = new THREE.AnimationMixer(this.mesh);
       const first = animations[0];
       const fallback = { clip: first, duration: first.duration };
       for (const clip of animations) {
@@ -126,6 +226,31 @@ export class EnemyCustomModel {
   update(dt: number): void {
     if (this.mixer) {
       this.mixer.update(dt);
+      if (this.vrmCopyParams) {
+        const clipName = this.currentAction?.getClip().name?.toLowerCase() ?? '';
+        const copyHips = clipName === 'death' || clipName === 'hit';
+        copyNormalizedToRaw(this.mesh, this.vrmCopyParams, copyHips);
+      }
+      // Death sink: pose JSON has no position data — procedurally sink the model
+      const clipName = this.currentAction?.getClip().name?.toLowerCase() ?? '';
+      if (clipName === 'death') {
+        const action = this.currentAction!;
+        const clip = action.getClip();
+        const duration = clip.duration;
+        const t = duration > 0 ? Math.min(1, action.time / duration) : 1;
+        // Sink completes in 55% of clip; ease-out cubic for natural drop-then-settle
+        const tSink = Math.min(1, t / 0.55);
+        const progress = 1 - Math.pow(1 - tSink, 3);
+        this.mesh.position.y = this.meshBaseY - DEATH_SINK * progress;
+        // Foot IK: plant feet on ground during death collapse
+        if (this.footIKParams) {
+          const ref = this.mesh.parent?.getWorldPosition(_floorY) ?? this.mesh.getWorldPosition(_floorY);
+          const floorY = ref.y - 0.02;
+          applyFootIK(this.mesh, this.footIKParams, floorY);
+        }
+      } else {
+        this.mesh.position.y = this.meshBaseY;
+      }
     }
     if (this.hitTintTimer > 0) {
       this.hitTintTimer -= dt;
@@ -156,7 +281,8 @@ export class EnemyCustomModel {
       entry = this.clipMap.get(key === 'alert' ? 'shoot' : key === 'shoot' ? 'attack' : key);
     }
     if (!entry) return;
-    if (this.currentAction?.getClip().name === entry.clip.name && !force) return;
+    // Compare by clip identity, not name — Mixamo exports often use "mixamo.com" for all clips
+    if (this.currentAction?.getClip() === entry.clip && !force) return;
     this.currentAction?.stop();
     this.currentAction = this.mixer.clipAction(entry.clip);
     this.currentAction.reset();
