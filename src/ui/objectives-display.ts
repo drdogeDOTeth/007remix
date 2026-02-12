@@ -1,4 +1,4 @@
-import type { ObjectiveState } from '../levels/objective-system';
+import type { ObjectiveState } from '../levels/systems/objective-system';
 
 /**
  * HUD panel showing current mission objectives with checkmarks when complete.

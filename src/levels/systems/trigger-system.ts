@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import type { TriggerDef } from './level-schema';
+import type { TriggerDef } from '../types/level-schema';
 import type { ObjectiveSystem } from './objective-system';
 
 interface TriggerState {

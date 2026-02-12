@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { bloodSplatterTexture } from '../levels/procedural-textures';
+import { bloodSplatterTexture } from '../levels/utils/procedural-textures';
 
 /**
  * Blood splatter particle system for player/enemy hits.

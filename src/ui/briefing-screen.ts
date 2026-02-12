@@ -1,4 +1,4 @@
-import type { LevelSchema } from '../levels/level-schema';
+import type { LevelSchema } from '../levels/types/level-schema';
 
 /**
  * Mission briefing overlay: level name, description, objectives, Start mission button.
