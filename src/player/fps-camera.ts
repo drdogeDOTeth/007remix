@@ -15,7 +15,7 @@ export class FPSCamera {
     this.camera = new THREE.PerspectiveCamera(
       DEFAULT_FOV,
       window.innerWidth / window.innerHeight,
-      0.1,
+      0.05,
       200,
     );
     window.addEventListener('resize', this.onResize);

@@ -1,4 +1,4 @@
-import type { ObjectiveDef } from './level-schema';
+import type { ObjectiveDef } from '../types/level-schema';
 
 export interface ObjectiveState {
   id: string;

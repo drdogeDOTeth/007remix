@@ -24,7 +24,19 @@
       position: fixed;
       top: 0;
       left: 0;
-      z-index: 2;
+      z-index: 5; /* Higher than CCTV, only visible during gameplay */
+      display: none; /* Hidden by default until game starts */
+    }
+    #cctv-render-canvas {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      z-index: 1; /* Background layer */
+      display: block;
+      object-fit: cover;
+      pointer-events: none; /* Allow clicks to pass through */
     }
     #hud {
       position: absolute;
@@ -35,7 +47,7 @@
       pointer-events: none;
       font-family: 'Courier New', monospace;
       color: #fff;
-      z-index: 3;
+      z-index: 10;
     }
     #crosshair {
       position: absolute;
@@ -73,16 +85,11 @@
       color: #d4af37;
       font-family: 'Courier New', monospace;
       cursor: pointer;
-      z-index: 10;
+      z-index: 15; /* Above CCTV and game canvas */
+      pointer-events: auto; /* Allow button clicks */
     }
-    #cctv-render-canvas {
-      position: fixed;
-      top: 0;
-      left: 0;
-      width: 100%;
-      height: 100%;
-      z-index: 1;
-      object-fit: cover;
+    #start-screen * {
+      pointer-events: auto; /* Ensure all children (buttons) are clickable */
     }
     #start-screen .brand-text {
       font-family: 'Courier New', monospace;
@@ -299,6 +306,7 @@
     <div class="menu">
       <button type="button" id="btn-quick-play">QUICK PLAY</button>
       <button type="button" id="btn-mission">MISSION — FACILITY</button>
+      <button type="button" id="btn-random-level">RANDOM LEVEL</button>
       <button type="button" id="btn-multiplayer">MULTIPLAYER — DEATHMATCH</button>
       <button type="button" id="btn-models">CUSTOM MODELS</button>
       <button type="button" id="btn-settings">SETTINGS</button>
@@ -308,6 +316,10 @@
   <div id="mission-complete">
     <h2>MISSION COMPLETE</h2>
     <p>Objective achieved. Good work, 007.</p>
+    <div style="margin-top: 20px; display: flex; gap: 15px; justify-content: center;">
+      <button type="button" id="btn-next-level" style="padding: 10px 25px; font-family: 'Courier New', monospace; letter-spacing: 2px; background: #d4af37; color: #000; border: none; cursor: pointer;">NEXT LEVEL</button>
+      <button type="button" id="btn-return-menu" style="padding: 10px 25px; font-family: 'Courier New', monospace; letter-spacing: 2px; background: transparent; color: #d4af37; border: 2px solid #d4af37; cursor: pointer;">RETURN TO MENU</button>
+    </div>
   </div>
 
   <script type="module" src="/src/main.ts"></script>
