@@ -62,7 +62,7 @@ export class BloodOverlay {
     this.splats.push({
       x,
       y,
-      size: 25 + Math.random() * 20,
+      size: 55 + Math.random() * 50, // Increased to 55-105px
       life: 0,
       maxLife: 1 + Math.random() * 0.5,
       rotation: Math.random() * Math.PI * 2,
@@ -91,25 +91,144 @@ export class BloodOverlay {
       this.ctx.translate(s.x, s.y);
       this.ctx.rotate(s.rotation);
 
-      // Main splat — dark red ellipse
-      this.ctx.fillStyle = `rgba(90, 15, 12, ${opacity})`;
-      this.ctx.beginPath();
-      this.ctx.ellipse(0, 0, s.size * 0.9, s.size * 1.1, 0, 0, Math.PI * 2);
-      this.ctx.fill();
+      // Determine pattern variant based on splat properties
+      const variant = Math.floor(s.size * 7.3) % 3;
 
-      // Mid red
-      this.ctx.fillStyle = `rgba(150, 30, 25, ${opacity})`;
-      this.ctx.beginPath();
-      this.ctx.ellipse(0, 0, s.size * 0.6, s.size * 0.7, 0, 0, Math.PI * 2);
-      this.ctx.fill();
-
-      // Bright core
-      this.ctx.fillStyle = `rgba(220, 50, 45, ${opacity})`;
-      this.ctx.beginPath();
-      this.ctx.ellipse(0, 0, s.size * 0.3, s.size * 0.35, 0, 0, Math.PI * 2);
-      this.ctx.fill();
+      if (variant === 0) {
+        // Impact crater pattern
+        this.drawImpactPattern(s, opacity);
+      } else if (variant === 1) {
+        // Arterial spray pattern
+        this.drawSprayPattern(s, opacity);
+      } else {
+        // Classic splatter
+        this.drawClassicPattern(s, opacity);
+      }
 
       this.ctx.restore();
+    }
+  }
+
+  /** Impact crater — dense center with radiating droplets */
+  private drawImpactPattern(s: BloodSplat, opacity: number): void {
+    // Dark outer edge
+    this.ctx.fillStyle = `rgba(50, 8, 6, ${opacity})`;
+    this.ctx.beginPath();
+    this.ctx.arc(0, 0, s.size, 0, Math.PI * 2);
+    this.ctx.fill();
+
+    // Mid layer
+    this.ctx.fillStyle = `rgba(100, 20, 17, ${opacity})`;
+    this.ctx.beginPath();
+    this.ctx.arc(0, 0, s.size * 0.75, 0, Math.PI * 2);
+    this.ctx.fill();
+
+    // Bright center
+    this.ctx.fillStyle = `rgba(190, 40, 35, ${opacity})`;
+    this.ctx.beginPath();
+    this.ctx.arc(0, 0, s.size * 0.4, 0, Math.PI * 2);
+    this.ctx.fill();
+
+    // Radiating droplets
+    const droplets = 8 + Math.floor(s.size * 0.3);
+    for (let i = 0; i < droplets; i++) {
+      const angle = (i / droplets) * Math.PI * 2 + s.rotation * 0.5;
+      const dist = s.size * (1.1 + Math.sin(i * 2.7) * 0.3);
+      const dx = Math.cos(angle) * dist;
+      const dy = Math.sin(angle) * dist;
+      const r = s.size * (0.08 + Math.cos(i * 1.9) * 0.04);
+
+      this.ctx.fillStyle = `rgba(80, 16, 14, ${opacity * 0.8})`;
+      this.ctx.beginPath();
+      this.ctx.arc(dx, dy, r, 0, Math.PI * 2);
+      this.ctx.fill();
+    }
+  }
+
+  /** Arterial spray — directional streaks */
+  private drawSprayPattern(s: BloodSplat, opacity: number): void {
+    // Small impact point
+    this.ctx.fillStyle = `rgba(60, 10, 8, ${opacity})`;
+    this.ctx.beginPath();
+    this.ctx.arc(0, 0, s.size * 0.4, 0, Math.PI * 2);
+    this.ctx.fill();
+
+    this.ctx.fillStyle = `rgba(180, 35, 30, ${opacity})`;
+    this.ctx.beginPath();
+    this.ctx.arc(0, 0, s.size * 0.2, 0, Math.PI * 2);
+    this.ctx.fill();
+
+    // Directional streaks
+    const streakCount = 10 + Math.floor(s.size * 0.4);
+    const sprayAngle = s.rotation;
+    const fanSpread = Math.PI * 0.35;
+
+    for (let i = 0; i < streakCount; i++) {
+      const angleOffset = (Math.sin(i * 2.1) * 0.5) * fanSpread;
+      const angle = sprayAngle + angleOffset;
+      const len = s.size * (0.8 + Math.cos(i * 1.7) * 0.6);
+      const width = s.size * (0.05 + Math.sin(i * 3.3) * 0.03);
+
+      this.ctx.save();
+      this.ctx.translate(Math.cos(angle) * len * 0.5, Math.sin(angle) * len * 0.5);
+      this.ctx.rotate(angle);
+      this.ctx.fillStyle = `rgba(100, 22, 19, ${opacity * 0.85})`;
+      this.ctx.fillRect(-width / 2, -len / 2, width, len);
+      this.ctx.restore();
+    }
+  }
+
+  /** Classic splatter — elliptical with drips */
+  private drawClassicPattern(s: BloodSplat, opacity: number): void {
+    const rx = s.size * 0.95;
+    const ry = s.size * 1.15;
+
+    // Dark outer edge
+    this.ctx.fillStyle = `rgba(55, 9, 7, ${opacity})`;
+    this.ctx.beginPath();
+    this.ctx.ellipse(0, 0, rx, ry, 0, 0, Math.PI * 2);
+    this.ctx.fill();
+
+    // Mid layer
+    this.ctx.fillStyle = `rgba(120, 24, 20, ${opacity})`;
+    this.ctx.beginPath();
+    this.ctx.ellipse(0, 0, rx * 0.7, ry * 0.75, 0, 0, Math.PI * 2);
+    this.ctx.fill();
+
+    // Bright center
+    this.ctx.fillStyle = `rgba(200, 42, 37, ${opacity})`;
+    this.ctx.beginPath();
+    this.ctx.ellipse(0, 0, rx * 0.35, ry * 0.4, 0, 0, Math.PI * 2);
+    this.ctx.fill();
+
+    // Drip trails
+    const dripCount = 3 + Math.floor(s.size * 0.1);
+    for (let i = 0; i < dripCount; i++) {
+      const angle = Math.PI * 0.5 + (Math.sin(i * 2.5) - 0.5) * 0.4;
+      const len = ry * (0.5 + Math.cos(i * 1.8) * 0.4);
+      const width = s.size * (0.08 + Math.sin(i * 3.1) * 0.04);
+
+      this.ctx.save();
+      this.ctx.translate(Math.cos(angle) * len * 0.5, Math.sin(angle) * len * 0.5);
+      this.ctx.rotate(angle);
+      this.ctx.fillStyle = `rgba(85, 18, 15, ${opacity * 0.9})`;
+      this.ctx.fillRect(-width / 2, -len / 2, width, len);
+      this.ctx.restore();
+    }
+
+    // Speckles
+    const speckCount = 4 + Math.floor(s.size * 0.15);
+    for (let i = 0; i < speckCount; i++) {
+      const angle = (i / speckCount) * Math.PI * 2 + s.rotation;
+      const dist = s.size * (0.7 + Math.sin(i * 3.7) * 0.3);
+      const dx = Math.cos(angle) * dist;
+      const dy = Math.sin(angle) * dist;
+      const r = s.size * (0.06 + Math.cos(i * 2.9) * 0.03);
+
+      this.ctx.fillStyle = `rgba(70, 14, 12, ${opacity * 0.75})`;
+      this.ctx.beginPath();
+      this.ctx.arc(dx, dy, r, 0, Math.PI * 2);
+      this.ctx.fill();
     }
   }
 
