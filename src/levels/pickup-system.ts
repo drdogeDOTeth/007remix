@@ -38,9 +38,17 @@ const WEAPON_GLOW_COLORS: Record<string, number> = {
   'weapon-sniper': 0x4488ff,
 };
 
+/** Set to true (e.g. via console) to log timing for first weapon pickup / barrel. */
+declare global {
+  interface Window {
+    LAG_DEBUG?: boolean;
+  }
+}
+
 export class PickupSystem {
   private pickups: Pickup[] = [];
   private scene: THREE.Scene;
+  private hasLoggedFirstWeaponPickup = false;
 
   onPickupCollected: ((type: PickupType, amount: number, keyId?: string) => void) | null = null;
 
@@ -72,7 +80,12 @@ export class PickupSystem {
     if (isWeapon && this.weaponModelBuilder) {
       // Build actual 3D weapon model for ground pickup
       const weaponType = type.replace('weapon-', '');
+      const tBuild = typeof performance !== 'undefined' ? performance.now() : 0;
       const weaponMesh = this.weaponModelBuilder(weaponType);
+      const tBuildEnd = typeof performance !== 'undefined' ? performance.now() : 0;
+      if (window.LAG_DEBUG && tBuildEnd > tBuild) {
+        console.log(`[LAG] Weapon spawn build (${type}): ${(tBuildEnd - tBuild).toFixed(1)}ms`);
+      }
       // Scale for ground pickup display
       weaponMesh.scale.setScalar(1.0);
       weaponMesh.rotation.x = -Math.PI / 14; // slight forward tilt
@@ -100,7 +113,23 @@ export class PickupSystem {
     });
   }
 
+  private pendingRemovals: Pickup[] = [];
+
   update(dt: number, playerPos: THREE.Vector3): void {
+    // Process at most 1 removal per frame (spreads scene graph + dispose cost)
+    if (this.pendingRemovals.length > 0) {
+      const p = this.pendingRemovals.shift()!;
+      const isWeapon = p.type.startsWith('weapon-');
+      const t0 = typeof performance !== 'undefined' ? performance.now() : 0;
+      if (p.light) p.light.dispose();
+      const t1 = typeof performance !== 'undefined' ? performance.now() : 0;
+      this.scene.remove(p.mesh);
+      const t2 = typeof performance !== 'undefined' ? performance.now() : 0;
+      if (isWeapon && window.LAG_DEBUG) {
+        console.log(`[LAG] Pickup removal: light.dispose ${(t1 - t0).toFixed(1)}ms, scene.remove ${(t2 - t1).toFixed(1)}ms`);
+      }
+    }
+
     for (const pickup of this.pickups) {
       if (pickup.collected) continue;
 
@@ -117,10 +146,19 @@ export class PickupSystem {
       // Check collection distance
       const dist = playerPos.distanceTo(pickup.mesh.position);
       if (dist < COLLECT_RADIUS) {
+        const isWeapon = pickup.type.startsWith('weapon-');
+        const t0 = typeof performance !== 'undefined' ? performance.now() : 0;
         pickup.collected = true;
-        if (pickup.light) pickup.light.dispose();
-        this.scene.remove(pickup.mesh);
+        pickup.mesh.visible = false;
+        this.pendingRemovals.push(pickup);
+        const t1 = typeof performance !== 'undefined' ? performance.now() : 0;
         this.onPickupCollected?.(pickup.type, pickup.amount, pickup.keyId);
+        const t2 = typeof performance !== 'undefined' ? performance.now() : 0;
+        if (isWeapon && (window.LAG_DEBUG || !this.hasLoggedFirstWeaponPickup)) {
+          if (!window.LAG_DEBUG) this.hasLoggedFirstWeaponPickup = true;
+          const label = window.LAG_DEBUG ? 'Weapon pickup' : 'First weapon pickup';
+          console.log(`[LAG] ${label} (${pickup.type}): collect+hide ${(t1 - t0).toFixed(1)}ms, onPickupCollected ${(t2 - t1).toFixed(1)}ms (scene.remove happens next frame)`);
+        }
       }
     }
   }

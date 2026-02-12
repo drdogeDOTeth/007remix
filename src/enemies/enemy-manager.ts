@@ -131,6 +131,10 @@ export class EnemyManager {
       this.physics,
       this.playerIsMoving,
       this.playerFiredRecently,
+      this._aimHead,
+      this._perceiveToPlayer,
+      this._perceiveDirToPlayer,
+      this._perceiveForward,
     );
   }
 
@@ -163,27 +167,25 @@ export class EnemyManager {
 
   /** Fire at the player from an enemy (called by attack state) */
   enemyFireAtPlayer(enemy: EnemyBase): void {
-    const enemyPos = enemy.getHeadPosition();
-    const dir = new THREE.Vector3()
-      .subVectors(this.playerPos, enemyPos)
-      .normalize();
+    enemy.getHeadPosition(this._aimHead);
+    this._fireDir.subVectors(this.playerPos, this._aimHead).normalize();
 
     // Apply accuracy spread
-    dir.x += (Math.random() - 0.5) * enemy.accuracy;
-    dir.y += (Math.random() - 0.5) * enemy.accuracy * 0.5;
-    dir.z += (Math.random() - 0.5) * enemy.accuracy;
-    dir.normalize();
+    this._fireDir.x += (Math.random() - 0.5) * enemy.accuracy;
+    this._fireDir.y += (Math.random() - 0.5) * enemy.accuracy * 0.5;
+    this._fireDir.z += (Math.random() - 0.5) * enemy.accuracy;
+    this._fireDir.normalize();
 
     // Raycast to see if bullet hits player
     const hit = this.physics.castRay(
-      enemyPos.x, enemyPos.y, enemyPos.z,
-      dir.x, dir.y, dir.z,
+      this._aimHead.x, this._aimHead.y, this._aimHead.z,
+      this._fireDir.x, this._fireDir.y, this._fireDir.z,
       30,
       enemy.collider,
     );
 
     // Visual: muzzle flash on enemy
-    this.flashEnemyMuzzle(enemyPos);
+    this.flashEnemyMuzzle(this._aimHead);
 
     // Audio (quieter than player gunshot)
     playGunshot();
@@ -191,7 +193,7 @@ export class EnemyManager {
     if (hit) {
       // Check if the hit collider is the player's
       if (hit.collider.handle === this.playerCollider.handle) {
-        this.onPlayerHit?.(enemy.damage, enemyPos);
+        this.onPlayerHit?.(enemy.damage, this._aimHead);
       }
     }
   }
@@ -214,21 +216,21 @@ export class EnemyManager {
     maxAngleRad: number,
     maxDist: number,
   ): { target: THREE.Vector3; angleOff: number; dist: number } | null {
-    const toTarget = new THREE.Vector3();
     let best: { target: THREE.Vector3; angleOff: number; dist: number } | null = null;
 
     for (const enemy of this.enemies) {
       if (enemy.dead) continue;
-      const aimPoint = enemy.getHeadPosition();
-      toTarget.subVectors(aimPoint, cameraPos);
-      const dist = toTarget.length();
+      enemy.getHeadPosition(this._aimHead);
+      this._aimToTarget.subVectors(this._aimHead, cameraPos);
+      const dist = this._aimToTarget.length();
       if (dist > maxDist || dist < 0.5) continue;
-      toTarget.divideScalar(dist);
-      const dot = lookDir.dot(toTarget);
+      this._aimToTarget.divideScalar(dist);
+      const dot = lookDir.dot(this._aimToTarget);
       const angleOff = Math.acos(Math.max(-1, Math.min(1, dot)));
       if (angleOff > maxAngleRad) continue;
       if (!best || angleOff < best.angleOff) {
-        best = { target: aimPoint, angleOff, dist };
+        this._aimBestTarget.copy(this._aimHead);
+        best = { target: this._aimBestTarget, angleOff, dist };
       }
     }
     return best;
@@ -262,6 +264,13 @@ export class EnemyManager {
   /** Compute a repulsion force pushing enemy away from nearby allies to prevent overlap. */
   private readonly _repulsion = new THREE.Vector3();
   private readonly _diff = new THREE.Vector3();
+  private readonly _fireDir = new THREE.Vector3();
+  private readonly _aimHead = new THREE.Vector3();
+  private readonly _aimToTarget = new THREE.Vector3();
+  private readonly _aimBestTarget = new THREE.Vector3();
+  private readonly _perceiveToPlayer = new THREE.Vector3();
+  private readonly _perceiveDirToPlayer = new THREE.Vector3();
+  private readonly _perceiveForward = new THREE.Vector3();
   private static readonly MIN_SEPARATION = 1.5;
 
   getRepulsionForce(enemy: EnemyBase): THREE.Vector3 {

@@ -31,6 +31,8 @@ export class DoorSystem {
   private getPlayerPos: () => { x: number; y: number; z: number };
   private hasKey: (keyId: string) => boolean;
   private isObjectiveComplete: (id: string) => boolean;
+  private readonly _playerVec = new THREE.Vector3();
+  private readonly _doorVec = new THREE.Vector3();
 
   constructor(
     scene: THREE.Scene,
@@ -165,12 +167,14 @@ export class DoorSystem {
 
   update(dt: number): void {
     const player = this.getPlayerPos();
-    const playerVec = new THREE.Vector3(player.x, player.y, player.z);
+    this._playerVec.set(player.x, player.y, player.z);
+    this._doorVec.set(0, 0, 0);
 
     for (const state of this.doors.values()) {
       const { def, mesh, collider } = state;
       const radius = def.proximityRadius ?? 2.5;
-      const dist = playerVec.distanceTo(new THREE.Vector3(def.x, def.y, def.z));
+      this._doorVec.set(def.x, def.y, def.z);
+      const dist = this._playerVec.distanceTo(this._doorVec);
 
       if (!state.open) {
         const inRange = dist <= radius;

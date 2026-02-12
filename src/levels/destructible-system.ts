@@ -9,7 +9,7 @@ import { globalLightPool } from '../core/light-pool';
  * Barrels trigger a secondary explosion dealing area damage.
  */
 
-const DEBRIS_COUNT = 6;
+const DEBRIS_COUNT = 4;
 const DEBRIS_LIFETIME = 1.8;
 const DEBRIS_GRAVITY = -14;
 const BARREL_FLASH_DURATION = 0.35;
@@ -34,7 +34,7 @@ function getDebrisGeo(size: number): THREE.BoxGeometry {
 
 // Pre-built materials per prop type (3 color variants each, MeshBasicMaterial for perf)
 const DEBRIS_MAT_CACHE = new Map<string, THREE.MeshBasicMaterial[]>();
-function getDebrisMats(type: string): THREE.MeshBasicMaterial[] {
+export function getDebrisMats(type: string): THREE.MeshBasicMaterial[] {
   if (DEBRIS_MAT_CACHE.has(type)) return DEBRIS_MAT_CACHE.get(type)!;
   let baseColor: number;
   if (type === 'crate') baseColor = 0x8B6914;
@@ -101,15 +101,28 @@ interface BarrelFlash {
   elapsed: number;
 }
 
+interface PendingBarrelExplosion {
+  position: THREE.Vector3;
+}
+
+interface PendingDestroy {
+  prop: DestructibleProp;
+}
+
 export class DestructibleSystem {
   private scene: THREE.Scene;
   private physics: PhysicsWorld;
   private props: DestructibleProp[] = [];
   private debris: Debris[] = [];
   private barrelFlashes: BarrelFlash[] = [];
+  private pendingBarrelExplosions: PendingBarrelExplosion[] = [];
+  private pendingDestroys: PendingDestroy[] = [];
+  private sharedBarrelFlashGeo: THREE.SphereGeometry | null = null;
+  private hasLoggedFirstBarrel = false;
 
   // Reusable vector
   private readonly _tmpVec = new THREE.Vector3();
+  private debrisVelocityPool: THREE.Vector3[] = [];
 
   /**
    * Called when a prop is destroyed. Use for sounds, chain explosions, etc.
@@ -237,7 +250,7 @@ export class DestructibleSystem {
     this.flashMesh(prop.mesh);
 
     if (prop.health <= 0) {
-      this.destroy(prop);
+      this.queueDestroy(prop);
     }
   }
 
@@ -276,48 +289,55 @@ export class DestructibleSystem {
     });
   }
 
-  private destroy(prop: DestructibleProp): void {
-    // Notify for networking (before removal)
+  /** Queue destroy for next frame — immediate: hide mesh, remove physics, remove from props. */
+  private queueDestroy(prop: DestructibleProp): void {
     this.onPropDestroyedFull?.(prop);
+    prop.mesh.visible = false;
+    const body = prop.collider.parent();
+    this.physics.removeCollider(prop.collider);
+    if (body) this.physics.removeRigidBody(body);
+    const idx = this.props.indexOf(prop);
+    if (idx >= 0) this.props.splice(idx, 1);
+    this.pendingDestroys.push({ prop });
+  }
 
-    // Remove visual
+  /** Process one queued destroy per frame (scene remove, dispose, debris, barrel, loot, sound). */
+  private processOneDestroy(): void {
+    const next = this.pendingDestroys.shift();
+    if (!next) return;
+    const { prop } = next;
+    const isBarrel = prop.type === 'barrel';
+    const debug = typeof window !== 'undefined' && (window.LAG_DEBUG || (isBarrel && !this.hasLoggedFirstBarrel));
+
+    let t0 = 0, t1 = 0, t2 = 0, t3 = 0;
+    if (debug) t0 = performance.now();
+
     this.scene.remove(prop.mesh);
-    // Dispose geometry+material on the mesh
     prop.mesh.traverse((child) => {
       if (child instanceof THREE.Mesh) {
         child.geometry.dispose();
         if (child.material instanceof THREE.Material) child.material.dispose();
       }
     });
+    if (debug) t1 = performance.now();
 
-    // Remove physics body + collider
-    const body = prop.collider.parent();
-    this.physics.removeCollider(prop.collider);
-    if (body) this.physics.removeRigidBody(body);
-
-    // Spawn debris chunks
     this.spawnDebris(prop);
+    if (debug) t2 = performance.now();
 
-    // Remove from tracking list
-    const idx = this.props.indexOf(prop);
-    if (idx >= 0) this.props.splice(idx, 1);
-
-    // Barrel chain: spawn explosion flash + area damage
     if (prop.type === 'barrel') {
-      this.spawnBarrelFlash(prop.position);
-      this.onBarrelExplode?.(prop.position, BARREL_EXPLOSION_RADIUS, BARREL_EXPLOSION_DAMAGE);
-      // Chain reaction: damage nearby props from barrel blast
-      this.damageInRadius(prop.position, BARREL_EXPLOSION_RADIUS, BARREL_EXPLOSION_DAMAGE);
+      this.pendingBarrelExplosions.push({ position: prop.position.clone() });
     }
-
-    // Drop loot if defined
     if (prop.loot) {
       const amount = prop.loot.amount ?? 1;
       this.onLootDrop?.(prop.loot.type, amount, prop.position);
     }
-
-    // Notify for sounds
     this.onPropDestroyed?.(prop.type, prop.position);
+    if (debug) t3 = performance.now();
+
+    if (debug && isBarrel) {
+      this.hasLoggedFirstBarrel = true;
+      console.log(`[LAG] First barrel destroy: scene.remove+dispose ${(t1 - t0).toFixed(1)}ms, spawnDebris ${(t2 - t1).toFixed(1)}ms, rest ${(t3 - t2).toFixed(1)}ms`);
+    }
   }
 
   private spawnBarrelFlash(pos: THREE.Vector3): void {
@@ -326,7 +346,8 @@ export class DestructibleSystem {
     light.position.y += 0.5;
     this.scene.add(light);
 
-    const geo = new THREE.SphereGeometry(1.2, 6, 4);
+    if (!this.sharedBarrelFlashGeo) this.sharedBarrelFlashGeo = new THREE.SphereGeometry(1.2, 6, 4);
+    const geo = this.sharedBarrelFlashGeo;
     const mat = new THREE.MeshBasicMaterial({
       color: 0xff8800,
       transparent: true,
@@ -339,7 +360,7 @@ export class DestructibleSystem {
     flash.position.y += 0.3;
     this.scene.add(flash);
 
-    this.barrelFlashes.push({ light, flash, mat, geo, elapsed: 0 });
+    this.barrelFlashes.push({ light, flash, mat, geo, elapsed: 0 }); // geo is shared, do not dispose
   }
 
   private spawnDebris(prop: DestructibleProp): void {
@@ -369,7 +390,8 @@ export class DestructibleSystem {
 
       const angle = Math.random() * Math.PI * 2;
       const outSpeed = (1 + Math.random()) * speed;
-      const velocity = new THREE.Vector3(
+      const velocity = this.debrisVelocityPool.pop() ?? new THREE.Vector3();
+      velocity.set(
         Math.cos(angle) * outSpeed,
         2 + Math.random() * (prop.type === 'barrel' ? 5 : 3),
         Math.sin(angle) * outSpeed,
@@ -391,6 +413,23 @@ export class DestructibleSystem {
 
   /** Update debris physics, barrel flashes, and cleanup. Call once per frame. */
   update(dt: number): void {
+    // --- Process one pending destroy per frame (spreads scene remove + dispose + debris) ---
+    this.processOneDestroy();
+
+    // --- Process pending barrel explosions (one per frame to avoid chain-reaction spike) ---
+    if (this.pendingBarrelExplosions.length > 0) {
+      const next = this.pendingBarrelExplosions.shift()!;
+      const debug = typeof window !== 'undefined' && window.LAG_DEBUG;
+      let t0 = 0, t1 = 0, t2 = 0;
+      if (debug) t0 = performance.now();
+      this.spawnBarrelFlash(next.position);
+      if (debug) t1 = performance.now();
+      this.onBarrelExplode?.(next.position, BARREL_EXPLOSION_RADIUS, BARREL_EXPLOSION_DAMAGE);
+      this.damageInRadius(next.position, BARREL_EXPLOSION_RADIUS, BARREL_EXPLOSION_DAMAGE);
+      if (debug) t2 = performance.now();
+      if (debug) console.log(`[LAG] Barrel explosion: spawnBarrelFlash ${(t1 - t0).toFixed(1)}ms, onBarrelExplode+damageInRadius ${(t2 - t1).toFixed(1)}ms`);
+    }
+
     // --- Debris ---
     for (let i = this.debris.length - 1; i >= 0; i--) {
       const d = this.debris[i];
@@ -398,7 +437,7 @@ export class DestructibleSystem {
 
       if (d.life <= 0) {
         this.scene.remove(d.mesh);
-        // Don't dispose shared geometry/material — they're cached
+        if (this.debrisVelocityPool.length < 16) this.debrisVelocityPool.push(d.velocity);
         this.debris.splice(i, 1);
         continue;
       }
@@ -446,7 +485,6 @@ export class DestructibleSystem {
         this.scene.remove(bf.light);
         globalLightPool.release(bf.light);
         this.scene.remove(bf.flash);
-        bf.geo.dispose();
         bf.mat.dispose();
         this.barrelFlashes.splice(i, 1);
       }

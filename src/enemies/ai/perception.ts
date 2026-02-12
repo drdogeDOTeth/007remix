@@ -17,6 +17,7 @@ export interface PerceptionResult {
 /**
  * Checks whether an enemy can see or hear the player.
  * Uses Rapier raycasting for line-of-sight and distance for hearing.
+ * Pass scratch vectors to avoid allocations (enemyPos, toPlayer, dirToPlayer, enemyForward).
  */
 export function perceivePlayer(
   enemy: EnemyBase,
@@ -25,11 +26,19 @@ export function perceivePlayer(
   physics: PhysicsWorld,
   playerIsMoving: boolean,
   playerFiredRecently: boolean,
+  scratchEnemyPos?: THREE.Vector3,
+  scratchToPlayer?: THREE.Vector3,
+  scratchDirToPlayer?: THREE.Vector3,
+  scratchForward?: THREE.Vector3,
 ): PerceptionResult {
-  const enemyPos = enemy.getHeadPosition();
-  const toPlayer = new THREE.Vector3().subVectors(playerPos, enemyPos);
+  const enemyPos = scratchEnemyPos ? enemy.getHeadPosition(scratchEnemyPos) : enemy.getHeadPosition();
+  const toPlayer = scratchToPlayer
+    ? scratchToPlayer.subVectors(playerPos, enemyPos)
+    : new THREE.Vector3().subVectors(playerPos, enemyPos);
   const distance = toPlayer.length();
-  const directionToPlayer = toPlayer.clone().normalize();
+  const directionToPlayer = scratchDirToPlayer
+    ? scratchDirToPlayer.copy(toPlayer).normalize()
+    : toPlayer.clone().normalize();
 
   let canSeePlayer = false;
   let canHearPlayer = false;
@@ -37,7 +46,7 @@ export function perceivePlayer(
   // --- Line of sight ---
   if (distance <= SIGHT_RANGE) {
     // Check if player is within FOV cone
-    const enemyForward = enemy.getForwardDirection();
+    const enemyForward = scratchForward ? enemy.getForwardDirection(scratchForward) : enemy.getForwardDirection();
     const angle = enemyForward.angleTo(directionToPlayer);
 
     if (angle <= FOV_HALF_ANGLE) {

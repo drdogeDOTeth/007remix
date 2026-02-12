@@ -13,10 +13,13 @@ export type WeaponType = 'pistol' | 'rifle' | 'shotgun' | 'sniper';
  * Renders a first-person weapon model attached to the camera.
  * GoldenEye style: weapon offset to the right side of screen with sway and recoil.
  */
+const MESH_CACHE_MAX = 8;
+
 export class WeaponViewModel {
   readonly group: THREE.Group;
   private weaponMesh: THREE.Group;
   private muzzleFlash: THREE.Mesh;
+  private static meshCache = new Map<string, THREE.Group>();
   private muzzleLight: THREE.PointLight;
   private flashTexture!: THREE.CanvasTexture;
   private flashTimer = 0;
@@ -77,13 +80,21 @@ export class WeaponViewModel {
   }
 
   switchWeapon(type: WeaponType, skin: WeaponSkin = 'default'): void {
+    const prevKey = `${this.currentType}:${this.currentSkin}`;
     this.currentType = type;
     this.currentSkin = skin;
     this._scoped = false;
     this.scopeTransition = 0;
 
     this.group.remove(this.weaponMesh);
-    this.weaponMesh = this.buildWeaponMesh(type, skin);
+    this.weaponMesh.remove(this.muzzleFlash);
+    this.weaponMesh.remove(this.muzzleLight);
+    if (WeaponViewModel.meshCache.size < MESH_CACHE_MAX) {
+      WeaponViewModel.meshCache.set(prevKey, this.weaponMesh);
+    }
+    const cacheKey = `${type}:${skin}`;
+    this.weaponMesh = WeaponViewModel.meshCache.get(cacheKey) ?? this.buildWeaponMesh(type, skin);
+    WeaponViewModel.meshCache.delete(cacheKey);
     this.group.add(this.weaponMesh);
 
     // Per-weapon rest position and muzzle offset (at barrel tip — flash at muzzle opening)
@@ -112,9 +123,17 @@ export class WeaponViewModel {
 
   /** Refresh current weapon mesh with a new skin (same type). */
   setSkin(skin: WeaponSkin): void {
+    const prevKey = `${this.currentType}:${this.currentSkin}`;
     this.currentSkin = skin;
     this.group.remove(this.weaponMesh);
-    this.weaponMesh = this.buildWeaponMesh(this.currentType, skin);
+    this.weaponMesh.remove(this.muzzleFlash);
+    this.weaponMesh.remove(this.muzzleLight);
+    if (WeaponViewModel.meshCache.size < MESH_CACHE_MAX) {
+      WeaponViewModel.meshCache.set(prevKey, this.weaponMesh);
+    }
+    const cacheKey = `${this.currentType}:${skin}`;
+    this.weaponMesh = WeaponViewModel.meshCache.get(cacheKey) ?? this.buildWeaponMesh(this.currentType, skin);
+    WeaponViewModel.meshCache.delete(cacheKey);
     this.group.add(this.weaponMesh);
     this.weaponMesh.position.copy(this.restPosition);
     // Apply current muzzle offset before attaching

@@ -18,7 +18,7 @@ import { TriggerSystem } from './levels/trigger-system';
 import { ObjectiveSystem } from './levels/objective-system';
 import { buildLevel } from './levels/level-builder';
 import type { LevelSchema } from './levels/level-schema';
-import { DestructibleSystem } from './levels/destructible-system';
+import { DestructibleSystem, getDebrisMats } from './levels/destructible-system';
 import { HUD } from './ui/hud';
 import { DamageIndicator } from './ui/damage-indicator';
 import { ScopeOverlay } from './ui/scope-overlay';
@@ -699,9 +699,50 @@ export class Game {
     this.hud.show();
     if (this.networkMode === 'client') this.hud.setMultiplayerHint(true);
     if (this.levelMode && this.objectivesDisplay) this.objectivesDisplay.show();
+    this.warmupShaders();
     this.loop.start();
     // Start the spy-thriller background music
     startMusic();
+  }
+
+  /** Pre-compile shaders for destructibles + weapon meshes to avoid first-use hitch. */
+  private warmupShaders(): void {
+    const warmup = new THREE.Group();
+    // Place near camera so materials are definitely rendered (some drivers compile lazily on first draw)
+    warmup.position.copy(this.fpsCamera.camera.position);
+    warmup.position.y -= 0.5;
+
+    const toDispose: THREE.BufferGeometry[] = [];
+    // Warm all debris types (barrel, crate, crate_metal) — facility has all three
+    for (const type of ['barrel', 'crate', 'crate_metal'] as const) {
+      const mats = getDebrisMats(type);
+      const geo = new THREE.BoxGeometry(0.1, 0.1, 0.1);
+      toDispose.push(geo);
+      warmup.add(new THREE.Mesh(geo, mats[0]));
+    }
+
+    const flashMat = new THREE.MeshBasicMaterial({
+      color: 0xff8800,
+      transparent: true,
+      opacity: 0.9,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+    });
+    const flashGeo = new THREE.SphereGeometry(1.2, 6, 4);
+    toDispose.push(flashGeo);
+    warmup.add(new THREE.Mesh(flashGeo, flashMat));
+
+    for (const type of ['pistol', 'rifle', 'shotgun', 'sniper'] as const) {
+      warmup.add(this.weaponManager.getPreviewMesh(type, 'default'));
+    }
+
+    this.scene.add(warmup);
+    this.renderer.instance.compile(this.scene, this.fpsCamera.camera);
+    // Force a render pass — some WebGL drivers compile shaders lazily on first draw
+    this.renderer.instance.render(this.scene, this.fpsCamera.camera);
+    this.scene.remove(warmup);
+    for (const g of toDispose) g.dispose();
+    flashMat.dispose();
   }
 
   private pauseGame(): void {

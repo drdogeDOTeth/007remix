@@ -33,6 +33,10 @@ export class PlayerController {
   /** Dead state - prevents movement and input */
   private dead = false;
 
+  private readonly _forward = new THREE.Vector3();
+  private readonly _right = new THREE.Vector3();
+  private readonly _move = new THREE.Vector3();
+
   /** Crouch toggle (C key). When true, use shorter capsule and lower speed. */
   private crouching = false;
   /** Smooth crouch transition 0 = standing, 1 = fully crouched (for camera lerp). */
@@ -84,23 +88,21 @@ export class PlayerController {
     // Apply crouch: resize collider and move body so feet stay on ground
     this.updateCrouchState(dt);
 
-    const forward = new THREE.Vector3();
-    const right = new THREE.Vector3();
-    this.fpsCamera.getForward(forward);
-    this.fpsCamera.getRight(right);
+    this.fpsCamera.getForward(this._forward);
+    this.fpsCamera.getRight(this._right);
 
     const sprinting = input.isKeyDown('Shift') && !this.crouching;
     let speed = MOVE_SPEED * (this.crouching ? CROUCH_SPEED_MULTIPLIER : sprinting ? SPRINT_MULTIPLIER : 1);
 
     // Compute desired horizontal movement
-    const move = new THREE.Vector3(0, 0, 0);
-    if (input.isKeyDown('w')) move.add(forward);
-    if (input.isKeyDown('s')) move.sub(forward);
-    if (input.isKeyDown('d')) move.add(right);
-    if (input.isKeyDown('a')) move.sub(right);
+    this._move.set(0, 0, 0);
+    if (input.isKeyDown('w')) this._move.add(this._forward);
+    if (input.isKeyDown('s')) this._move.sub(this._forward);
+    if (input.isKeyDown('d')) this._move.add(this._right);
+    if (input.isKeyDown('a')) this._move.sub(this._right);
 
-    if (move.lengthSq() > 0) {
-      move.normalize().multiplyScalar(speed * dt);
+    if (this._move.lengthSq() > 0) {
+      this._move.normalize().multiplyScalar(speed * dt);
     }
 
     // Vertical movement (gravity + jump). Can't jump while crouching; standing required.
@@ -110,12 +112,12 @@ export class PlayerController {
     }
 
     this.verticalVelocity += GRAVITY * dt;
-    move.y = this.verticalVelocity * dt;
+    this._move.y = this.verticalVelocity * dt;
 
     // Run Rapier character controller
     this.characterController.computeColliderMovement(
       this.collider,
-      new RAPIER.Vector3(move.x, move.y, move.z),
+      new RAPIER.Vector3(this._move.x, this._move.y, this._move.z),
     );
 
     this.grounded = this.characterController.computedGrounded();

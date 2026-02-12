@@ -107,17 +107,25 @@ export class EnemyBase {
     this.stateMachine = new StateMachine<EnemyBase>();
   }
 
-  getHeadPosition(): THREE.Vector3 {
+  /** Get head/eye position. Pass out to reuse (avoids allocation). */
+  getHeadPosition(out?: THREE.Vector3): THREE.Vector3 {
     const pos = this.group.position;
+    if (out) {
+      out.set(pos.x, pos.y + EYE_HEIGHT, pos.z);
+      return out;
+    }
     return new THREE.Vector3(pos.x, pos.y + EYE_HEIGHT, pos.z);
   }
 
-  getForwardDirection(): THREE.Vector3 {
-    return new THREE.Vector3(
-      Math.sin(this.facingAngle),
-      0,
-      Math.cos(this.facingAngle),
-    );
+  /** Get forward direction. Pass out to reuse (avoids allocation). */
+  getForwardDirection(out?: THREE.Vector3): THREE.Vector3 {
+    const x = Math.sin(this.facingAngle);
+    const z = Math.cos(this.facingAngle);
+    if (out) {
+      out.set(x, 0, z);
+      return out;
+    }
+    return new THREE.Vector3(x, 0, z);
   }
 
   /** Smoothly rotate toward target facing angle (AI-only, no visual rotation) */

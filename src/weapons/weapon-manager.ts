@@ -34,6 +34,10 @@ export class WeaponManager {
   /** Optional: used to disable sprint bob when crouching */
   private getIsCrouching: (() => boolean) | null = null;
 
+  private readonly _fireOrigin = new THREE.Vector3();
+  private readonly _fireDirection = new THREE.Vector3();
+  private readonly _fireDirSpread = new THREE.Vector3();
+
   /** Per-weapon skin selection */
   private weaponSkins: Record<WeaponType, WeaponSkin> = {
     pistol: 'default',
@@ -216,10 +220,8 @@ export class WeaponManager {
   }
 
   private doFire(): void {
-    const origin = new THREE.Vector3();
-    this.fpsCamera.camera.getWorldPosition(origin);
-    const direction = new THREE.Vector3();
-    this.fpsCamera.getLookDirection(direction);
+    this.fpsCamera.camera.getWorldPosition(this._fireOrigin);
+    this.fpsCamera.getLookDirection(this._fireDirection);
     const weapon = this.currentWeapon;
     const spreadMult = this._scoped ? 0.1 : 1;
 
@@ -228,22 +230,24 @@ export class WeaponManager {
 
     let firstHit: { point?: THREE.Vector3; collider?: RAPIER.Collider } | null = null;
     for (let i = 0; i < weapon.stats.raysPerShot; i++) {
-      let dir = direction;
+      let dir = this._fireDirection;
       if (weapon.stats.raysPerShot > 1) {
-        dir = direction.clone();
+        this._fireDirSpread.copy(this._fireDirection);
         const cone = weapon.stats.spreadCone;
-        dir.x += (Math.random() - 0.5) * cone;
-        dir.y += (Math.random() - 0.5) * cone;
-        dir.z += (Math.random() - 0.5) * cone;
-        dir.normalize();
+        this._fireDirSpread.x += (Math.random() - 0.5) * cone;
+        this._fireDirSpread.y += (Math.random() - 0.5) * cone;
+        this._fireDirSpread.z += (Math.random() - 0.5) * cone;
+        this._fireDirSpread.normalize();
+        dir = this._fireDirSpread;
       } else if (weapon.stats.spread > 0) {
-        dir = direction.clone();
-        dir.x += (Math.random() - 0.5) * weapon.stats.spread * spreadMult;
-        dir.y += (Math.random() - 0.5) * weapon.stats.spread * spreadMult;
-        dir.z += (Math.random() - 0.5) * weapon.stats.spread * spreadMult;
-        dir.normalize();
+        this._fireDirSpread.copy(this._fireDirection);
+        this._fireDirSpread.x += (Math.random() - 0.5) * weapon.stats.spread * spreadMult;
+        this._fireDirSpread.y += (Math.random() - 0.5) * weapon.stats.spread * spreadMult;
+        this._fireDirSpread.z += (Math.random() - 0.5) * weapon.stats.spread * spreadMult;
+        this._fireDirSpread.normalize();
+        dir = this._fireDirSpread;
       }
-      const result = this.projectileSystem.fireRay(origin, dir, weapon, this.playerCollider);
+      const result = this.projectileSystem.fireRay(this._fireOrigin, dir, weapon, this.playerCollider);
 
       // Store first hit for network sync (Phase 3)
       if (!firstHit && result.hit && result.collider) {
@@ -254,8 +258,8 @@ export class WeaponManager {
     this.viewModel.triggerRecoil();
     this.events.emit('weapon:fired', {
       weaponName: weapon.stats.name,
-      position: origin,
-      direction,
+      position: this._fireOrigin,
+      direction: this._fireDirection,
       hit: firstHit,
     });
   }
