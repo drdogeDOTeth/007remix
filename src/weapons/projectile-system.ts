@@ -39,7 +39,6 @@ export class ProjectileSystem {
   private readonly _hitPoint = new THREE.Vector3();
   private readonly _normal = new THREE.Vector3();
   private readonly _lookTarget = new THREE.Vector3();
-  private velocityPool: THREE.Vector3[] = [];
 
   // Callbacks for hit detection
   onHitCollider: ((collider: RAPIER.Collider, point: THREE.Vector3, normal: THREE.Vector3) => void) | null = null;
@@ -143,14 +142,6 @@ export class ProjectileSystem {
     this.decals.push({ mesh, birthTime: performance.now() / 1000 });
   }
 
-  private getVelocityFromPool(): THREE.Vector3 {
-    return this.velocityPool.pop() ?? new THREE.Vector3();
-  }
-
-  private returnVelocityToPool(v: THREE.Vector3): void {
-    if (this.velocityPool.length < 20) this.velocityPool.push(v);
-  }
-
   private spawnImpactParticles(position: THREE.Vector3, normal: THREE.Vector3): void {
     let count = 0;
     for (const p of this.particlePool) {
@@ -161,8 +152,8 @@ export class ProjectileSystem {
       p.visible = true;
       (p.material as THREE.MeshBasicMaterial).opacity = 1;
 
-      const vel = this.getVelocityFromPool();
-      vel.set(
+      // Random velocity outward from surface
+      const vel = new THREE.Vector3(
         (Math.random() - 0.5) * 2 + normal.x * 2,
         Math.random() * 2 + normal.y * 1,
         (Math.random() - 0.5) * 2 + normal.z * 2,
@@ -184,7 +175,6 @@ export class ProjectileSystem {
       ap.life -= frameDt;
       if (ap.life <= 0) {
         ap.mesh.visible = false;
-        this.returnVelocityToPool(ap.vel);
         this.activeParticles.splice(i, 1);
       } else {
         ap.mesh.position.addScaledVector(ap.vel, frameDt);

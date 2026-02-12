@@ -30,7 +30,6 @@ export class BloodSplatterSystem {
   private particleGeo: THREE.PlaneGeometry;
   private decalGeo: THREE.PlaneGeometry;
   private camera: THREE.Camera | null = null;
-  private velocityPool: THREE.Vector3[] = [];
 
   constructor(scene: THREE.Scene) {
     this.scene = scene;
@@ -85,28 +84,21 @@ export class BloodSplatterSystem {
     this.camera = camera;
   }
 
-  private getVelocityFromPool(): THREE.Vector3 {
-    return this.velocityPool.pop() ?? new THREE.Vector3();
-  }
-
-  private returnVelocityToPool(v: THREE.Vector3): void {
-    if (this.velocityPool.length < 60) this.velocityPool.push(v);
-  }
-
   /**
    * Spawn blood ON an enemy — particles spray from hit point, decals attach to body.
    * Blood emanates from the enemy in 3D world space.
    * Enhanced with layered particles (large chunks, medium spray, fine mist).
    */
-  private readonly _sprayDir = new THREE.Vector3();
-
   spawnOnEnemy(
     enemyGroup: THREE.Group,
     hitPointWorld: THREE.Vector3,
     direction: THREE.Vector3,
     count: number = 18, // Increased for more dramatic effect
   ): void {
-    this._sprayDir.copy(direction).negate();
+    const localHit = hitPointWorld.clone();
+    enemyGroup.worldToLocal(localHit);
+
+    const sprayDir = direction.clone().negate();
 
     // Layer 1: Large blood chunks (heavy, slow) — 20% of particles
     let spawned = 0;
@@ -121,11 +113,11 @@ export class BloodSplatterSystem {
       mesh.visible = true;
       (mesh.material as THREE.MeshBasicMaterial).opacity = 1;
 
-      const vel = this.getVelocityFromPool();
-      vel.set(
-        this._sprayDir.x + (Math.random() - 0.5) * 0.8,
-        this._sprayDir.y + (Math.random() - 0.5) * 0.4 + 0.15,
-        this._sprayDir.z + (Math.random() - 0.5) * 0.8,
+      // Slower, less spread (heavy chunks)
+      const vel = new THREE.Vector3(
+        sprayDir.x + (Math.random() - 0.5) * 0.8,
+        sprayDir.y + (Math.random() - 0.5) * 0.4 + 0.15,
+        sprayDir.z + (Math.random() - 0.5) * 0.8,
       ).normalize().multiplyScalar(3 + Math.random() * 3);
 
       this.activeParticles.push({ mesh, velocity: vel, life: 0, maxLife: 0.4 + Math.random() * 0.2 });
@@ -144,11 +136,13 @@ export class BloodSplatterSystem {
       mesh.visible = true;
       (mesh.material as THREE.MeshBasicMaterial).opacity = 1;
 
-      const vel = this.getVelocityFromPool();
-      vel.set(
-        this._sprayDir.x + (Math.random() - 0.5) * 1.6,
-        this._sprayDir.y + (Math.random() - 0.5) * 0.6 + 0.25,
-        this._sprayDir.z + (Math.random() - 0.5) * 1.6,
+      // Standard spray with good dispersion
+      const horizSpread = 1.6;
+      const vertSpread = 0.6;
+      const vel = new THREE.Vector3(
+        sprayDir.x + (Math.random() - 0.5) * horizSpread,
+        sprayDir.y + (Math.random() - 0.5) * vertSpread + 0.25,
+        sprayDir.z + (Math.random() - 0.5) * horizSpread,
       ).normalize().multiplyScalar(6 + Math.random() * 7);
 
       this.activeParticles.push({ mesh, velocity: vel, life: 0, maxLife: 0.35 + Math.random() * 0.15 });
@@ -167,11 +161,11 @@ export class BloodSplatterSystem {
       mesh.visible = true;
       (mesh.material as THREE.MeshBasicMaterial).opacity = 0.8; // Slightly transparent
 
-      const vel = this.getVelocityFromPool();
-      vel.set(
-        this._sprayDir.x + (Math.random() - 0.5) * 2.2,
-        this._sprayDir.y + (Math.random() - 0.5) * 1.0 + 0.3,
-        this._sprayDir.z + (Math.random() - 0.5) * 2.2,
+      // Fast, very wide spread (mist effect)
+      const vel = new THREE.Vector3(
+        sprayDir.x + (Math.random() - 0.5) * 2.2,
+        sprayDir.y + (Math.random() - 0.5) * 1.0 + 0.3,
+        sprayDir.z + (Math.random() - 0.5) * 2.2,
       ).normalize().multiplyScalar(8 + Math.random() * 10);
 
       this.activeParticles.push({ mesh, velocity: vel, life: 0, maxLife: 0.25 + Math.random() * 0.1 });
@@ -212,7 +206,7 @@ export class BloodSplatterSystem {
    * Spawn blood splatter in world space (enhanced with layered particles).
    */
   spawn(position: THREE.Vector3, direction: THREE.Vector3, count: number = 14): void {
-    this._sprayDir.copy(direction).negate();
+    const sprayDir = direction.clone().negate();
 
     // Layer 1: Large chunks (20%)
     let spawned = 0;
@@ -227,11 +221,10 @@ export class BloodSplatterSystem {
       mesh.visible = true;
       (mesh.material as THREE.MeshBasicMaterial).opacity = 1;
 
-      const vel = this.getVelocityFromPool();
-      vel.set(
-        this._sprayDir.x + (Math.random() - 0.5) * 0.5,
-        this._sprayDir.y + (Math.random() - 0.5) * 0.3 + 0.15,
-        this._sprayDir.z + (Math.random() - 0.5) * 0.5
+      const vel = new THREE.Vector3(
+        sprayDir.x + (Math.random() - 0.5) * 0.5,
+        sprayDir.y + (Math.random() - 0.5) * 0.3 + 0.15,
+        sprayDir.z + (Math.random() - 0.5) * 0.5
       ).normalize().multiplyScalar(2.5 + Math.random() * 3);
 
       this.activeParticles.push({ mesh, velocity: vel, life: 0, maxLife: 0.35 + Math.random() * 0.2 });
@@ -250,11 +243,11 @@ export class BloodSplatterSystem {
       mesh.visible = true;
       (mesh.material as THREE.MeshBasicMaterial).opacity = 1;
 
-      const vel = this.getVelocityFromPool();
-      vel.set(
-        this._sprayDir.x + (Math.random() - 0.5) * 0.9,
-        this._sprayDir.y + (Math.random() - 0.5) * 0.9 + 0.2,
-        this._sprayDir.z + (Math.random() - 0.5) * 0.9
+      const spread = 0.9;
+      const vel = new THREE.Vector3(
+        sprayDir.x + (Math.random() - 0.5) * spread,
+        sprayDir.y + (Math.random() - 0.5) * spread + 0.2,
+        sprayDir.z + (Math.random() - 0.5) * spread
       ).normalize().multiplyScalar(4 + Math.random() * 5);
 
       this.activeParticles.push({ mesh, velocity: vel, life: 0, maxLife: 0.3 + Math.random() * 0.2 });
@@ -273,11 +266,10 @@ export class BloodSplatterSystem {
       mesh.visible = true;
       (mesh.material as THREE.MeshBasicMaterial).opacity = 0.75;
 
-      const vel = this.getVelocityFromPool();
-      vel.set(
-        this._sprayDir.x + (Math.random() - 0.5) * 1.4,
-        this._sprayDir.y + (Math.random() - 0.5) * 0.8 + 0.25,
-        this._sprayDir.z + (Math.random() - 0.5) * 1.4
+      const vel = new THREE.Vector3(
+        sprayDir.x + (Math.random() - 0.5) * 1.4,
+        sprayDir.y + (Math.random() - 0.5) * 0.8 + 0.25,
+        sprayDir.z + (Math.random() - 0.5) * 1.4
       ).normalize().multiplyScalar(6 + Math.random() * 8);
 
       this.activeParticles.push({ mesh, velocity: vel, life: 0, maxLife: 0.22 + Math.random() * 0.12 });
@@ -342,7 +334,6 @@ export class BloodSplatterSystem {
       if (p.life >= p.maxLife) {
         p.mesh.visible = false;
         p.mesh.scale.setScalar(1);
-        this.returnVelocityToPool(p.velocity);
         this.activeParticles.splice(i, 1);
       }
     }
