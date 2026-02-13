@@ -24,6 +24,7 @@ import { DamageIndicator } from './ui/damage-indicator';
 import { ScopeOverlay } from './ui/scope-overlay';
 import { TacticalOverlay } from './ui/tactical-overlay';
 import { DeathOverlay } from './ui/death-overlay';
+import { LowHealthOverlay } from './ui/low-health-overlay';
 import { HitMarker } from './ui/hit-marker';
 import { BloodOverlay } from './ui/blood-overlay';
 import { KillFeed } from './ui/kill-feed';
@@ -94,6 +95,7 @@ export class Game {
   private scopeOverlay: ScopeOverlay;
   private tacticalOverlay: TacticalOverlay;
   private deathOverlay: DeathOverlay;
+  private lowHealthOverlay: LowHealthOverlay;
   private hitMarker: HitMarker;
   private bloodOverlay: BloodOverlay;
   private killFeed: KillFeed;
@@ -133,6 +135,21 @@ export class Game {
   private readonly _playerVec = new THREE.Vector3();
   private readonly _aimAssistLookDir = new THREE.Vector3();
   private readonly _aimAssistToTarget = new THREE.Vector3();
+
+  // Death camera animation (single-player)
+  private deathCameraAnimating = false;
+  private deathCameraT = 0;
+  private readonly deathCameraDuration = 1.11;
+  private deathCameraTiltSign = 1; // Random ±1 for tilt direction
+  private deathCameraShakePhase = 0;
+  private readonly _deathCameraStartPos = new THREE.Vector3();
+  private readonly _deathCameraTargetPos = new THREE.Vector3();
+  private readonly _deathCameraLookAtEnd = new THREE.Vector3();
+  private readonly _deathCameraLookAtStart = new THREE.Vector3();
+  private readonly _deathCameraLookAtCurrent = new THREE.Vector3();
+  private readonly _deathCameraShakeOffset = new THREE.Vector3();
+  private readonly _deathCameraForward = new THREE.Vector3();
+  private readonly _deathCameraRollQuat = new THREE.Quaternion();
 
   // Multiplayer networking
   private networkMode: 'local' | 'client';
@@ -234,6 +251,7 @@ export class Game {
 
     // Multiplayer UI (death overlay, hit markers, blood overlay, kill feed, scoreboard)
     this.deathOverlay = new DeathOverlay();
+    this.lowHealthOverlay = new LowHealthOverlay();
     this.hitMarker = new HitMarker();
     this.bloodOverlay = new BloodOverlay();
     this.killFeed = new KillFeed();
@@ -246,17 +264,17 @@ export class Game {
       if (!this.tacticalOverlay.visible) {
         this.player.takeDamage(damage);
         this.damageIndicator.flash();
-        if (this.player.isDead()) this.handlePlayerDeath();
+        if (this.player.isDead()) this.handlePlayerDeath(undefined);
       }
     };
 
     // When enemy shoots player
-    this.enemyManager.onPlayerHit = (damage, _fromPos) => {
+    this.enemyManager.onPlayerHit = (damage, fromPos) => {
       if (this.player.isDead()) return;
       this.player.takeDamage(damage);
       this.hud.flashCrosshair();
       this.damageIndicator.flash();
-      if (this.player.isDead()) this.handlePlayerDeath();
+      if (this.player.isDead()) this.handlePlayerDeath(fromPos);
     };
 
     // When enemy shot hits wall/geometry — show bullet hole and particles
@@ -816,12 +834,13 @@ export class Game {
     this.scoreboard.update(players);
   }
 
-  /** Handle player death (single-player PvE). Shows overlay and respawns after countdown. */
-  private handlePlayerDeath(): void {
+  /** Handle player death (single-player PvE). Starts death camera, then shows overlay and respawns. */
+  private handlePlayerDeath(fromPos?: THREE.Vector3): void {
     if (this.networkMode === 'client') return; // Multiplayer: server sends respawn
     this.deathOverlay.onCountdownComplete = () => {
       this.deathOverlay.onCountdownComplete = null;
       this.deathOverlay.hide();
+      this.lowHealthOverlay.hide();
       this.player.respawn();
       this.player.setPosition(
         this.playerSpawnPosition.x,
@@ -829,7 +848,73 @@ export class Game {
         this.playerSpawnPosition.z,
       );
     };
-    this.deathOverlay.show();
+    // Start death camera: fall to ground, look up at killer
+    this._deathCameraStartPos.copy(this.fpsCamera.camera.position);
+    const pp = this.player.getPosition();
+    // Find ground to avoid clipping — cast ray down from chest height
+    const groundY = this.getGroundY(pp.x, pp.y, pp.z);
+    const headAboveGround = 0.22; // Min clearance so head doesn't clip
+    this._deathCameraTargetPos.set(pp.x, Math.max(groundY + headAboveGround, pp.y - 0.85), pp.z);
+    this.deathCameraTiltSign = Math.random() < 0.5 ? -1 : 1;
+    this.deathCameraShakePhase = Math.random() * 1000;
+    // Look-at: start = where we were looking, end = killer (so we transition to looking up at them)
+    this.fpsCamera.getLookDirection(this._deathCameraLookAtStart);
+    this._deathCameraLookAtStart.multiplyScalar(6).add(this._deathCameraStartPos);
+    if (fromPos) {
+      this._deathCameraLookAtEnd.copy(fromPos);
+      // Bias slightly above killer's head so we clearly look UP at them
+      this._deathCameraLookAtEnd.y += 0.25;
+    } else {
+      this._deathCameraLookAtEnd.copy(this._deathCameraLookAtStart);
+    }
+    this.deathCameraT = 0;
+    this.deathCameraAnimating = true;
+    this.lowHealthOverlay.hide();
+  }
+
+  /** Cast ray down to find ground Y (for death camera floor clearance). */
+  private getGroundY(x: number, y: number, z: number): number {
+    const hit = this.physics.castRay(x, y + 1.2, z, 0, -1, 0, 2.5, this.player.getCollider());
+    if (hit) return hit.point.y;
+    return Math.max(0, y - 1);
+  }
+
+  private updateDeathCamera(dt: number): void {
+    this.deathCameraT = Math.min(1, this.deathCameraT + dt / this.deathCameraDuration);
+    const t = this.deathCameraT;
+    const eased = 1 - (1 - t) ** 3; // ease-out cubic — quicker settle
+    this.fpsCamera.camera.position.lerpVectors(
+      this._deathCameraStartPos,
+      this._deathCameraTargetPos,
+      eased,
+    );
+    // Shake: stronger during fall, fading as we settle
+    this.deathCameraShakePhase += dt * 70;
+    const shakeIntensity = (1 - t) * 0.058;
+    const n = (x: number) => Math.sin(x) * 0.5 + Math.sin(x * 2.3) * 0.5 + Math.sin(x * 1.7) * 0.3;
+    this._deathCameraShakeOffset.set(
+      n(this.deathCameraShakePhase) * shakeIntensity,
+      n(this.deathCameraShakePhase + 7) * shakeIntensity * 0.8,
+      n(this.deathCameraShakePhase + 13) * shakeIntensity,
+    );
+    this.fpsCamera.camera.position.add(this._deathCameraShakeOffset);
+    // Lerp look-at target from "where we were looking" to "killer" — guarantees we end looking up at killer
+    this._deathCameraLookAtCurrent.lerpVectors(
+      this._deathCameraLookAtStart,
+      this._deathCameraLookAtEnd,
+      eased,
+    );
+    this.fpsCamera.camera.lookAt(this._deathCameraLookAtCurrent);
+    // Tilt on settle: roll increases toward end (head lolling to the side)
+    const tiltAngle = eased * 0.22 * this.deathCameraTiltSign;
+    this.fpsCamera.camera.getWorldDirection(this._deathCameraForward);
+    this._deathCameraRollQuat.setFromAxisAngle(this._deathCameraForward, tiltAngle);
+    this.fpsCamera.camera.quaternion.multiply(this._deathCameraRollQuat);
+    if (this.deathCameraT >= 1) {
+      this.deathCameraAnimating = false;
+      this.lowHealthOverlay.hide();
+      this.deathOverlay.show();
+    }
   }
 
   private handleTrigger(event: string): void {
@@ -944,6 +1029,13 @@ export class Game {
       return; // Don't update camera, weapons, or gameplay while inventory is open
     }
 
+    // Death camera animation (single-player): fall to ground, look at killer
+    if (this.deathCameraAnimating) {
+      this.updateDeathCamera(dt);
+    }
+
+    const deadAndWaiting = this.player.isDead() && this.networkMode !== 'client';
+    if (!this.deathCameraAnimating && !(deadAndWaiting && this.deathOverlay.isVisible())) {
     // Aim assist (single-player only)
     let aimAssistDelta: { yaw: number; pitch: number } | undefined;
     let lookScale = 1;
@@ -1025,6 +1117,7 @@ export class Game {
         });
       }
     }
+    } // end !deathCameraAnimating
 
     // Update enemy manager with player state
     const playerPos = this.player.getPosition();
@@ -1092,6 +1185,9 @@ export class Game {
 
     // Damage indicator
     this.damageIndicator.update(dt);
+
+    // Low health overlay (red vignette at 25 HP and below)
+    this.lowHealthOverlay.update(this.player.health);
 
     // Level systems (doors, triggers, objectives)
     if (this.doorSystem) this.doorSystem.update(dt);
