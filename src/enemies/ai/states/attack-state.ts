@@ -7,6 +7,7 @@ const ENGAGE_RANGE = 18;
 const PREFERRED_RANGE = 8;
 const MOVE_SPEED = 2;
 const LOSE_SIGHT_TIMEOUT = 3;
+const SHOOT_ANIM_MIN_DURATION = 0.25; // Keep shoot animation visible briefly after firing
 
 /**
  * Attack state: enemy has spotted the player.
@@ -17,6 +18,7 @@ export function createAttackState(manager: EnemyManager): State<EnemyBase> {
   let lostSightTimer = 0;
   let strafeDir = 1;
   let strafeTimer = 0;
+  let shootDisplayTimer = 0;
 
   return {
     name: 'attack',
@@ -43,9 +45,12 @@ export function createAttackState(manager: EnemyManager): State<EnemyBase> {
 
         // Fire at player
         const now = performance.now() / 1000;
+        if (shootDisplayTimer > 0) shootDisplayTimer -= dt;
         if (enemy.canFire(now)) {
           enemy.lastFireTime = now;
+          enemy.model.play('shoot', true);
           manager.enemyFireAtPlayer(enemy);
+          shootDisplayTimer = SHOOT_ANIM_MIN_DURATION;
         }
 
         // Movement: try to maintain preferred range + strafe
@@ -54,15 +59,13 @@ export function createAttackState(manager: EnemyManager): State<EnemyBase> {
         const toPlayer = new THREE.Vector3()
           .subVectors(playerPos, pos).normalize();
 
-        // Approach or retreat to preferred range
         let moveZ = 0;
         if (dist > PREFERRED_RANGE + 2) {
-          moveZ = 1; // Advance
+          moveZ = 1;
         } else if (dist < PREFERRED_RANGE - 2) {
-          moveZ = -0.5; // Back up
+          moveZ = -0.5;
         }
 
-        // Strafe perpendicular to player direction
         strafeTimer -= dt;
         if (strafeTimer <= 0) {
           strafeDir *= -1;
@@ -74,7 +77,8 @@ export function createAttackState(manager: EnemyManager): State<EnemyBase> {
         pos.x += (toPlayer.x * moveZ + right.x * strafeDir * 0.5 + repulsion.x * 0.8) * MOVE_SPEED * dt;
         pos.z += (toPlayer.z * moveZ + right.z * strafeDir * 0.5 + repulsion.z * 0.8) * MOVE_SPEED * dt;
 
-        enemy.model.play('walk');  // walk animation when moving toward/around player
+        // Keep shoot animation visible briefly after firing
+        if (shootDisplayTimer <= 0) enemy.model.play('walk');
         manager.syncPhysicsBody(enemy);
       } else {
         // Lost sight of player

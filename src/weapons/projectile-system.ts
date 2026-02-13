@@ -164,6 +164,12 @@ export class ProjectileSystem {
     }
   }
 
+  /** Spawn bullet hole decal and impact particles (e.g. for enemy shots hitting walls) */
+  spawnImpactAt(point: THREE.Vector3, normal: THREE.Vector3): void {
+    this.createDecal(point.clone(), normal.clone());
+    this.spawnImpactParticles(point.clone(), normal.clone());
+  }
+
   /** Update particles and clean up old decals — called once per frame from game loop */
   update(dt?: number): void {
     const now = performance.now() / 1000;

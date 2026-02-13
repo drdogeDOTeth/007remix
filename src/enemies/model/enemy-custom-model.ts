@@ -205,13 +205,20 @@ export class EnemyCustomModel {
       this.mixer = new THREE.AnimationMixer(this.mesh);
       const first = animations[0];
       const fallback = { clip: first, duration: first.duration };
+      const shootPistol = animations.find((c) => c.name === 'shoot_pistol');
+      const shootRifle = animations.find((c) => c.name === 'shoot_rifle');
+      const shootClip = weaponType === 'pistol' ? shootPistol : shootRifle;
+      if (shootClip) {
+        this.clipMap.set('shoot', { clip: shootClip, duration: shootClip.duration });
+        this.clipMap.set('alert', { clip: shootClip, duration: shootClip.duration });
+      }
       for (const clip of animations) {
         const nm = clip.name.toLowerCase().replace(/\s+/g, '_');
         if (!this.clipMap.has(nm)) this.clipMap.set(nm, { clip, duration: clip.duration });
         if (/\bidle\b|stand|default|pose|bind|tpose|t-pose|breathing/i.test(clip.name)) this.clipMap.set('idle', { clip, duration: clip.duration });
         if (/\bwalk\b|locomotion|move|forward|run\b/i.test(clip.name)) this.clipMap.set('walk', { clip, duration: clip.duration });
         if (/\bdeath\b|die|dead|dying/i.test(clip.name)) this.clipMap.set('death', { clip, duration: clip.duration });
-        if (/\b(attack|shoot|fire|aim|aiming)\b/i.test(clip.name)) {
+        if (!this.clipMap.has('shoot') && /\b(attack|shoot|fire|aim|aiming)\b/i.test(clip.name)) {
           this.clipMap.set('shoot', { clip, duration: clip.duration });
           this.clipMap.set('alert', { clip, duration: clip.duration });
         }

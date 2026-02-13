@@ -2,8 +2,9 @@ import * as THREE from 'three';
 import type { State } from '../state-machine';
 import type { EnemyBase } from '../../enemy-base';
 import type { EnemyManager } from '../../enemy-manager';
+import { GameSettings } from '../../../core/game-settings';
 
-const ALERT_DURATION = 2.0; // Seconds before going back to idle if player not found
+const ALERT_DURATION = 2.0;
 const MOVE_SPEED = 2.5;
 
 /**
@@ -13,6 +14,7 @@ const MOVE_SPEED = 2.5;
  */
 export function createAlertState(manager: EnemyManager): State<EnemyBase> {
   let timer = 0;
+  let seenPlayerTimer = 0;
 
   return {
     name: 'alert',
@@ -20,23 +22,25 @@ export function createAlertState(manager: EnemyManager): State<EnemyBase> {
     enter(enemy) {
       timer = ALERT_DURATION;
       enemy.model.play('alert');
-      // Turn toward last known player position
       if (enemy.lastKnownPlayerPos) {
         enemy.lookAt(enemy.lastKnownPlayerPos);
       }
-      // Alert nearby enemies
       manager.propagateAlert(enemy);
     },
 
     update(enemy, dt) {
       timer -= dt;
 
-      // Check perception
       const perception = manager.getPerception(enemy);
       if (perception?.canSeePlayer) {
+        seenPlayerTimer += dt;
         enemy.lastKnownPlayerPos = manager.getPlayerPosition().clone();
-        enemy.stateMachine.transition('attack', enemy);
-        return;
+        if (seenPlayerTimer >= GameSettings.getAISightConfirmDuration()) {
+          enemy.stateMachine.transition('attack', enemy);
+          return;
+        }
+      } else {
+        seenPlayerTimer = 0;
       }
 
       // Move toward last known position
@@ -71,7 +75,6 @@ export function createAlertState(manager: EnemyManager): State<EnemyBase> {
         enemy.stateMachine.transition('idle', enemy);
       }
 
-      // If took damage, go straight to attack
       if (perception?.canHearPlayer) {
         enemy.lastKnownPlayerPos = manager.getPlayerPosition().clone();
         timer = ALERT_DURATION; // Reset timer

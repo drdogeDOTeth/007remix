@@ -8,6 +8,7 @@ import {
   GUARD_VARIANTS,
 } from './guard-sprite-sheet';
 import { SpriteAnimator, type AnimationName } from './sprite-animator';
+import type { EnemyWeaponType } from '../../weapons/weapon-stats-map';
 
 export type EnemySpriteSource = GuardVariant | THREE.Texture;
 
@@ -16,6 +17,7 @@ export type EnemySpriteSource = GuardVariant | THREE.Texture;
  * Uses a PlaneGeometry with a CanvasTexture or image sprite atlas.
  * Y-axis-only billboard so enemies stay upright when the player looks up/down.
  * Supports procedural (GuardVariant), or pre-loaded texture (from image).
+ * weaponType is used for procedural sprites to draw weapon-specific silhouettes.
  */
 export class EnemySprite {
   readonly mesh: THREE.Mesh;
@@ -26,11 +28,11 @@ export class EnemySprite {
   private hitTintTimer = 0;
   private texture: THREE.Texture;
 
-  constructor(source: EnemySpriteSource = GUARD_VARIANTS.guard) {
+  constructor(source: EnemySpriteSource = GUARD_VARIANTS.guard, weaponType: EnemyWeaponType = 'pistol') {
     const sharedTexture =
       source instanceof THREE.Texture
         ? source
-        : generateGuardSpriteSheet(source as GuardVariant);
+        : generateGuardSpriteSheet(source as GuardVariant, weaponType);
 
     // Clone texture so each enemy has independent UV offsets
     // (shares the same source image on the GPU)

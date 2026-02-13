@@ -124,6 +124,11 @@ export class Game {
   private missionElapsed = 0;
   private levelName = '';
 
+  // Player spawn position (for single-player respawn)
+  private playerSpawnPosition = { x: 0, y: 0.5, z: 0 };
+
+  private gameStartTime = 0;
+
   // Reusable vectors to avoid per-frame heap allocations
   private readonly _playerVec = new THREE.Vector3();
   private readonly _aimAssistLookDir = new THREE.Vector3();
@@ -182,22 +187,22 @@ export class Game {
     // Projectile system (raycasting + decals)
     this.projectileSystem = new ProjectileSystem(this.scene, this.physics);
 
-    // Weapon manager
+    // Weapon manager (getter ensures current collider after crouch/stand)
     this.weaponManager = new WeaponManager(
       this.scene,
       this.fpsCamera,
       this.projectileSystem,
       this.events,
-      this.player.getCollider(),
+      () => this.player.getCollider(),
       () => this.player.isCrouching,
     );
 
-    // Enemy manager
+    // Enemy manager (getter ensures we use current collider after crouch/respawn)
     this.enemyManager = new EnemyManager(
       this.scene,
       this.physics,
       this.events,
-      this.player.getCollider(),
+      () => this.player.getCollider(),
     );
 
     // Grenade system (gas grenades)
@@ -237,17 +242,26 @@ export class Game {
 
     // Gas damage — mask protects when tactical overlay (NV/gas mask) is on
     this.grenadeSystem.onPlayerInGas = (damage) => {
+      if (this.player.isDead()) return;
       if (!this.tacticalOverlay.visible) {
         this.player.takeDamage(damage);
         this.damageIndicator.flash();
+        if (this.player.isDead()) this.handlePlayerDeath();
       }
     };
 
     // When enemy shoots player
     this.enemyManager.onPlayerHit = (damage, _fromPos) => {
+      if (this.player.isDead()) return;
       this.player.takeDamage(damage);
       this.hud.flashCrosshair();
       this.damageIndicator.flash();
+      if (this.player.isDead()) this.handlePlayerDeath();
+    };
+
+    // When enemy shot hits wall/geometry — show bullet hole and particles
+    this.enemyManager.onEnemyShotHitWorld = (point, normal) => {
+      this.projectileSystem.spawnImpactAt(point, normal);
     };
 
     // Skip decals/impact particles on enemy hits (no lingering effects) and use enemy collider for hit test
@@ -692,7 +706,10 @@ export class Game {
       enemyManager: this.enemyManager,
       pickupSystem: this.pickupSystem,
       destructibleSystem: this.destructibleSystem,
-      setPlayerPosition: (x, y, z) => this.player.setPosition(x, y, z),
+      setPlayerPosition: (x, y, z) => {
+        this.playerSpawnPosition = { x, y, z };
+        this.player.setPosition(x, y, z);
+      },
     });
   }
 
@@ -707,8 +724,8 @@ export class Game {
     this.hud.show();
     if (this.networkMode === 'client') this.hud.setMultiplayerHint(true);
     if (this.levelMode && this.objectivesDisplay) this.objectivesDisplay.show();
+    this.gameStartTime = performance.now();
     this.loop.start();
-    // Start the spy-thriller background music
     startMusic();
   }
 
@@ -797,6 +814,22 @@ export class Game {
     }
 
     this.scoreboard.update(players);
+  }
+
+  /** Handle player death (single-player PvE). Shows overlay and respawns after countdown. */
+  private handlePlayerDeath(): void {
+    if (this.networkMode === 'client') return; // Multiplayer: server sends respawn
+    this.deathOverlay.onCountdownComplete = () => {
+      this.deathOverlay.onCountdownComplete = null;
+      this.deathOverlay.hide();
+      this.player.respawn();
+      this.player.setPosition(
+        this.playerSpawnPosition.x,
+        this.playerSpawnPosition.y,
+        this.playerSpawnPosition.z,
+      );
+    };
+    this.deathOverlay.show();
   }
 
   private handleTrigger(event: string): void {
@@ -1003,6 +1036,8 @@ export class Game {
 
     this._playerVec.set(playerPos.x, playerPos.y, playerPos.z);
     this.enemyManager.setPlayerState(this._playerVec, isMoving);
+    const gameElapsed = (performance.now() - this.gameStartTime) / 1000;
+    this.enemyManager.setPlayerTargetable(gameElapsed >= GameSettings.getAIGameStartGrace());
     this.enemyManager.setCameraPosition(this.fpsCamera.camera.position);
     this.enemyManager.update(dt);
 

@@ -5,8 +5,9 @@
  */
 
 import * as THREE from 'three';
-import { createGuardModel } from '../model/guard-model-factory';
+import { createGuardModel, createEnemyWeaponMesh } from '../model/guard-model-factory';
 import { ANIMATIONS, type AnimationName, type Pose } from '../model/pose-library';
+import type { EnemyWeaponType } from '../../weapons/weapon-stats-map';
 import { GUARD_VARIANTS, COLS, FRAME_W, FRAME_H, ROWS } from './guard-sprite-sheet';
 import type { LoadedCharacter } from '../../core/model-loader';
 import { isLoadedVRM } from '../../core/model-loader';
@@ -55,14 +56,15 @@ const cache = new Map<string, THREE.Texture>();
 
 /**
  * Bake a sprite sheet from the procedural guard model.
- * Returns a texture suitable for EnemySprite. Cached by variant name.
+ * Returns a texture suitable for EnemySprite. Cached by variant name + weapon type.
  */
-export function bakeGuardSpriteSheet(variantName = 'guard'): THREE.Texture {
-  const cached = cache.get(variantName);
+export function bakeGuardSpriteSheet(variantName = 'guard', weaponType: EnemyWeaponType = 'pistol'): THREE.Texture {
+  const cacheKey = `${variantName}_${weaponType}`;
+  const cached = cache.get(cacheKey);
   if (cached) return cached;
 
   const variant = GUARD_VARIANTS[variantName] ?? GUARD_VARIANTS.guard;
-  const { rootGroup, joints } = createGuardModel(variant);
+  const { rootGroup, joints } = createGuardModel(variant, weaponType);
 
   const scene = new THREE.Scene();
   scene.background = null; // Transparent — no opaque backdrop
@@ -144,7 +146,7 @@ export function bakeGuardSpriteSheet(variantName = 'guard'): THREE.Texture {
   texture.colorSpace = THREE.SRGBColorSpace;
   texture.needsUpdate = true;
 
-  cache.set(variantName, texture);
+  cache.set(cacheKey, texture);
   return texture;
 }
 
@@ -192,8 +194,22 @@ function findClip(animations: THREE.AnimationClip[], pattern: RegExp): THREE.Ani
   return animations.find((c) => pattern.test(c.name)) ?? null;
 }
 
+function findRightHandForBake(char: LoadedCharacter, root: THREE.Object3D): THREE.Object3D | null {
+  if (isLoadedVRM(char) && char.vrm?.humanoid) {
+    const hand = char.vrm.humanoid.getRawBoneNode('rightHand' as never)
+      ?? char.vrm.humanoid.getRawBoneNode('rightLowerArm' as never);
+    if (hand) return root.getObjectByName(hand.name) ?? null;
+  }
+  for (const n of ['RightHand', 'rightHand', 'hand_r', 'mixamorigRightHand', 'Hand_R']) {
+    const obj = root.getObjectByName(n);
+    if (obj) return obj;
+  }
+  return null;
+}
+
 /**
  * Bake sprite sheet from custom GLB/VRM model. Uses cached model from getCachedEnemyModel.
+ * Attaches a pistol to the right hand for weapon visibility. Uses pose-library or animations for attack frames.
  * - VRM with humanoid: uses pose-library bone mapping (Phase 4)
  * - GLB or VRM with animations: samples clip poses
  * - Otherwise: renders default pose for all frames
@@ -215,6 +231,11 @@ export function bakeCustomModelSpriteSheet(char: LoadedCharacter): THREE.Texture
     root = char.scene.clone(true);
   }
   fixMaterialsForSprite(root);
+
+  // Attach weapon to right hand for visible weapon in attack/alert frames
+  const rightHand = findRightHandForBake(char, root);
+  const weaponNode = rightHand ? createEnemyWeaponMesh('pistol') : null;
+  if (rightHand && weaponNode) rightHand.add(weaponNode);
 
   const box = new THREE.Box3().setFromObject(root);
   const size = box.getSize(new THREE.Vector3());
@@ -294,6 +315,8 @@ export function bakeCustomModelSpriteSheet(char: LoadedCharacter): THREE.Texture
     char.vrm.humanoid.resetNormalizedPose();
     char.vrm.update(0);
   }
+
+  if (weaponNode) weaponNode.removeFromParent();
 
   root.rotation.y = 0;
   scene.remove(root);

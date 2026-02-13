@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import type { EnemyWeaponType } from '../weapons/weapon-stats-map';
 
 // ─── Atlas layout ───
 export const FRAME_W = 64;
@@ -85,12 +86,20 @@ export function loadSpriteSheetFromImage(url: string): Promise<THREE.Texture> {
   });
 }
 
+const GUN_DIMS: Record<EnemyWeaponType, { w: number; h: number }> = {
+  pistol: { w: 3, h: 8 },
+  rifle: { w: 4, h: 14 },
+  shotgun: { w: 5, h: 12 },
+  sniper: { w: 4, h: 18 },
+};
+
 /**
  * Generate a sprite-sheet canvas + Three.js CanvasTexture for a guard variant.
- * The texture is cached — calling again with the same variant returns the cached one.
+ * The texture is cached — calling again with the same variant+weapon returns the cached one.
  */
-export function generateGuardSpriteSheet(variant: GuardVariant = GUARD_VARIANTS.guard): THREE.CanvasTexture {
-  const cached = textureCache.get(variant.name);
+export function generateGuardSpriteSheet(variant: GuardVariant = GUARD_VARIANTS.guard, weaponType: EnemyWeaponType = 'pistol'): THREE.CanvasTexture {
+  const cacheKey = `${variant.name}_${weaponType}`;
+  const cached = textureCache.get(cacheKey);
   if (cached) return cached;
 
   const canvas = document.createElement('canvas');
@@ -107,7 +116,7 @@ export function generateGuardSpriteSheet(variant: GuardVariant = GUARD_VARIANTS.
       const y = row * FRAME_H;
       ctx.save();
       ctx.translate(x, y);
-      drawFrame(ctx, frameIndex, variant);
+      drawFrame(ctx, frameIndex, variant, weaponType);
       ctx.restore();
     }
   }
@@ -118,13 +127,13 @@ export function generateGuardSpriteSheet(variant: GuardVariant = GUARD_VARIANTS.
   texture.colorSpace = THREE.SRGBColorSpace;
   texture.needsUpdate = true;
 
-  textureCache.set(variant.name, texture);
+  textureCache.set(cacheKey, texture);
   return texture;
 }
 
 // ─── Drawing helpers ───
 
-function drawFrame(ctx: CanvasRenderingContext2D, frame: number, v: GuardVariant): void {
+function drawFrame(ctx: CanvasRenderingContext2D, frame: number, v: GuardVariant, weaponType: EnemyWeaponType): void {
   ctx.clearRect(0, 0, FRAME_W, FRAME_H);
 
   // Center x of the frame
@@ -133,17 +142,17 @@ function drawFrame(ctx: CanvasRenderingContext2D, frame: number, v: GuardVariant
   switch (frame) {
     case 0: drawIdle(ctx, cx, v, 0); break;
     case 1: drawIdle(ctx, cx, v, 1); break;
-    case 2: drawAlert(ctx, cx, v, 0); break;
-    case 3: drawAlert(ctx, cx, v, 1); break;
-    case 4: drawShoot(ctx, cx, v, 0); break;
-    case 5: drawShoot(ctx, cx, v, 1); break;
+    case 2: drawAlert(ctx, cx, v, 0, weaponType); break;
+    case 3: drawAlert(ctx, cx, v, 1, weaponType); break;
+    case 4: drawShoot(ctx, cx, v, 0, weaponType); break;
+    case 5: drawShoot(ctx, cx, v, 1, weaponType); break;
     case 6: drawHit(ctx, cx, v, -1); break;
     case 7: drawHit(ctx, cx, v, 1); break;
     case 8: drawDeath(ctx, cx, v, 0); break;
     case 9: drawDeath(ctx, cx, v, 1); break;
     case 10: drawDeath(ctx, cx, v, 2); break;
-    case 11: drawWalk(ctx, cx, v, 0); break;
-    case 12: drawWalk(ctx, cx, v, 1); break;
+    case 11: drawWalk(ctx, cx, v, 0, weaponType); break;
+    case 12: drawWalk(ctx, cx, v, 1, weaponType); break;
     default: break; // reserved
   }
 }
@@ -160,8 +169,6 @@ const LEG_H = 24;
 const BOOT_H = 6;   // Slightly taller combat boot
 const BELT_H = 3;
 const VEST_INSET = 2;  // Vest sits inside torso outline
-const GUN_W = 4;
-const GUN_H = 14;
 
 /** Y offsets from top of frame */
 const HEAD_Y = 14;       // center of head
@@ -305,15 +312,15 @@ function drawArm(
   ctx.restore();
 }
 
-function drawGun(ctx: CanvasRenderingContext2D, x: number, y: number, angle: number): void {
+function drawGun(ctx: CanvasRenderingContext2D, x: number, y: number, angle: number, weaponType: EnemyWeaponType): void {
+  const { w: GUN_W, h: GUN_H } = GUN_DIMS[weaponType];
   ctx.save();
   ctx.translate(x, y);
   ctx.rotate(angle);
-  // Rifle body
   ctx.fillStyle = '#1a1a1a';
   ctx.fillRect(-GUN_W / 2, 0, GUN_W, GUN_H);
   ctx.fillStyle = '#2a2a2a';
-  ctx.fillRect(-GUN_W / 2 + 1, 2, GUN_W - 2, 4);
+  ctx.fillRect(-GUN_W / 2 + 1, 2, Math.max(0, GUN_W - 2), 4);
   ctx.restore();
 }
 
@@ -340,42 +347,36 @@ function drawIdle(ctx: CanvasRenderingContext2D, cx: number, v: GuardVariant, al
   drawHead(ctx, cx, v);
 }
 
-function drawAlert(ctx: CanvasRenderingContext2D, cx: number, v: GuardVariant, alt: number): void {
+function drawAlert(ctx: CanvasRenderingContext2D, cx: number, v: GuardVariant, alt: number, weaponType: EnemyWeaponType): void {
   drawLegs(ctx, cx, v, 1, -1);
   drawTorso(ctx, cx, v);
   // Arms raised outward — left arm outward-left, right arm holds gun outward-right
   const armAngle = alt === 0 ? 0.7 : 0.5;
   drawArm(ctx, cx - TORSO_W / 2 - 1, TORSO_Y + 2, -armAngle, v);
   drawArm(ctx, cx + TORSO_W / 2 + 1, TORSO_Y + 2, armAngle, v);
-  // Gun in right hand
-  drawGun(ctx, cx + TORSO_W / 2 + 5, TORSO_Y + 4, armAngle);
+  drawGun(ctx, cx + TORSO_W / 2 + 5, TORSO_Y + 4, armAngle, weaponType);
   drawHead(ctx, cx, v, alt === 1 ? 2 : 0);
 }
 
-function drawShoot(ctx: CanvasRenderingContext2D, cx: number, v: GuardVariant, alt: number): void {
+function drawShoot(ctx: CanvasRenderingContext2D, cx: number, v: GuardVariant, alt: number, weaponType: EnemyWeaponType): void {
+  const { w: GUN_W, h: GUN_H } = GUN_DIMS[weaponType];
   drawLegs(ctx, cx, v, 2, -1);
   drawTorso(ctx, cx, v);
-  // Left arm forward (supporting gun) — slight outward angle
   drawArm(ctx, cx - TORSO_W / 2, TORSO_Y + 4, -0.3, v);
-  // Right arm extended forward (holding gun)
   const recoil = alt === 1 ? 2 : 0;
   ctx.save();
   ctx.translate(cx + TORSO_W / 2 + 1, TORSO_Y + 6);
   ctx.rotate(-Math.PI / 2 + 0.15);
-  // Arm extended
   ctx.fillStyle = v.uniformColor;
   ctx.fillRect(0, -ARM_W / 2, ARM_H - 2, ARM_W);
-  // Hand
   ctx.fillStyle = v.skinTone;
   ctx.beginPath();
   ctx.arc(ARM_H - 2, 0, 3, 0, Math.PI * 2);
   ctx.fill();
-  // Gun
   ctx.fillStyle = '#1a1a1a';
   ctx.fillRect(ARM_H - 2, -GUN_W / 2, GUN_H, GUN_W);
   ctx.restore();
 
-  // Muzzle flash on frame 0
   if (alt === 0) {
     drawMuzzleFlash(ctx, cx + TORSO_W / 2 + ARM_H + GUN_H - 6, TORSO_Y + 4 + recoil);
   }
@@ -435,15 +436,13 @@ function drawDeath(ctx: CanvasRenderingContext2D, cx: number, v: GuardVariant, s
   }
 }
 
-function drawWalk(ctx: CanvasRenderingContext2D, cx: number, v: GuardVariant, alt: number): void {
+function drawWalk(ctx: CanvasRenderingContext2D, cx: number, v: GuardVariant, alt: number, weaponType: EnemyWeaponType): void {
   const legSwing = alt === 0 ? 3 : -3;
   drawLegs(ctx, cx, v, legSwing, -legSwing);
   drawTorso(ctx, cx, v);
-  // Arms swing opposite to legs — outward bias
   const armSwing = alt === 0 ? 0.25 : -0.25;
   drawArm(ctx, cx - TORSO_W / 2 - 1, TORSO_Y + 2, -0.15 + armSwing, v);
   drawArm(ctx, cx + TORSO_W / 2 + 1, TORSO_Y + 2, 0.15 - armSwing, v);
-  // Gun in right hand
-  drawGun(ctx, cx + TORSO_W / 2 + 4, TORSO_Y + ARM_H - 2, 0);
+  drawGun(ctx, cx + TORSO_W / 2 + 4, TORSO_Y + ARM_H - 2, 0, weaponType);
   drawHead(ctx, cx, v);
 }

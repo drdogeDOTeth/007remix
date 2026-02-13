@@ -24,7 +24,7 @@ export class WeaponManager {
   private projectileSystem: ProjectileSystem;
   private fpsCamera: FPSCamera;
   private events: EventBus;
-  private playerCollider: RAPIER.Collider;
+  private getPlayerCollider: () => RAPIER.Collider;
 
   private wasMouseDown = false;
   private reloadSoundPlayed = false;
@@ -47,13 +47,13 @@ export class WeaponManager {
     fpsCamera: FPSCamera,
     projectileSystem: ProjectileSystem,
     events: EventBus,
-    playerCollider: RAPIER.Collider,
+    getPlayerCollider: () => RAPIER.Collider,
     getIsCrouching?: () => boolean,
   ) {
     this.fpsCamera = fpsCamera;
     this.projectileSystem = projectileSystem;
     this.events = events;
-    this.playerCollider = playerCollider;
+    this.getPlayerCollider = getPlayerCollider;
     if (getIsCrouching) this.getIsCrouching = getIsCrouching;
 
     this.viewModel = new WeaponViewModel();
@@ -243,7 +243,7 @@ export class WeaponManager {
         dir.z += (Math.random() - 0.5) * weapon.stats.spread * spreadMult;
         dir.normalize();
       }
-      const result = this.projectileSystem.fireRay(origin, dir, weapon, this.playerCollider);
+      const result = this.projectileSystem.fireRay(origin, dir, weapon, this.getPlayerCollider());
 
       // Store first hit for network sync (Phase 3)
       if (!firstHit && result.hit && result.collider) {

@@ -482,11 +482,13 @@ export async function loadAndMergeStandaloneAnimations(
     }
   }
 
-  // Also load pose JSON from /animations/ (death.json, hit.json) — VRM-style bone quaternions
+  // Also load pose JSON from /animations/ — VRM-style bone quaternions
   if (char.vrm) {
     for (const { name: animName, file } of [
       { name: 'death', file: 'death1.json' },
       { name: 'hit', file: 'hit.json' },
+      { name: 'shoot_pistol', file: 'attackpistol.json' },
+      { name: 'shoot_rifle', file: 'attackrifle.json' },
     ]) {
       const url = `${POSE_JSON_BASE}${file}`;
       const clip = await loadPoseAnimationFromJson(char.vrm, url, animName);

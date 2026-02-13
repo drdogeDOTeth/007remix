@@ -7,6 +7,8 @@ const STORAGE_KEY = '007remix_settings';
 
 export type GamepadResponseCurve = 'linear' | 'exponential' | 'precision' | 'classic';
 
+export type DifficultyLevel = 'easy' | 'normal' | 'hard';
+
 export interface GameSettingsValues {
   mouseSens: number;
   gamepadSens: number;
@@ -22,6 +24,13 @@ export interface GameSettingsValues {
   volumeMaster: number;
   volumeMusic: number;
   volumeSFX: number;
+  // Difficulty & AI
+  difficulty: DifficultyLevel;
+  aiReactionTime: number;      // 0.5–3 s before engaging
+  aiSightRange: number;        // 10–35 m
+  aiFovScale: number;          // 50–150% (wider = more peripheral vision)
+  aiHearingScale: number;      // 50–200% (gunshot/footstep range)
+  aiGameStartGrace: number;    // 0–5 s before any enemy can target player
 }
 
 const DEFAULTS: GameSettingsValues = {
@@ -39,6 +48,12 @@ const DEFAULTS: GameSettingsValues = {
   volumeMaster: 100,
   volumeMusic: 80,
   volumeSFX: 100,
+  difficulty: 'normal',
+  aiReactionTime: 100,         // 1.0s (stored as 0–100 → 0.5–3s)
+  aiSightRange: 20,            // 20 m
+  aiFovScale: 100,             // 100%
+  aiHearingScale: 100,         // 100%
+  aiGameStartGrace: 200,       // 2.0s (stored as 0–100 → 0–5s)
 };
 
 function clamp(v: number, lo: number, hi: number): number {
@@ -82,6 +97,12 @@ function load(): GameSettingsValues {
         volumeMaster: clamp(parsed.volumeMaster ?? DEFAULTS.volumeMaster, 0, 100),
         volumeMusic: clamp(parsed.volumeMusic ?? DEFAULTS.volumeMusic, 0, 100),
         volumeSFX: clamp(parsed.volumeSFX ?? DEFAULTS.volumeSFX, 0, 100),
+        difficulty: (['easy', 'normal', 'hard'] as const).includes(parsed.difficulty as any) ? (parsed.difficulty as DifficultyLevel) : DEFAULTS.difficulty,
+        aiReactionTime: clamp(parsed.aiReactionTime ?? DEFAULTS.aiReactionTime, 0, 100),
+        aiSightRange: clamp(parsed.aiSightRange ?? DEFAULTS.aiSightRange, 10, 35),
+        aiFovScale: clamp(parsed.aiFovScale ?? DEFAULTS.aiFovScale, 50, 150),
+        aiHearingScale: clamp(parsed.aiHearingScale ?? DEFAULTS.aiHearingScale, 50, 200),
+        aiGameStartGrace: clamp(parsed.aiGameStartGrace ?? DEFAULTS.aiGameStartGrace, 0, 100),
       };
     }
   } catch (_) {}
@@ -110,6 +131,12 @@ export const GameSettings = {
     if (values.volumeMaster !== undefined) cache.volumeMaster = clamp(values.volumeMaster, 0, 100);
     if (values.volumeMusic !== undefined) cache.volumeMusic = clamp(values.volumeMusic, 0, 100);
     if (values.volumeSFX !== undefined) cache.volumeSFX = clamp(values.volumeSFX, 0, 100);
+    if (values.difficulty !== undefined) cache.difficulty = values.difficulty;
+    if (values.aiReactionTime !== undefined) cache.aiReactionTime = clamp(values.aiReactionTime, 0, 100);
+    if (values.aiSightRange !== undefined) cache.aiSightRange = clamp(values.aiSightRange, 10, 35);
+    if (values.aiFovScale !== undefined) cache.aiFovScale = clamp(values.aiFovScale, 50, 150);
+    if (values.aiHearingScale !== undefined) cache.aiHearingScale = clamp(values.aiHearingScale, 50, 200);
+    if (values.aiGameStartGrace !== undefined) cache.aiGameStartGrace = clamp(values.aiGameStartGrace, 0, 100);
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(cache));
     } catch (_) {}
@@ -159,5 +186,34 @@ export const GameSettings = {
   },
   getVolumeSFX(): number {
     return cache.volumeSFX / 100;
+  },
+  getDifficulty(): DifficultyLevel {
+    return cache.difficulty;
+  },
+  getEnemyDamageMultiplier(): number {
+    const d = cache.difficulty;
+    if (d === 'easy') return 0.2;
+    if (d === 'hard') return 1.4;
+    return 1;
+  },
+  getAISightConfirmDuration(): number {
+    const n = cache.aiReactionTime / 100;
+    return 0.5 + n * 2.5;
+  },
+  getAISightRange(): number {
+    return cache.aiSightRange;
+  },
+  getAIFovHalfAngle(): number {
+    const scale = cache.aiFovScale / 100;
+    return (75 * Math.PI) / 180 * scale;
+  },
+  getAIHearingGunshotRange(): number {
+    return 25 * (cache.aiHearingScale / 100);
+  },
+  getAIHearingFootstepRange(): number {
+    return 5 * (cache.aiHearingScale / 100);
+  },
+  getAIGameStartGrace(): number {
+    return (cache.aiGameStartGrace / 100) * 5;
   },
 };

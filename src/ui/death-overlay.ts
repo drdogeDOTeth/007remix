@@ -50,6 +50,9 @@ export class DeathOverlay {
     document.body.appendChild(this.container);
   }
 
+  /** Called when countdown reaches 0 (for single-player respawn). */
+  onCountdownComplete: (() => void) | null = null;
+
   /**
    * Show death overlay with killer name and respawn countdown.
    */
@@ -63,7 +66,6 @@ export class DeathOverlay {
       this.messageElement.textContent = 'YOU DIED';
     }
 
-    // Start countdown from 3 seconds
     let timeLeft = 3;
     this.updateCountdown(timeLeft);
 
@@ -77,6 +79,7 @@ export class DeathOverlay {
           clearInterval(this.countdownInterval);
           this.countdownInterval = null;
         }
+        this.onCountdownComplete?.();
       }
     }, 1000);
   }

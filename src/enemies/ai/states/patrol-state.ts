@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import type { State } from '../state-machine';
 import type { EnemyBase } from '../../enemy-base';
 import type { EnemyManager } from '../../enemy-manager';
+import { GameSettings } from '../../../core/game-settings';
 
 const PATROL_SPEED = 1.8;
 const WAYPOINT_RADIUS = 0.6;
@@ -12,6 +13,7 @@ const WAYPOINT_RADIUS = 0.6;
  */
 export function createPatrolState(manager: EnemyManager): State<EnemyBase> {
   let waypointIndex = 0;
+  let seenPlayerTimer = 0;
 
   return {
     name: 'patrol',
@@ -25,13 +27,16 @@ export function createPatrolState(manager: EnemyManager): State<EnemyBase> {
     },
 
     update(enemy, dt) {
-      // Check perception first
       const perception = manager.getPerception(enemy);
       if (perception?.canSeePlayer) {
+        seenPlayerTimer += dt;
         enemy.lastKnownPlayerPos = manager.getPlayerPosition().clone();
-        enemy.stateMachine.transition('attack', enemy);
+        if (seenPlayerTimer >= GameSettings.getAISightConfirmDuration()) {
+          enemy.stateMachine.transition('attack', enemy);
+        }
         return;
       }
+      seenPlayerTimer = 0;
       if (perception?.canHearPlayer) {
         enemy.lastKnownPlayerPos = manager.getPlayerPosition().clone();
         enemy.stateMachine.transition('alert', enemy);

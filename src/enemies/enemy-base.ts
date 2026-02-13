@@ -83,14 +83,14 @@ export class EnemyBase {
       if (cachedModel) {
         spriteSource = bakeCustomModelSpriteSheet(cachedModel);
       } else if (cfg.spriteSource === 'baked') {
-        spriteSource = bakeGuardSpriteSheet(variant.name);
+        spriteSource = bakeGuardSpriteSheet(variant.name, weaponType);
       } else if (cfg.spriteSource === 'image' && cfg.spriteImageUrl) {
         const tex = getPreloadedSpriteTexture();
         spriteSource = tex ?? variant;
       } else {
         spriteSource = variant;
       }
-      this.model = new EnemySprite(spriteSource);
+      this.model = new EnemySprite(spriteSource, weaponType);
     } else {
       const cachedModel = getCachedEnemyModel();
       this.model = cachedModel ? new EnemyCustomModel(cachedModel, weaponType) : new EnemyModel(variant, weaponType);

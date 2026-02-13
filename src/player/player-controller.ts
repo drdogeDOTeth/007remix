@@ -211,13 +211,14 @@ export class PlayerController {
   }
 
   takeDamage(amount: number): void {
+    if (this.dead) return;
     if (this.armor > 0) {
-      // Armor absorbs 60% of damage
       const armorAbsorb = Math.min(this.armor, amount * 0.6);
       this.armor -= armorAbsorb;
       amount -= armorAbsorb;
     }
     this.health = Math.max(0, this.health - amount);
+    if (this.health <= 0) this.setDead(true);
   }
 
   heal(amount: number): void {

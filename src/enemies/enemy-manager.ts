@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import RAPIER from '@dimforge/rapier3d-compat';
 import { PhysicsWorld } from '../core/physics-world';
+import { GameSettings } from '../core/game-settings';
 import { EventBus } from '../core/event-bus';
 import { EnemyBase } from './enemy-base';
 import { GUARD_VARIANTS, type GuardVariant } from './sprite/guard-sprite-sheet';
@@ -37,8 +38,9 @@ export class EnemyManager {
   // Player state — set externally each frame
   private playerPos = new THREE.Vector3();
   private cameraPos = new THREE.Vector3();
-  private playerCollider: RAPIER.Collider;
+  private getPlayerCollider: () => RAPIER.Collider;
   private playerIsMoving = false;
+  private playerTargetable = false;
   private playerFiredRecently = false;
   private playerFiredTimer = 0;
 
@@ -48,17 +50,19 @@ export class EnemyManager {
 
   // Callback for when enemy shoots the player
   onPlayerHit: ((damage: number, fromPos: THREE.Vector3) => void) | null = null;
+  /** Called when an enemy shot hits geometry (wall/etc) — for decals and particles */
+  onEnemyShotHitWorld: ((point: THREE.Vector3, normal: THREE.Vector3) => void) | null = null;
 
   constructor(
     scene: THREE.Scene,
     physics: PhysicsWorld,
     events: EventBus,
-    playerCollider: RAPIER.Collider,
+    getPlayerCollider: () => RAPIER.Collider,
   ) {
     this.scene = scene;
     this.physics = physics;
     this.events = events;
-    this.playerCollider = playerCollider;
+    this.getPlayerCollider = getPlayerCollider;
 
     // Pre-create a small pool of muzzle flash lights (max 4 concurrent)
     for (let i = 0; i < 4; i++) {
@@ -117,6 +121,11 @@ export class EnemyManager {
     this.playerIsMoving = isMoving;
   }
 
+  /** Allow enemies to target the player (false during game start grace period) */
+  setPlayerTargetable(targetable: boolean): void {
+    this.playerTargetable = targetable;
+  }
+
   getPlayerPosition(): THREE.Vector3 {
     return this.playerPos;
   }
@@ -132,10 +141,11 @@ export class EnemyManager {
     return perceivePlayer(
       enemy,
       this.playerPos,
-      this.playerCollider,
+      this.getPlayerCollider(),
       this.physics,
       this.playerIsMoving,
       this.playerFiredRecently,
+      this.playerTargetable,
     );
   }
 
@@ -166,6 +176,9 @@ export class EnemyManager {
     }
   }
 
+  private readonly _muzzlePos = new THREE.Vector3();
+  private readonly _forward = new THREE.Vector3();
+
   /** Fire at the player from an enemy (called by attack state) */
   enemyFireAtPlayer(enemy: EnemyBase): void {
     const enemyPos = enemy.getHeadPosition();
@@ -175,6 +188,7 @@ export class EnemyManager {
       .normalize();
 
     let totalDamage = 0;
+    let worldHitReported = false; // One decal per shot burst
 
     for (let r = 0; r < stats.raysPerShot; r++) {
       const dir = baseDir.clone();
@@ -198,31 +212,40 @@ export class EnemyManager {
         enemy.collider,
       );
 
-      if (hit && hit.collider.handle === this.playerCollider.handle) {
-        totalDamage += stats.damage;
+      if (hit) {
+        if (hit.collider.handle === this.getPlayerCollider().handle) {
+          totalDamage += stats.damage;
+        } else if (!worldHitReported && !this.getEnemyByCollider(hit.collider)) {
+          worldHitReported = true;
+          const point = new THREE.Vector3(hit.point.x, hit.point.y, hit.point.z);
+          const normal = new THREE.Vector3(-dir.x, -dir.y, -dir.z);
+          this.onEnemyShotHitWorld?.(point, normal);
+        }
       }
     }
 
-    // Visual: muzzle flash on enemy
-    this.flashEnemyMuzzle(enemyPos);
+    // Visual: muzzle flash at weapon tip (in front of head)
+    this._forward.set(Math.sin(enemy.facingAngle), 0, Math.cos(enemy.facingAngle));
+    this._muzzlePos.copy(enemyPos).add(this._forward.multiplyScalar(0.4));
+    this.flashEnemyMuzzle(this._muzzlePos);
 
     // Audio: weapon-specific sound
     playGunshotWeapon(enemy.weaponType);
 
     if (totalDamage > 0) {
-      this.onPlayerHit?.(totalDamage, enemyPos);
+      const mult = GameSettings.getEnemyDamageMultiplier();
+      this.onPlayerHit?.(totalDamage * mult, enemyPos);
     }
   }
 
   private flashEnemyMuzzle(pos: THREE.Vector3): void {
-    // Grab an idle light from the pool (or reuse oldest)
     let idx = this.muzzleFlashTimers.findIndex(t => t <= 0);
-    if (idx === -1) idx = 0; // reuse first if all busy
+    if (idx === -1) idx = 0;
     const light = this.muzzleFlashPool[idx];
     light.position.copy(pos);
-    light.intensity = 20;
+    light.intensity = 35;
     light.visible = true;
-    this.muzzleFlashTimers[idx] = 0.06;
+    this.muzzleFlashTimers[idx] = 0.1;
   }
 
   /** Find best aim-assist target in forward cone. Returns target pos and angle off crosshair, or null. */
@@ -326,7 +349,7 @@ export class EnemyManager {
           this.muzzleFlashPool[i].visible = false;
           this.muzzleFlashPool[i].intensity = 0;
         } else {
-          this.muzzleFlashPool[i].intensity = (this.muzzleFlashTimers[i] / 0.06) * 20;
+          this.muzzleFlashPool[i].intensity = (this.muzzleFlashTimers[i] / 0.1) * 35;
         }
       }
     }

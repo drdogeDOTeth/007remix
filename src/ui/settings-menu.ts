@@ -3,7 +3,7 @@
  * Tabbed by category. Accessible from pause menu and main menu.
  */
 
-import { GameSettings, type GamepadResponseCurve } from '../core/game-settings';
+import { GameSettings, type GamepadResponseCurve, type DifficultyLevel } from '../core/game-settings';
 import { setMusicVolume } from '../audio/music';
 import { setSFXVolume } from '../audio/sound-effects';
 
@@ -14,7 +14,7 @@ function applyVolume(): void {
   setSFXVolume(s);
 }
 
-type SettingsTab = 'controls' | 'aim' | 'audio';
+type SettingsTab = 'controls' | 'aim' | 'audio' | 'gameplay';
 
 export class SettingsMenu {
   private overlay: HTMLDivElement;
@@ -73,9 +73,9 @@ export class SettingsMenu {
       font-family: 'Courier New', monospace;
       transition: background 0.2s;
     `;
-    for (const id of ['controls', 'aim', 'audio'] as const) {
+    for (const id of ['controls', 'aim', 'audio', 'gameplay'] as const) {
       const tab = document.createElement('div');
-      tab.textContent = id === 'controls' ? 'CONTROLS' : id === 'aim' ? 'AIM' : 'AUDIO';
+      tab.textContent = id === 'controls' ? 'CONTROLS' : id === 'aim' ? 'AIM' : id === 'audio' ? 'AUDIO' : 'GAMEPLAY';
       tab.style.cssText = tabStyle(id === 'controls');
       tab.dataset.tab = id;
       tab.addEventListener('click', () => this.showTab(id));
@@ -146,6 +146,27 @@ export class SettingsMenu {
     this.panels.audio = audioPanel;
     contentWrap.appendChild(audioPanel);
 
+    // GAMEPLAY panel (difficulty + AI)
+    const gameplayPanel = document.createElement('div');
+    gameplayPanel.dataset.panel = 'gameplay';
+    const gameplaySection = this.createSectionContent();
+    gameplaySection.appendChild(this.createDifficultyRow(g.difficulty));
+    const reactionVal = Math.round(0.5 * 10 + (g.aiReactionTime / 100) * 25);
+    gameplaySection.appendChild(this.createSlider('Reaction Time', reactionVal, 5, 30, 's', (v) => {
+      GameSettings.set({ aiReactionTime: Math.round(((v / 10 - 0.5) / 2.5) * 100) });
+    }, (v) => `${(v / 10).toFixed(1)}s`));
+    gameplaySection.appendChild(this.createSlider('Sight Range', g.aiSightRange, 10, 35, 'm', (v) => GameSettings.set({ aiSightRange: v })));
+    gameplaySection.appendChild(this.createSlider('FOV Scale', g.aiFovScale, 50, 150, '%', (v) => GameSettings.set({ aiFovScale: v })));
+    gameplaySection.appendChild(this.createSlider('Hearing', g.aiHearingScale, 50, 200, '%', (v) => GameSettings.set({ aiHearingScale: v })));
+    const graceVal = Math.round((g.aiGameStartGrace / 100) * 50);
+    gameplaySection.appendChild(this.createSlider('Start Grace', graceVal, 0, 50, 's', (v) => {
+      GameSettings.set({ aiGameStartGrace: Math.round((v / 50) * 100) });
+    }, (v) => `${(v / 10).toFixed(1)}s`));
+    gameplayPanel.appendChild(gameplaySection);
+    gameplayPanel.style.display = 'none';
+    this.panels.gameplay = gameplayPanel;
+    contentWrap.appendChild(gameplayPanel);
+
     this.overlay.appendChild(contentWrap);
 
     const backBtn = this.createButton('BACK');
@@ -161,7 +182,7 @@ export class SettingsMenu {
   }
 
   private showTab(id: SettingsTab): void {
-    for (const tabId of ['controls', 'aim', 'audio'] as const) {
+    for (const tabId of ['controls', 'aim', 'audio', 'gameplay'] as const) {
       const panel = this.panels[tabId];
       const tab = this.tabs[tabId];
       const active = tabId === id;
@@ -222,6 +243,44 @@ export class SettingsMenu {
     return row;
   }
 
+  private createDifficultyRow(value: DifficultyLevel): HTMLDivElement {
+    const row = document.createElement('div');
+    row.style.cssText = `display: flex; align-items: center; gap: 12px; margin-bottom: 12px; min-width: 260px;`;
+    const lab = document.createElement('label');
+    lab.textContent = 'Difficulty';
+    lab.style.cssText = `width: 90px; font-size: 12px; letter-spacing: 1px;`;
+    const select = document.createElement('select');
+    select.style.cssText = `
+      flex: 1;
+      padding: 6px 10px;
+      font-family: 'Courier New', monospace;
+      font-size: 12px;
+      background: rgba(0,0,0,0.5);
+      color: #d4af37;
+      border: 1px solid rgba(212, 175, 55, 0.5);
+      border-radius: 2px;
+      cursor: pointer;
+    `;
+    const options: { v: DifficultyLevel; label: string }[] = [
+      { v: 'easy', label: 'Easy (20% damage)' },
+      { v: 'normal', label: 'Normal' },
+      { v: 'hard', label: 'Hard (140% damage)' },
+    ];
+    for (const opt of options) {
+      const o = document.createElement('option');
+      o.value = opt.v;
+      o.textContent = opt.label;
+      if (opt.v === value) o.selected = true;
+      select.appendChild(o);
+    }
+    select.addEventListener('change', () => {
+      GameSettings.set({ difficulty: select.value as DifficultyLevel });
+    });
+    row.appendChild(lab);
+    row.appendChild(select);
+    return row;
+  }
+
   private createAimAssistModeRow(value: 'off' | 'slowdown' | 'pull'): HTMLDivElement {
     const row = document.createElement('div');
     row.style.cssText = `display: flex; align-items: center; gap: 12px; margin-bottom: 12px; min-width: 260px;`;
@@ -267,6 +326,7 @@ export class SettingsMenu {
     max: number,
     suffix: string,
     onChange: (v: number) => void,
+    formatDisplay?: (v: number) => string,
   ): HTMLDivElement {
     const row = document.createElement('div');
     row.style.cssText = `display: flex; align-items: center; gap: 12px; margin-bottom: 12px; min-width: 260px;`;
@@ -289,10 +349,11 @@ export class SettingsMenu {
     `;
     const valSpan = document.createElement('span');
     valSpan.style.cssText = `width: 42px; font-size: 11px; color: rgba(255,255,255,0.7); text-align: right;`;
-    valSpan.textContent = `${value}${suffix}`;
+    const fmt = formatDisplay ?? ((v: number) => `${v}${suffix}`);
+    valSpan.textContent = fmt(value);
     input.addEventListener('input', () => {
       const v = parseInt(input.value, 10);
-      valSpan.textContent = `${v}${suffix}`;
+      valSpan.textContent = fmt(v);
       onChange(v);
     });
     row.appendChild(lab);
