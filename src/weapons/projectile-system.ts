@@ -40,6 +40,9 @@ export class ProjectileSystem {
   private readonly _normal = new THREE.Vector3();
   private readonly _lookTarget = new THREE.Vector3();
 
+  // Pool for impact particle velocities (avoid allocation churn)
+  private readonly _velPool: THREE.Vector3[] = [];
+
   // Callbacks for hit detection
   onHitCollider: ((collider: RAPIER.Collider, point: THREE.Vector3, normal: THREE.Vector3) => void) | null = null;
   /** If set, decals and impact particles are skipped when the hit collider is an enemy (avoids lingering effects on bodies). */
@@ -152,8 +155,8 @@ export class ProjectileSystem {
       p.visible = true;
       (p.material as THREE.MeshBasicMaterial).opacity = 1;
 
-      // Random velocity outward from surface
-      const vel = new THREE.Vector3(
+      const vel = this._velPool.pop() ?? new THREE.Vector3();
+      vel.set(
         (Math.random() - 0.5) * 2 + normal.x * 2,
         Math.random() * 2 + normal.y * 1,
         (Math.random() - 0.5) * 2 + normal.z * 2,
@@ -181,6 +184,7 @@ export class ProjectileSystem {
       ap.life -= frameDt;
       if (ap.life <= 0) {
         ap.mesh.visible = false;
+        this._velPool.push(ap.vel);
         this.activeParticles.splice(i, 1);
       } else {
         ap.mesh.position.addScaledVector(ap.vel, frameDt);

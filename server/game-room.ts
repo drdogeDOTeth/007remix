@@ -24,7 +24,7 @@ export class GameRoom {
   private respawnTimers: Map<string, NodeJS.Timeout> = new Map(); // Player ID -> respawn timer
 
   // Anti-cheat: Movement speed validation
-  private readonly MAX_SPEED = 9.9; // units/second (sprint speed)
+  private readonly MAX_SPEED = 7.5; // units/second (sprint speed; MOVE_SPEED * SPRINT_MULTIPLIER ≈ 6.9)
   private readonly SPEED_TOLERANCE = 1.5; // 50% tolerance for network jitter, lag, edge cases
 
   // Anti-cheat: Fire rate validation

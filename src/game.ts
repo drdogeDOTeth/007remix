@@ -165,6 +165,7 @@ export class Game {
   private networkUpdateRate = NetworkConfig.UPDATE_RATES.PLAYER_STATE; // Hz
   private localPlayerKills = 0;
   private processedDestructibleIds = new Set<string>();
+  private readonly MAX_PROCESSED_DESTRUCTIBLES = 256;
 
   /** Called when all objectives are done and player reaches extraction (mission:complete). */
   onMissionComplete: (() => void) | null = null;
@@ -501,6 +502,7 @@ export class Game {
         if (!isLocalPlayer) {
           const remotePlayer = this.remotePlayerManager?.getPlayer(event.playerId);
           if (remotePlayer) {
+            if (event.direction) remotePlayer.setAimFromDirection(event.direction);
             remotePlayer.playFireAnimation();
 
             // Play spatial audio for remote gunshot
@@ -673,6 +675,9 @@ export class Game {
       // Handle destructible destroyed events (Phase 5)
       this.networkManager.onDestructibleDestroyed = (event) => {
         if (this.processedDestructibleIds.has(event.propId)) return;
+        if (this.processedDestructibleIds.size >= this.MAX_PROCESSED_DESTRUCTIBLES) {
+          this.processedDestructibleIds.clear();
+        }
         this.processedDestructibleIds.add(event.propId);
 
         const destroyed = this.destructibleSystem.destroyByPositionAndType(
@@ -834,6 +839,9 @@ export class Game {
     if (!destroyed) return;
     for (const d of destroyed) {
       if (this.processedDestructibleIds.has(d.propId)) continue;
+      if (this.processedDestructibleIds.size >= this.MAX_PROCESSED_DESTRUCTIBLES) {
+        this.processedDestructibleIds.clear();
+      }
       this.processedDestructibleIds.add(d.propId);
       // Silent=true: no explosions/debris when syncing for new joiners
       this.destructibleSystem.destroyByPositionAndType(d.position, d.type, 1.0, true, true);

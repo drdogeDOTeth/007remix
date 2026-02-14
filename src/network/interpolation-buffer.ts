@@ -122,6 +122,22 @@ export class InterpolationBuffer {
   }
 
   /**
+   * Inject a rotation update (e.g. from weapon fire direction) so interpolation
+   * uses it immediately. Adds a snapshot with latest position but new rotation.
+   */
+  injectRotation(localTimestamp: number, rotation: number): void {
+    if (this.snapshots.length === 0) return;
+    const latest = this.snapshots[this.snapshots.length - 1].state;
+    const injected: PlayerStateUpdate = {
+      ...latest,
+      rotation,
+      timestamp: localTimestamp,
+    };
+    this.snapshots.push({ timestamp: localTimestamp, state: injected });
+    if (this.snapshots.length > 10) this.snapshots.shift();
+  }
+
+  /**
    * Clear all snapshots in the buffer.
    */
   clear(): void {

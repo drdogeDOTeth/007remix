@@ -119,6 +119,7 @@ export class EnemySprite {
   }
 
   dispose(): void {
+    this.texture.dispose();
     this.mesh.geometry.dispose();
     this.material.dispose();
     this.shadowMesh.geometry.dispose();

@@ -40,6 +40,7 @@ interface SmokePuff {
 
 interface GasCloud {
   puffs: SmokePuff[];
+  puffGeo: THREE.PlaneGeometry;
   position: THREE.Vector3;
   radius: number;
   remaining: number;
@@ -192,7 +193,7 @@ export class GrenadeSystem {
   private spawnGasCloud(at: THREE.Vector3): void {
     const puffs: SmokePuff[] = [];
     const puffCount = 10;
-    const puffGeo = new THREE.PlaneGeometry(1, 1);
+    const puffGeo = new THREE.PlaneGeometry(1, 1); // Shared by all puffs in this cloud
 
     for (let i = 0; i < puffCount; i++) {
       const tex = this.getSmokePuffTexture().clone();
@@ -236,6 +237,7 @@ export class GrenadeSystem {
 
     this.clouds.push({
       puffs,
+      puffGeo, // Store for single dispose on cleanup
       position: at.clone(),
       radius: GAS_RADIUS,
       remaining: GAS_DURATION,
@@ -323,14 +325,14 @@ export class GrenadeSystem {
       }
 
       if (c.remaining <= 0) {
-        // Clean up all puffs
+        // Clean up all puffs (shared geometry disposed once)
         for (const p of c.puffs) {
           const m = p.mesh.material as THREE.MeshBasicMaterial;
           if (m.map) m.map.dispose();
           m.dispose();
-          p.mesh.geometry.dispose();
           this.scene.remove(p.mesh);
         }
+        c.puffGeo.dispose();
         this.clouds.splice(i, 1);
       }
     }

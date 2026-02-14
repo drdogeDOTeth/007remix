@@ -4,7 +4,7 @@ import { InputManager } from '../core/input-manager';
 import { PhysicsWorld } from '../core/physics-world';
 import { FPSCamera } from './fps-camera';
 
-const MOVE_SPEED = 6;
+const MOVE_SPEED = 4.2; // Walk speed tuned to match walk animation (was 6, felt like gliding)
 const SPRINT_MULTIPLIER = 1.65;
 const CROUCH_SPEED_MULTIPLIER = 0.4;
 const JUMP_VELOCITY = 5;

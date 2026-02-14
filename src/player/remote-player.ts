@@ -51,6 +51,10 @@ export class RemotePlayer {
   private smoothedRotation = 0;
   private hasInitialPosition = false;
 
+  /** Override rotation from weapon fire - bypasses interpolation so aim is correct immediately */
+  private rotationOverrideYaw: number | null = null;
+  private rotationOverrideUntil = 0;
+
   /** When set, drives animation for custom GLB/VRM models (replaces procedural animatePlayerMovement) */
   private customAnimator: CustomPlayerAnimator | null = null;
 
@@ -219,17 +223,22 @@ export class RemotePlayer {
         this.hasInitialPosition = true;
       }
 
-      // Apply exponential smoothing for extra smooth movement (lerp factor: 0.3 = aggressive smoothing)
-      const smoothFactor = 0.3;
-      this.smoothedPosition.x += (interpolatedState.position.x - this.smoothedPosition.x) * smoothFactor;
-      this.smoothedPosition.y += (interpolatedState.position.y - this.smoothedPosition.y) * smoothFactor;
-      this.smoothedPosition.z += (interpolatedState.position.z - this.smoothedPosition.z) * smoothFactor;
+      // Apply exponential smoothing for movement (0.3 = smooth); rotation uses 0.65 for responsive aiming
+      const posSmooth = 0.3;
+      this.smoothedPosition.x += (interpolatedState.position.x - this.smoothedPosition.x) * posSmooth;
+      this.smoothedPosition.y += (interpolatedState.position.y - this.smoothedPosition.y) * posSmooth;
+      this.smoothedPosition.z += (interpolatedState.position.z - this.smoothedPosition.z) * posSmooth;
 
-      // Smooth rotation (handle wrapping)
+      const rotSmooth = 0.65; // Snappier rotation so aiming direction updates faster
       let rotDiff = interpolatedState.rotation - this.smoothedRotation;
       if (rotDiff > Math.PI) rotDiff -= Math.PI * 2;
       if (rotDiff < -Math.PI) rotDiff += Math.PI * 2;
-      this.smoothedRotation += rotDiff * smoothFactor;
+      this.smoothedRotation += rotDiff * rotSmooth;
+
+      // Clear rotation override when expired
+      if (performance.now() >= this.rotationOverrideUntil) {
+        this.rotationOverrideYaw = null;
+      }
 
       // Update physics collider position (for hit detection) - use interpolated (not smoothed) for accuracy
       this.rigidBody.setTranslation(
@@ -274,8 +283,9 @@ export class RemotePlayer {
         const raw = interpolatedState.currentWeapon as string;
         this.currentWeaponType = raw === 'rifle' || raw === 'shotgun' || raw === 'sniper' ? raw : 'pistol';
       } else {
-        // 3D model: rotation and animate
-        this.model.rotation.y = this.smoothedRotation + (this.customAnimator ? 0 : Math.PI);
+        // 3D model: rotation and animate; use fire-direction override when active
+        const displayYaw = this.rotationOverrideYaw ?? this.smoothedRotation;
+        this.model.rotation.y = displayYaw + (this.customAnimator ? 0 : Math.PI);
 
         if (this.customAnimator) {
           this.customAnimator.update(dt);
@@ -318,6 +328,22 @@ export class RemotePlayer {
       playFireAnimation(this.model);
       this.customAnimator?.play('attack');
     }
+  }
+
+  /**
+   * Set aim direction from a world-space direction vector (e.g. from weapon fire event).
+   * Uses a direct override so the victim sees the correct aim immediately (bypasses interpolation delay).
+   */
+  setAimFromDirection(direction: { x: number; y: number; z: number }): void {
+    const { x, z } = direction;
+    const len = Math.sqrt(x * x + z * z);
+    if (len < 1e-6) return;
+    // Yaw from direction; +PI so model faces toward aim (was 180° off)
+    const yaw = Math.atan2(x, -z) + Math.PI;
+    this.smoothedRotation = yaw;
+    this.rotationOverrideYaw = yaw;
+    this.rotationOverrideUntil = performance.now() + 350; // Hold until after fire animation
+    this.interpolationBuffer.injectRotation(performance.now(), yaw);
   }
 
   /**
@@ -389,6 +415,8 @@ export class RemotePlayer {
     this.deathAnimationProgress = 0;
     this.ragdollActive = false;
     this.attackLockoutUntil = 0;
+    this.rotationOverrideYaw = null;
+    this.rotationOverrideUntil = 0;
     this.model.visible = true;
     this.model.rotation.x = 0;
     this.model.quaternion.identity();
