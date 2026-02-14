@@ -12,6 +12,7 @@ import type {
   DestructibleDestroyedEvent,
   GameOverEvent,
 } from '../src/network/network-events.js';
+import { getMultiplayerArenaSpawnPoints } from '../src/levels/multiplayer-arena.js';
 
 /**
  * GameRoom manages a single multiplayer session/match.
@@ -52,17 +53,7 @@ export class GameRoom {
    * Spawn points for players (random selection).
    * TODO: Load from level data.
    */
-  private readonly spawnPoints = [
-    { x: 0, y: 1, z: 0 },
-    { x: -5, y: 1, z: -5 },
-    { x: 5, y: 1, z: -5 },
-    { x: -5, y: 1, z: 5 },
-    { x: 5, y: 1, z: 5 },
-    { x: 0, y: 1, z: -8 },
-    { x: 0, y: 1, z: 8 },
-    { x: -8, y: 1, z: 0 },
-    { x: 8, y: 1, z: 0 },
-  ];
+  private readonly spawnPoints = getMultiplayerArenaSpawnPoints();
 
   /**
    * Callback for broadcasting game state to all clients.

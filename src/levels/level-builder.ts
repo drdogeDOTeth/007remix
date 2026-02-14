@@ -12,6 +12,10 @@ import {
   concreteWallTexture,
   floorTileTexture,
   ceilingPanelTexture,
+  palaceWallTexture,
+  palaceMarbleFloorTexture,
+  palaceCeilingTexture,
+  palacePaintingTexture,
   woodCrateTexture,
   metalCrateTexture,
   barrelTexture,
@@ -20,6 +24,14 @@ import {
 } from './procedural-textures';
 
 const WALL_THICKNESS = 0.2;
+const FLOOR_TILE_SIZE = 3.0;
+const WALL_TILE_WIDTH = 3.4;
+const WALL_TILE_HEIGHT = 4.0;
+const CEILING_TILE_SIZE = 2.4;
+
+function repeatForSize(size: number, tileSize: number, min = 1): number {
+  return Math.max(min, size / tileSize);
+}
 
 export interface LevelBuilderDeps {
   scene: THREE.Scene;
@@ -53,6 +65,7 @@ export function buildLevel(level: LevelSchema, deps: LevelBuilderDeps): void {
 
   // Lights — ambient + hemisphere, point lights per room
   const hasOutdoor = level.rooms.some((r) => r.outdoor);
+  const isPalace = level.theme === 'palace';
   const ambientColor = hasOutdoor ? 0xaaccdd : 0x8899aa;
   const ambient = new THREE.AmbientLight(ambientColor, hasOutdoor ? 2.2 : 1.8);
   scene.add(ambient);
@@ -65,8 +78,8 @@ export function buildLevel(level: LevelSchema, deps: LevelBuilderDeps): void {
   for (const room of level.rooms) {
     const [lx, ly, lz] = [room.x, room.y + 1.5, room.z];
     const pointLight = new THREE.PointLight(
-      room.outdoor ? 0xeeddcc : 0xffeedd,
-      room.outdoor ? 120 : 80,
+      room.outdoor ? 0xeeddcc : isPalace ? 0xffefcc : 0xffeedd,
+      room.outdoor ? 120 : isPalace ? 95 : 80,
       25,
     );
     pointLight.position.set(lx, ly, lz);
@@ -76,45 +89,73 @@ export function buildLevel(level: LevelSchema, deps: LevelBuilderDeps): void {
   }
 
   // Materials — procedural textures
-  const floorTex = floorTileTexture();
-  const wallTex = concreteWallTexture();
-  const ceilTex = ceilingPanelTexture();
+  const floorTex = isPalace ? palaceMarbleFloorTexture() : floorTileTexture();
+  const wallTex = isPalace ? palaceWallTexture() : concreteWallTexture();
+  const ceilTex = isPalace ? palaceCeilingTexture() : ceilingPanelTexture();
   const snowTex = snowGroundTexture();
   const mountainTex = mountainWallTexture();
 
-  const floorMat = (color = 0x888888, useSnow = false) => {
+  const floorMat = (color = 0x888888, useSnow = false, width = 8, depth = 8) => {
     const tex = (useSnow ? snowTex : floorTex).clone();
     tex.needsUpdate = true;
-    tex.repeat.set(useSnow ? 4 : 3, useSnow ? 4 : 3);
+    tex.repeat.set(
+      repeatForSize(width, useSnow ? 3.2 : FLOOR_TILE_SIZE),
+      repeatForSize(depth, useSnow ? 3.2 : FLOOR_TILE_SIZE),
+    );
     tex.wrapS = THREE.RepeatWrapping;
     tex.wrapT = THREE.RepeatWrapping;
-    return new THREE.MeshStandardMaterial({ map: tex, color, roughness: useSnow ? 0.9 : 0.8, metalness: 0.2 });
+    return new THREE.MeshStandardMaterial({
+      map: tex,
+      color,
+      roughness: useSnow ? 0.9 : isPalace ? 0.26 : 0.8,
+      metalness: useSnow ? 0.05 : isPalace ? 0.05 : 0.2,
+    });
   };
-  const wallMat = (color = 0x999999, useMountain = false) => {
+  const wallMat = (color = 0x999999, useMountain = false, span = 6, wallHeight = 4) => {
     const tex = (useMountain ? mountainTex : wallTex).clone();
     tex.needsUpdate = true;
-    tex.repeat.set(useMountain ? 2 : 3, useMountain ? 2 : 1);
+    tex.repeat.set(
+      repeatForSize(span, useMountain ? 3.0 : WALL_TILE_WIDTH),
+      repeatForSize(wallHeight, useMountain ? 2.8 : WALL_TILE_HEIGHT),
+    );
     tex.wrapS = THREE.RepeatWrapping;
     tex.wrapT = THREE.RepeatWrapping;
-    return new THREE.MeshStandardMaterial({ map: tex, color, roughness: useMountain ? 0.85 : 0.7, metalness: 0.1 });
+    return new THREE.MeshStandardMaterial({
+      map: tex,
+      color,
+      roughness: useMountain ? 0.85 : isPalace ? 0.46 : 0.7,
+      metalness: useMountain ? 0.05 : isPalace ? 0.08 : 0.1,
+    });
   };
-  const ceilingMat = (_color = 0x888888) => {
+  const ceilingMat = (_color = 0x888888, width = 8, depth = 8) => {
     const tex = ceilTex.clone();
     tex.needsUpdate = true;
-    tex.repeat.set(3, 3);
+    tex.repeat.set(
+      repeatForSize(width, CEILING_TILE_SIZE),
+      repeatForSize(depth, CEILING_TILE_SIZE),
+    );
     tex.wrapS = THREE.RepeatWrapping;
     tex.wrapT = THREE.RepeatWrapping;
-    return new THREE.MeshStandardMaterial({ map: tex, color: _color, roughness: 0.9, metalness: 0 });
+    return new THREE.MeshStandardMaterial({
+      map: tex,
+      color: _color,
+      roughness: isPalace ? 0.55 : 0.9,
+      metalness: isPalace ? 0.04 : 0,
+    });
   };
 
   // Build indoor rooms first (so their floors render on top), then outdoor
   const indoorRooms = level.rooms.filter((r) => !r.outdoor);
   const outdoorRooms = level.rooms.filter((r) => r.outdoor);
   for (const room of indoorRooms) {
-    buildRoom(room, level.doors, scene, physics, floorMat, wallMat, ceilingMat, null);
+    buildRoom(room, level.doors, scene, physics, floorMat, wallMat, ceilingMat, null, isPalace);
   }
   for (const room of outdoorRooms) {
-    buildRoom(room, level.doors, scene, physics, floorMat, wallMat, ceilingMat, indoorRooms);
+    buildRoom(room, level.doors, scene, physics, floorMat, wallMat, ceilingMat, indoorRooms, isPalace);
+  }
+
+  if (isPalace) {
+    addPalacePaintings(level.rooms, scene);
   }
 
   // Doors
@@ -229,15 +270,16 @@ function buildRoom(
   doors: DoorDef[],
   scene: THREE.Scene,
   physics: PhysicsWorld,
-  floorMat: (c?: number, useSnow?: boolean) => THREE.Material,
-  wallMat: (c?: number, useMountain?: boolean) => THREE.Material,
-  ceilingMat: (c?: number) => THREE.Material,
+  floorMat: (c: number | undefined, useSnow: boolean, width: number, depth: number) => THREE.Material,
+  wallMat: (c: number | undefined, useMountain: boolean, span: number, wallHeight: number) => THREE.Material,
+  ceilingMat: (c: number | undefined, width: number, depth: number) => THREE.Material,
   indoorRooms: RoomDef[] | null,
+  palaceTheme: boolean,
 ): void {
   const { x, y, z, width, depth, height } = room;
   const outdoor = room.outdoor ?? false;
-  const fColor = room.floorColor ?? (outdoor ? 0xe8eef4 : 0x555555);
-  const wColor = room.wallColor ?? (outdoor ? 0x7a7e82 : 0x666666);
+  const fColor = room.floorColor ?? (outdoor ? 0xe8eef4 : palaceTheme ? 0xf2eadf : 0x555555);
+  const wColor = room.wallColor ?? (outdoor ? 0x7a7e82 : palaceTheme ? 0xe3d6c2 : 0x666666);
   const hw = width / 2;
   const hd = depth / 2;
   const hh = height / 2;
@@ -250,7 +292,7 @@ function buildRoom(
       if (rect.w < 0.5 || rect.d < 0.5) continue;
       const floor = new THREE.Mesh(
         new THREE.BoxGeometry(rect.w, WALL_THICKNESS, rect.d),
-        floorMat(fColor, outdoor),
+        floorMat(fColor, outdoor, rect.w, rect.d),
       );
       floor.position.set(rect.cx, floorY, rect.cz);
       floor.receiveShadow = true;
@@ -260,7 +302,7 @@ function buildRoom(
   } else {
     const floor = new THREE.Mesh(
       new THREE.BoxGeometry(width, WALL_THICKNESS, depth),
-      floorMat(fColor, outdoor),
+      floorMat(fColor, outdoor, width, depth),
     );
     floor.position.set(x, floorY, z);
     floor.receiveShadow = true;
@@ -272,7 +314,7 @@ function buildRoom(
   if (!outdoor) {
     const ceiling = new THREE.Mesh(
       new THREE.BoxGeometry(width, WALL_THICKNESS, depth),
-      ceilingMat(),
+      ceilingMat(undefined, width, depth),
     );
     ceiling.position.set(x, y + height / 2 + WALL_THICKNESS / 2, z);
     scene.add(ceiling);
@@ -285,10 +327,21 @@ function buildRoom(
   const getDoorsOnWall = (wallIndex: number): DoorDef[] => {
     const found: DoorDef[] = [];
     for (const d of doors) {
-      if (wallIndex === 0 && Math.abs(d.z - (z - hd)) <= DOOR_WALL_TOLERANCE && Math.abs(d.x - x) <= hw + 1) found.push(d);
-      if (wallIndex === 1 && Math.abs(d.z - (z + hd)) <= DOOR_WALL_TOLERANCE && Math.abs(d.x - x) <= hw + 1) found.push(d);
-      if (wallIndex === 2 && Math.abs(d.x - (x - hw)) <= DOOR_WALL_TOLERANCE && Math.abs(d.z - z) <= hd + 1) found.push(d);
-      if (wallIndex === 3 && Math.abs(d.x - (x + hw)) <= DOOR_WALL_TOLERANCE && Math.abs(d.z - z) <= hd + 1) found.push(d);
+      if (d.axis === 'z') {
+        if (Math.abs(d.x - x) > hw + 1) continue;
+        const southDist = Math.abs(d.z - (z - hd));
+        const northDist = Math.abs(d.z - (z + hd));
+        if (southDist <= northDist && southDist <= DOOR_WALL_TOLERANCE && wallIndex === 0) found.push(d);
+        if (northDist < southDist && northDist <= DOOR_WALL_TOLERANCE && wallIndex === 1) found.push(d);
+        continue;
+      }
+      if (d.axis === 'x') {
+        if (Math.abs(d.z - z) > hd + 1) continue;
+        const westDist = Math.abs(d.x - (x - hw));
+        const eastDist = Math.abs(d.x - (x + hw));
+        if (westDist <= eastDist && westDist <= DOOR_WALL_TOLERANCE && wallIndex === 2) found.push(d);
+        if (eastDist < westDist && eastDist <= DOOR_WALL_TOLERANCE && wallIndex === 3) found.push(d);
+      }
     }
     return found;
   };
@@ -296,9 +349,11 @@ function buildRoom(
   // Helper: build a single wall segment (mesh + physics)
   const addWallSeg = (halfW: number, halfH: number, halfD: number, px: number, py: number, pz: number) => {
     if (halfW < 0.15 && halfD < 0.15) return; // too thin to bother
+    const span = Math.max(halfW, halfD) * 2;
+    const wallHeight = halfH * 2;
     const wall = new THREE.Mesh(
       new THREE.BoxGeometry(halfW * 2, halfH * 2, halfD * 2),
-      wallMat(wColor, outdoor),
+      wallMat(wColor, outdoor, span, wallHeight),
     );
     wall.position.set(px, py, pz);
     wall.receiveShadow = true;
@@ -321,16 +376,25 @@ function buildRoom(
       // Sort doors by x position
       const sorted = wallDoors.slice().sort((a, b) => a.x - b.x);
       let cursor = wallStart;
+      const roomBottom = y - hh;
+      const roomTop = y + hh;
       for (const d of sorted) {
-        const doorLeft = d.x - d.width / 2 - 0.1; // small gap for frame
-        const doorRight = d.x + d.width / 2 + 0.1;
+        const doorLeft = Math.max(wallStart, d.x - d.width / 2 - 0.1); // small gap for frame
+        const doorRight = Math.min(wallEnd, d.x + d.width / 2 + 0.1);
+        if (doorRight <= doorLeft) continue;
         // Segment before this door
         if (doorLeft > cursor + 0.3) {
           const segW = (doorLeft - cursor) / 2;
           const segCx = cursor + segW;
           addWallSeg(segW, hh, wt, segCx, y, wallZ);
         }
-        cursor = doorRight;
+        // Build wall above doorway (lintel) to avoid ceiling leaks.
+        const doorTop = roomBottom + Math.min(d.height, height - 0.1);
+        const lintelHalfH = (roomTop - doorTop) / 2;
+        if (lintelHalfH > 0.08) {
+          addWallSeg((doorRight - doorLeft) / 2, lintelHalfH, wt, (doorLeft + doorRight) / 2, doorTop + lintelHalfH, wallZ);
+        }
+        cursor = Math.max(cursor, doorRight);
       }
       // Segment after last door
       if (wallEnd > cursor + 0.3) {
@@ -352,15 +416,23 @@ function buildRoom(
       const wallEnd = z + hd;
       const sorted = wallDoors.slice().sort((a, b) => a.z - b.z);
       let cursor = wallStart;
+      const roomBottom = y - hh;
+      const roomTop = y + hh;
       for (const d of sorted) {
-        const doorFront = d.z - d.width / 2 - 0.1;
-        const doorBack = d.z + d.width / 2 + 0.1;
+        const doorFront = Math.max(wallStart, d.z - d.width / 2 - 0.1);
+        const doorBack = Math.min(wallEnd, d.z + d.width / 2 + 0.1);
+        if (doorBack <= doorFront) continue;
         if (doorFront > cursor + 0.3) {
           const segD = (doorFront - cursor) / 2;
           const segCz = cursor + segD;
           addWallSeg(wt, hh, segD, wallX, y, segCz);
         }
-        cursor = doorBack;
+        const doorTop = roomBottom + Math.min(d.height, height - 0.1);
+        const lintelHalfH = (roomTop - doorTop) / 2;
+        if (lintelHalfH > 0.08) {
+          addWallSeg(wt, lintelHalfH, (doorBack - doorFront) / 2, wallX, doorTop + lintelHalfH, (doorFront + doorBack) / 2);
+        }
+        cursor = Math.max(cursor, doorBack);
       }
       if (wallEnd > cursor + 0.3) {
         const segD = (wallEnd - cursor) / 2;
@@ -371,6 +443,67 @@ function buildRoom(
   }
 }
 
+
+function addPalacePaintings(rooms: RoomDef[], scene: THREE.Scene): void {
+  const tex = palacePaintingTexture();
+  const paintingMat = new THREE.MeshStandardMaterial({
+    map: tex,
+    roughness: 0.42,
+    metalness: 0.08,
+  });
+  const frameMat = new THREE.MeshStandardMaterial({
+    color: 0xb28d3a,
+    roughness: 0.35,
+    metalness: 0.62,
+  });
+
+  const paintW = 1.9;
+  const paintH = 1.15;
+  const wallInset = 0.03;
+
+  const placePainting = (x: number, y: number, z: number, rotY: number) => {
+    const group = new THREE.Group();
+    group.position.set(x, y, z);
+    group.rotation.y = rotY;
+
+    const frame = new THREE.Mesh(
+      new THREE.BoxGeometry(paintW + 0.16, paintH + 0.16, 0.05),
+      frameMat,
+    );
+    frame.receiveShadow = true;
+    group.add(frame);
+
+    const art = new THREE.Mesh(
+      new THREE.PlaneGeometry(paintW, paintH),
+      paintingMat,
+    );
+    art.position.z = 0.03;
+    group.add(art);
+
+    scene.add(group);
+  };
+
+  const idHash = (id: string): number => {
+    let h = 0;
+    for (let i = 0; i < id.length; i++) h = ((h << 5) - h + id.charCodeAt(i)) | 0;
+    return Math.abs(h);
+  };
+
+  for (const room of rooms) {
+    if (room.outdoor) continue;
+    if (room.width * room.depth < 70) continue; // skip tiny connector rooms
+
+    const hw = room.width / 2;
+    const hd = room.depth / 2;
+    const y = room.y + room.height / 2 - 0.95;
+    const side = idHash(room.id) % 4;
+
+    if (side === 0) placePainting(room.x, y, room.z - hd + wallInset, 0);
+    if (side === 1) placePainting(room.x, y, room.z + hd - wallInset, Math.PI);
+    if (side === 2) placePainting(room.x - hw + wallInset, y, room.z, Math.PI / 2);
+    if (side === 3) placePainting(room.x + hw - wallInset, y, room.z, -Math.PI / 2);
+  }
+}
 
 const PROP_FLOOR_OFFSET = 0.03; // Slight elevation to avoid z-fighting with floor
 

@@ -18,6 +18,7 @@ import { TriggerSystem } from './levels/trigger-system';
 import { ObjectiveSystem } from './levels/objective-system';
 import { buildLevel } from './levels/level-builder';
 import type { LevelSchema } from './levels/level-schema';
+import { createProceduralMultiplayerArena } from './levels/multiplayer-arena';
 import { NavMesh } from './navmesh/navmesh';
 import { DestructibleSystem } from './levels/destructible-system';
 import { HUD } from './ui/hud';
@@ -470,6 +471,19 @@ export class Game {
       this.briefingScreen = new BriefingScreen();
       this.objectivesDisplay = new ObjectivesDisplay();
       this.objectivesDisplay.attach();
+    } else if (this.networkMode === 'client') {
+      // Multiplayer arena: schema-based procedural map with two primary lanes.
+      this.doorSystem = new DoorSystem(
+        this.scene,
+        this.physics,
+        () => this.player.getPosition(),
+        (id) => this.player.hasKey(id),
+        (id) => this.objectiveSystem?.isCompleted(id) ?? false,
+      );
+      this.triggerSystem = new TriggerSystem(() => this.player.getPosition());
+      this.triggerSystem.onTrigger = (event) => this.handleTrigger(event);
+      this.objectiveSystem = new ObjectiveSystem();
+      this.loadLevel(createProceduralMultiplayerArena());
     } else {
       this.buildTestScene();
       this.spawnTestEnemies();
@@ -756,7 +770,7 @@ export class Game {
     this.levelName = level.name;
     this.missionElapsed = 0;
 
-    this.navMesh = new NavMesh();
+    this.navMesh = level.enemies.length > 0 ? new NavMesh() : null;
     const prevPropDestroyed = this.destructibleSystem.onPropDestroyedFull;
     this.destructibleSystem.onPropDestroyedFull = (prop) => {
       prevPropDestroyed?.(prop);
@@ -776,7 +790,7 @@ export class Game {
         this.playerSpawnPosition = { x, y, z };
         this.player.setPosition(x, y, z);
       },
-      navMesh: this.navMesh,
+      navMesh: this.navMesh ?? undefined,
     });
   }
 

@@ -11,6 +11,11 @@ import {
 const DOOR_THICKNESS = 0.15;
 const OPEN_SPEED = 2.5;
 const FRAME_WIDTH = 0.12;
+const FRAME_TILE_SIZE = 0.75;
+
+function repeatForSize(size: number, tileSize: number, min = 1): number {
+  return Math.max(min, size / tileSize);
+}
 
 interface DoorState {
   def: DoorDef;
@@ -64,6 +69,10 @@ export class DoorSystem {
     const doorTex = isLocked ? lockedDoorTexture() : facilityDoorTexture();
     const texClone = doorTex.clone();
     texClone.needsUpdate = true;
+    // Keep one door motif per panel; repeating this texture looks like stacked/double doors.
+    texClone.wrapS = THREE.ClampToEdgeWrapping;
+    texClone.wrapT = THREE.ClampToEdgeWrapping;
+    texClone.repeat.set(1, 1);
 
     const doorMat = new THREE.MeshStandardMaterial({
       map: texClone,
@@ -81,23 +90,43 @@ export class DoorSystem {
 
     // Door frame — two vertical posts and a header
     const frameTex = doorFrameTexture();
-    const frameTexClone = frameTex.clone();
-    frameTexClone.needsUpdate = true;
-    const frameMat = new THREE.MeshStandardMaterial({
-      map: frameTexClone,
+    const framePostTex = frameTex.clone();
+    framePostTex.needsUpdate = true;
+    framePostTex.wrapS = THREE.RepeatWrapping;
+    framePostTex.wrapT = THREE.RepeatWrapping;
+    framePostTex.repeat.set(
+      repeatForSize(FRAME_WIDTH, FRAME_TILE_SIZE),
+      repeatForSize(doorHeight, FRAME_TILE_SIZE),
+    );
+    const framePostMat = new THREE.MeshStandardMaterial({
+      map: framePostTex,
+      roughness: 0.5,
+      metalness: 0.5,
+    });
+
+    const frameHeaderTex = frameTex.clone();
+    frameHeaderTex.needsUpdate = true;
+    frameHeaderTex.wrapS = THREE.RepeatWrapping;
+    frameHeaderTex.wrapT = THREE.RepeatWrapping;
+    frameHeaderTex.repeat.set(
+      repeatForSize(def.width + FRAME_WIDTH * 2, FRAME_TILE_SIZE),
+      repeatForSize(FRAME_WIDTH, FRAME_TILE_SIZE),
+    );
+    const frameHeaderMat = new THREE.MeshStandardMaterial({
+      map: frameHeaderTex,
       roughness: 0.5,
       metalness: 0.5,
     });
 
     // Left frame post
     const framePostGeo = new THREE.BoxGeometry(FRAME_WIDTH, doorHeight, DOOR_THICKNESS + 0.08);
-    const leftPost = new THREE.Mesh(framePostGeo, frameMat);
+    const leftPost = new THREE.Mesh(framePostGeo, framePostMat);
     leftPost.position.set(-def.width / 2 - FRAME_WIDTH / 2, 0, 0);
     leftPost.receiveShadow = true;
     group.add(leftPost);
 
     // Right frame post
-    const rightPost = new THREE.Mesh(framePostGeo, frameMat);
+    const rightPost = new THREE.Mesh(framePostGeo, framePostMat);
     rightPost.position.set(def.width / 2 + FRAME_WIDTH / 2, 0, 0);
     rightPost.receiveShadow = true;
     group.add(rightPost);
@@ -108,7 +137,7 @@ export class DoorSystem {
       FRAME_WIDTH,
       DOOR_THICKNESS + 0.08,
     );
-    const header = new THREE.Mesh(headerGeo, frameMat);
+    const header = new THREE.Mesh(headerGeo, frameHeaderMat);
     header.position.set(0, doorHeight / 2 + FRAME_WIDTH / 2, 0);
     header.receiveShadow = true;
     group.add(header);

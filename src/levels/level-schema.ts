@@ -6,6 +6,8 @@
 export interface LevelSchema {
   /** Level display name */
   name: string;
+  /** Optional visual theme hint for level builder materials. */
+  theme?: 'default' | 'palace';
   /** Brief description for briefing screen */
   briefing: string;
   /** Axis-aligned rooms (floor + walls built from these) */

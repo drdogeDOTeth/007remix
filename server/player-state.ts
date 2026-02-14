@@ -2,6 +2,7 @@
  * Server-side player state tracking.
  * Stores authoritative state for each connected player.
  */
+import { getMultiplayerArenaDefaultSpawnPoint } from '../src/levels/multiplayer-arena.js';
 
 export interface ServerPlayerState {
   id: string;
@@ -24,7 +25,7 @@ export interface ServerPlayerState {
 /**
  * Default spawn position for new players.
  */
-const DEFAULT_SPAWN = { x: 0, y: 1, z: 0 };
+const DEFAULT_SPAWN = getMultiplayerArenaDefaultSpawnPoint();
 
 /**
  * Creates a new player state with default values.

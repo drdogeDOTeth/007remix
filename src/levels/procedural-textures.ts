@@ -276,6 +276,216 @@ export function ceilingPanelTexture(): THREE.CanvasTexture {
 
 // ─── Wood Crate (Classic military crate with planks, braces, markings) ───
 
+export function palaceMarbleFloorTexture(): THREE.CanvasTexture {
+  return getOrCreate('palace-marble-floor', 256, 256, (ctx) => {
+    const W = 256;
+    const H = 256;
+    ctx.fillStyle = '#dfd7c9';
+    ctx.fillRect(0, 0, W, H);
+
+    const tiles = 3;
+    const tileSize = W / tiles;
+    const grout = 3;
+
+    for (let r = 0; r < tiles; r++) {
+      for (let c = 0; c < tiles; c++) {
+        const tx = c * tileSize;
+        const ty = r * tileSize;
+        const grad = ctx.createLinearGradient(tx, ty, tx + tileSize, ty + tileSize);
+        grad.addColorStop(0, '#f6f2ea');
+        grad.addColorStop(0.55, '#d9d0c1');
+        grad.addColorStop(1, '#f1ebdf');
+        ctx.fillStyle = grad;
+        ctx.fillRect(tx + grout / 2, ty + grout / 2, tileSize - grout, tileSize - grout);
+
+        ctx.fillStyle = 'rgba(255,255,255,0.2)';
+        ctx.fillRect(tx + grout / 2, ty + grout / 2, tileSize - grout, 2);
+        ctx.fillRect(tx + grout / 2, ty + grout / 2, 2, tileSize - grout);
+        ctx.fillStyle = 'rgba(0,0,0,0.16)';
+        ctx.fillRect(tx + grout / 2, ty + tileSize - grout / 2 - 2, tileSize - grout, 2);
+        ctx.fillRect(tx + tileSize - grout / 2 - 2, ty + grout / 2, 2, tileSize - grout);
+
+        const veins = 2 + Math.floor(Math.random() * 2);
+        for (let v = 0; v < veins; v++) {
+          ctx.strokeStyle = `rgba(120, 112, 100, ${0.14 + Math.random() * 0.1})`;
+          ctx.lineWidth = 1 + Math.random() * 1.2;
+          const y0 = ty + 10 + Math.random() * (tileSize - 20);
+          ctx.beginPath();
+          ctx.moveTo(tx + 6, y0);
+          for (let x = tx + 6; x < tx + tileSize - 6; x += 14) {
+            const y = y0 + Math.sin((x + v * 13) * 0.08) * (1.5 + Math.random() * 2.2);
+            ctx.lineTo(x, y);
+          }
+          ctx.stroke();
+        }
+      }
+    }
+
+    ctx.fillStyle = '#a59a87';
+    for (let i = 0; i <= tiles; i++) {
+      ctx.fillRect(0, i * tileSize - grout / 2, W, grout);
+      ctx.fillRect(i * tileSize - grout / 2, 0, grout, H);
+    }
+
+    addNoise(ctx, W, H, 10);
+  });
+}
+
+export function palaceWallTexture(): THREE.CanvasTexture {
+  return getOrCreate('palace-wall', 256, 256, (ctx) => {
+    const W = 256;
+    const H = 256;
+
+    // Upper plaster
+    const wallGrad = ctx.createLinearGradient(0, 0, 0, H);
+    wallGrad.addColorStop(0, '#ece2d0');
+    wallGrad.addColorStop(1, '#e1d3bc');
+    ctx.fillStyle = wallGrad;
+    ctx.fillRect(0, 0, W, H);
+
+    const wainscotY = 168;
+
+    // Lower marble wainscot
+    const marbleGrad = ctx.createLinearGradient(0, wainscotY, 0, H);
+    marbleGrad.addColorStop(0, '#ccbca4');
+    marbleGrad.addColorStop(1, '#b8a489');
+    ctx.fillStyle = marbleGrad;
+    ctx.fillRect(0, wainscotY, W, H - wainscotY);
+
+    for (let i = 0; i < 6; i++) {
+      ctx.strokeStyle = `rgba(95, 86, 72, ${0.12 + Math.random() * 0.08})`;
+      ctx.lineWidth = 1;
+      const y0 = wainscotY + 10 + Math.random() * (H - wainscotY - 20);
+      ctx.beginPath();
+      ctx.moveTo(0, y0);
+      for (let x = 0; x <= W; x += 14) {
+        ctx.lineTo(x, y0 + Math.sin((x + i * 17) * 0.08) * 2);
+      }
+      ctx.stroke();
+    }
+
+    // Single thin gold band at chair-rail height
+    ctx.fillStyle = '#8f6f29';
+    ctx.fillRect(0, wainscotY - 4, W, 2);
+    ctx.fillStyle = '#d7bb73';
+    ctx.fillRect(0, wainscotY - 3, W, 1);
+
+    // Very subtle brocade dots
+    ctx.fillStyle = 'rgba(150, 132, 96, 0.08)';
+    for (let y = 24; y < wainscotY - 18; y += 26) {
+      for (let x = 14; x < W; x += 26) {
+        ctx.beginPath();
+        ctx.arc(x, y, 1.2, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+
+    addNoise(ctx, W, H, 6);
+  });
+}
+
+export function palaceCeilingTexture(): THREE.CanvasTexture {
+  return getOrCreate('palace-ceiling', 256, 256, (ctx) => {
+    const W = 256;
+    const H = 256;
+    ctx.fillStyle = '#efe5d1';
+    ctx.fillRect(0, 0, W, H);
+
+    const coffers = 2;
+    const cell = W / coffers;
+    const trim = 10;
+    for (let r = 0; r < coffers; r++) {
+      for (let c = 0; c < coffers; c++) {
+        const x = c * cell;
+        const y = r * cell;
+        const outer = ctx.createLinearGradient(x, y, x + cell, y);
+        outer.addColorStop(0, '#7d5f1f');
+        outer.addColorStop(0.5, '#d9bf72');
+        outer.addColorStop(1, '#7d5f1f');
+        ctx.fillStyle = outer;
+        ctx.fillRect(x, y, cell, cell);
+
+        const inner = ctx.createLinearGradient(x + trim, y + trim, x + cell - trim, y + cell - trim);
+        inner.addColorStop(0, '#f3ead9');
+        inner.addColorStop(1, '#d8c9ac');
+        ctx.fillStyle = inner;
+        ctx.fillRect(x + trim, y + trim, cell - trim * 2, cell - trim * 2);
+
+        ctx.strokeStyle = 'rgba(255,240,180,0.25)';
+        ctx.lineWidth = 2;
+        ctx.strokeRect(x + trim + 2, y + trim + 2, cell - trim * 2 - 4, cell - trim * 2 - 4);
+      }
+    }
+
+    ctx.fillStyle = '#a88433';
+    ctx.beginPath();
+    ctx.arc(W / 2, H / 2, 18, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = '#dec26f';
+    ctx.beginPath();
+    ctx.arc(W / 2, H / 2, 10, 0, Math.PI * 2);
+    ctx.fill();
+
+    addNoise(ctx, W, H, 7);
+  });
+}
+
+export function palacePaintingTexture(): THREE.CanvasTexture {
+  return getOrCreate('palace-painting', 256, 160, (ctx) => {
+    const W = 256;
+    const H = 160;
+
+    // Outer gold frame
+    const frameGrad = ctx.createLinearGradient(0, 0, W, H);
+    frameGrad.addColorStop(0, '#6f5217');
+    frameGrad.addColorStop(0.5, '#d5ba6e');
+    frameGrad.addColorStop(1, '#6f5217');
+    ctx.fillStyle = frameGrad;
+    ctx.fillRect(0, 0, W, H);
+
+    // Inner dark frame lip
+    ctx.fillStyle = '#3a2e15';
+    ctx.fillRect(10, 10, W - 20, H - 20);
+
+    // Canvas area
+    const px = 16;
+    const py = 16;
+    const pw = W - 32;
+    const ph = H - 32;
+    const sky = ctx.createLinearGradient(px, py, px, py + ph);
+    sky.addColorStop(0, '#6b8cb1');
+    sky.addColorStop(0.55, '#8ca07a');
+    sky.addColorStop(1, '#4f4638');
+    ctx.fillStyle = sky;
+    ctx.fillRect(px, py, pw, ph);
+
+    // Sun
+    ctx.fillStyle = 'rgba(236, 220, 150, 0.9)';
+    ctx.beginPath();
+    ctx.arc(px + pw * 0.18, py + ph * 0.26, 9, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Mountains
+    ctx.fillStyle = '#2f4a2f';
+    ctx.beginPath();
+    ctx.moveTo(px + 8, py + ph - 6);
+    ctx.lineTo(px + pw * 0.44, py + ph * 0.48);
+    ctx.lineTo(px + pw * 0.84, py + ph - 6);
+    ctx.closePath();
+    ctx.fill();
+
+    ctx.fillStyle = '#496246';
+    ctx.beginPath();
+    ctx.moveTo(px + pw * 0.34, py + ph - 6);
+    ctx.lineTo(px + pw * 0.58, py + ph * 0.58);
+    ctx.lineTo(px + pw * 0.95, py + ph - 6);
+    ctx.closePath();
+    ctx.fill();
+
+    addNoise(ctx, W, H, 6);
+  });
+}
+
 export function woodCrateTexture(): THREE.CanvasTexture {
   return getOrCreate('wood-crate', 256, 256, (ctx) => {
     const W = 256, H = 256;
