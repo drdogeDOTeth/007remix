@@ -38,358 +38,467 @@ function addNoise(ctx: CanvasRenderingContext2D, w: number, h: number, strength:
   ctx.putImageData(id, 0, 0);
 }
 
-// ─── Concrete Wall (GoldenEye Facility style — large cinder blocks) ───
+// ─── Concrete Wall (Facility — poured concrete, irregular weathering) ───
 
 export function concreteWallTexture(): THREE.CanvasTexture {
   return getOrCreate('concrete-wall', 256, 256, (ctx) => {
     const W = 256, H = 256;
 
-    // Base concrete fill
-    ctx.fillStyle = '#8a8882';
+    // Base concrete color - cool grey with slight variation
+    ctx.fillStyle = '#6a6e72';
     ctx.fillRect(0, 0, W, H);
 
-    // Cinder block pattern: 4 rows, offset brick layout
-    const blockRows = 4;
-    const blockH = H / blockRows;
-    const mortarW = 4;
+    // Subtle color variation zones (poured in sections)
+    for (let i = 0; i < 8; i++) {
+      const x = Math.random() * W - W * 0.2;
+      const y = Math.random() * H - H * 0.2;
+      const size = 60 + Math.random() * 80;
 
-    for (let r = 0; r < blockRows; r++) {
-      const by = r * blockH;
-      const offset = r % 2 === 0 ? 0 : W / 4;
-      const blocksPerRow = 2;
-      const blockW = W / blocksPerRow;
-
-      for (let c = -1; c <= blocksPerRow; c++) {
-        const bx = c * blockW + offset;
-
-        // Each block gets a slightly different shade
-        const base = 125 + Math.floor(Math.random() * 20 - 10);
-        const gb = base - 4 + Math.floor(Math.random() * 8);
-        ctx.fillStyle = `rgb(${base}, ${gb}, ${gb - 6})`;
-        ctx.fillRect(bx + mortarW / 2, by + mortarW / 2, blockW - mortarW, blockH - mortarW);
-
-        // Subtle inner shadow (top-left darker, bottom-right lighter) for 3D depth
-        ctx.fillStyle = 'rgba(0,0,0,0.12)';
-        ctx.fillRect(bx + mortarW / 2, by + mortarW / 2, blockW - mortarW, 3);
-        ctx.fillRect(bx + mortarW / 2, by + mortarW / 2, 3, blockH - mortarW);
-
-        ctx.fillStyle = 'rgba(255,255,255,0.08)';
-        ctx.fillRect(bx + mortarW / 2, by + blockH - mortarW / 2 - 3, blockW - mortarW, 3);
-        ctx.fillRect(bx + blockW - mortarW / 2 - 3, by + mortarW / 2, 3, blockH - mortarW);
-
-        // Random surface imperfections per block
-        ctx.globalAlpha = 0.06;
-        for (let s = 0; s < 3; s++) {
-          const sx = bx + mortarW + Math.random() * (blockW - mortarW * 2);
-          const sy = by + mortarW + Math.random() * (blockH - mortarW * 2);
-          const sw = 10 + Math.random() * 20;
-          const sh = 5 + Math.random() * 10;
-          ctx.fillStyle = Math.random() > 0.5 ? '#665544' : '#445566';
-          ctx.fillRect(sx, sy, sw, sh);
-        }
-        ctx.globalAlpha = 1;
-      }
-
-      // Mortar lines — horizontal
-      ctx.fillStyle = '#5a5850';
-      ctx.fillRect(0, by, W, mortarW);
-    }
-    // Bottom mortar
-    ctx.fillStyle = '#5a5850';
-    ctx.fillRect(0, H - mortarW, W, mortarW);
-
-    // Mortar lines — vertical (offset per row)
-    for (let r = 0; r < blockRows; r++) {
-      const by = r * blockH;
-      const offset = r % 2 === 0 ? 0 : W / 4;
-      const blockW = W / 2;
-      for (let c = 0; c <= 2; c++) {
-        const mx = c * blockW + offset;
-        ctx.fillStyle = '#5a5850';
-        ctx.fillRect(mx - mortarW / 2, by, mortarW, blockH);
-      }
+      const grad = ctx.createRadialGradient(x, y, 0, x, y, size);
+      grad.addColorStop(0, `rgba(${80 + Math.random() * 20}, ${84 + Math.random() * 20}, ${88 + Math.random() * 20}, 0.3)`);
+      grad.addColorStop(1, 'rgba(106, 110, 114, 0)');
+      ctx.fillStyle = grad;
+      ctx.fillRect(0, 0, W, H);
     }
 
-    // Stain streaks (water damage, dirt)
-    ctx.globalAlpha = 0.07;
-    ctx.fillStyle = '#3a3020';
-    ctx.fillRect(60, 100, 15, 156);
-    ctx.fillStyle = '#304030';
-    ctx.fillRect(180, 0, 12, 80);
-    ctx.fillStyle = '#2a2a2a';
-    ctx.fillRect(100, 180, 40, 76);
-    ctx.globalAlpha = 1;
+    // Panel seams (offset grid to avoid perfect symmetry)
+    ctx.strokeStyle = 'rgba(0, 0, 0, 0.25)';
+    ctx.lineWidth = 2;
 
-    // Overall surface noise
-    addNoise(ctx, W, H, 18);
+    // Vertical seams (slightly irregular spacing)
+    const vSeams = [0, 128 + (Math.random() - 0.5) * 10, 256];
+    vSeams.forEach((x) => {
+      ctx.beginPath();
+      ctx.moveTo(x, 0);
+      ctx.lineTo(x, H);
+      ctx.stroke();
+    });
+
+    // Horizontal seam (NOT centered - asymmetry breaks tiling pattern)
+    const hSeam = 85 + (Math.random() - 0.5) * 10;
+    ctx.beginPath();
+    ctx.moveTo(0, hSeam);
+    ctx.lineTo(W, hSeam);
+    ctx.stroke();
+
+    // Micro-texture: concrete aggregate
+    for (let i = 0; i < 600; i++) {
+      const x = Math.random() * W;
+      const y = Math.random() * H;
+      const size = Math.random() * 1.5;
+      const alpha = 0.05 + Math.random() * 0.1;
+
+      ctx.fillStyle = Math.random() > 0.5 ? `rgba(255, 255, 255, ${alpha})` : `rgba(0, 0, 0, ${alpha})`;
+      ctx.fillRect(x, y, size, size);
+    }
+
+    // Edge wear at seams (darker accumulation)
+    ctx.strokeStyle = 'rgba(0, 0, 0, 0.15)';
+    ctx.lineWidth = 1;
+    vSeams.forEach((x) => {
+      ctx.beginPath();
+      ctx.moveTo(x - 1, 0);
+      ctx.lineTo(x - 1, H);
+      ctx.stroke();
+    });
+
+    // Water stains (vertical drips from top)
+    for (let i = 0; i < 3; i++) {
+      const x = Math.random() * W;
+      const stainGrad = ctx.createLinearGradient(x, 0, x, H * 0.6);
+      stainGrad.addColorStop(0, 'rgba(40, 40, 45, 0.2)');
+      stainGrad.addColorStop(1, 'rgba(40, 40, 45, 0)');
+
+      ctx.fillStyle = stainGrad;
+      ctx.fillRect(x - 3, 0, 6 + Math.random() * 4, H * 0.6);
+    }
+
+    addNoise(ctx, W, H, 6);
   });
 }
 
-// ─── Floor Tile (GoldenEye Facility — green/grey industrial tiles) ───
+// ─── Floor Tile (Facility — industrial vinyl tile, 12"×12" pattern) ───
 
 export function floorTileTexture(): THREE.CanvasTexture {
   return getOrCreate('floor-tile', 256, 256, (ctx) => {
     const W = 256, H = 256;
+    const tileSize = 64; // 4×4 grid in 256px
+    const groutWidth = 3;
 
-    // Dark grout base
-    ctx.fillStyle = '#2a2a28';
+    // Base floor color - institutional grey-beige
+    ctx.fillStyle = '#8a8878';
     ctx.fillRect(0, 0, W, H);
 
-    // 4x4 tile grid
-    const tiles = 4;
-    const tileSize = W / tiles;
-    const groutW = 4;
+    // Draw tiles with variation
+    for (let row = 0; row < 4; row++) {
+      for (let col = 0; col < 4; col++) {
+        const x = col * tileSize;
+        const y = row * tileSize;
 
-    for (let r = 0; r < tiles; r++) {
-      for (let c = 0; c < tiles; c++) {
-        const tx = c * tileSize;
-        const ty = r * tileSize;
+        // Per-tile color variation (some tiles slightly darker/lighter)
+        const variance = (Math.random() - 0.5) * 15;
+        const r = 138 + variance;
+        const g = 136 + variance;
+        const b = 120 + variance * 0.8;
 
-        // Tile color: mix of grey-green with per-tile variation
-        const base = 80 + Math.floor(Math.random() * 16 - 8);
-        const green = base + 8;
-        ctx.fillStyle = `rgb(${base - 4}, ${green}, ${base - 2})`;
-        ctx.fillRect(tx + groutW / 2, ty + groutW / 2, tileSize - groutW, tileSize - groutW);
+        ctx.fillStyle = `rgb(${r}, ${g}, ${b})`;
+        ctx.fillRect(x + groutWidth, y + groutWidth, tileSize - groutWidth * 2, tileSize - groutWidth * 2);
 
-        // Tile edge bevel (top/left = lighter, bottom/right = darker)
-        ctx.fillStyle = 'rgba(255,255,255,0.10)';
-        ctx.fillRect(tx + groutW / 2, ty + groutW / 2, tileSize - groutW, 2);
-        ctx.fillRect(tx + groutW / 2, ty + groutW / 2, 2, tileSize - groutW);
-
-        ctx.fillStyle = 'rgba(0,0,0,0.15)';
-        ctx.fillRect(tx + groutW / 2, ty + tileSize - groutW / 2 - 2, tileSize - groutW, 2);
-        ctx.fillRect(tx + tileSize - groutW / 2 - 2, ty + groutW / 2, 2, tileSize - groutW);
-
-        // Scuff marks on some tiles
-        if (Math.random() > 0.5) {
-          ctx.globalAlpha = 0.08;
-          ctx.strokeStyle = '#222222';
-          ctx.lineWidth = 2;
-          const sx = tx + 10 + Math.random() * 30;
-          const sy = ty + 10 + Math.random() * 30;
-          ctx.beginPath();
-          ctx.moveTo(sx, sy);
-          ctx.lineTo(sx + Math.random() * 30 - 15, sy + Math.random() * 30 - 15);
-          ctx.stroke();
-          ctx.globalAlpha = 1;
-        }
-
-        // Specular highlight spot (simulates floor reflection)
-        if (Math.random() > 0.7) {
-          ctx.globalAlpha = 0.04;
-          ctx.fillStyle = '#ffffff';
-          const hx = tx + tileSize / 2 + Math.random() * 10 - 5;
-          const hy = ty + tileSize / 2 + Math.random() * 10 - 5;
-          ctx.beginPath();
-          ctx.arc(hx, hy, 12, 0, Math.PI * 2);
-          ctx.fill();
-          ctx.globalAlpha = 1;
+        // Tile surface texture (subtle speckle)
+        for (let i = 0; i < 40; i++) {
+          const tx = x + groutWidth + Math.random() * (tileSize - groutWidth * 2);
+          const ty = y + groutWidth + Math.random() * (tileSize - groutWidth * 2);
+          const spec = Math.random() > 0.5 ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)';
+          ctx.fillStyle = spec;
+          ctx.fillRect(tx, ty, 1, 1);
         }
       }
     }
 
-    // Grout lines (already base color, just reinforce edges)
-    ctx.fillStyle = '#1e1e1c';
-    for (let i = 0; i <= tiles; i++) {
-      ctx.fillRect(0, i * tileSize - groutW / 2, W, groutW);
-      ctx.fillRect(i * tileSize - groutW / 2, 0, groutW, H);
+    // Grout lines (darker gaps)
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.3)';
+    for (let i = 0; i <= 4; i++) {
+      ctx.fillRect(0, i * tileSize - groutWidth / 2, W, groutWidth);
+      ctx.fillRect(i * tileSize - groutWidth / 2, 0, groutWidth, H);
     }
 
-    addNoise(ctx, W, H, 14);
+    // Scuff marks (black streaks from foot traffic)
+    for (let i = 0; i < 5; i++) {
+      const sx = Math.random() * W;
+      const sy = Math.random() * H;
+      const angle = Math.random() * Math.PI * 2;
+      const length = 10 + Math.random() * 20;
+
+      ctx.save();
+      ctx.translate(sx, sy);
+      ctx.rotate(angle);
+
+      const scuffGrad = ctx.createLinearGradient(0, 0, length, 0);
+      scuffGrad.addColorStop(0, 'rgba(20, 20, 20, 0.3)');
+      scuffGrad.addColorStop(0.5, 'rgba(20, 20, 20, 0.15)');
+      scuffGrad.addColorStop(1, 'rgba(20, 20, 20, 0)');
+
+      ctx.fillStyle = scuffGrad;
+      ctx.fillRect(0, -0.5, length, 1);
+      ctx.restore();
+    }
+
+    // Worn traffic paths (subtle darkening in center)
+    const wearGrad = ctx.createRadialGradient(W / 2, H / 2, 0, W / 2, H / 2, W * 0.6);
+    wearGrad.addColorStop(0, 'rgba(0, 0, 0, 0.08)');
+    wearGrad.addColorStop(1, 'rgba(0, 0, 0, 0)');
+    ctx.fillStyle = wearGrad;
+    ctx.fillRect(0, 0, W, H);
+
+    addNoise(ctx, W, H, 4);
   });
 }
 
-// ─── Ceiling Panel (Industrial suspended ceiling with light fixtures) ───
+// ─── Ceiling Panel (Facility — drop ceiling, 2'×2' acoustic tiles) ───
 
 export function ceilingPanelTexture(): THREE.CanvasTexture {
   return getOrCreate('ceiling-panel', 256, 256, (ctx) => {
     const W = 256, H = 256;
+    const panelSize = 128; // 2×2 grid
+    const frameWidth = 4;
 
-    // Dark frame/grid base
-    ctx.fillStyle = '#4a4a48';
+    // Base ceiling white (slightly yellowed from age)
+    ctx.fillStyle = '#e8e4d8';
     ctx.fillRect(0, 0, W, H);
 
-    // 2x2 recessed panel grid
-    const panels = 2;
-    const panelSize = W / panels;
-    const frameW = 6;
+    // Panel shadows (slight depression from grid)
+    for (let row = 0; row < 2; row++) {
+      for (let col = 0; col < 2; col++) {
+        const x = col * panelSize;
+        const y = row * panelSize;
 
-    for (let r = 0; r < panels; r++) {
-      for (let c = 0; c < panels; c++) {
-        const px = c * panelSize;
-        const py = r * panelSize;
+        // Inner shadow
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.05)';
+        ctx.fillRect(x + frameWidth, y + frameWidth, panelSize - frameWidth * 2, panelSize - frameWidth * 2);
 
-        // Panel face — lighter concrete color
-        const shade = 150 + Math.floor(Math.random() * 10 - 5);
-        ctx.fillStyle = `rgb(${shade}, ${shade - 2}, ${shade - 6})`;
-        ctx.fillRect(px + frameW, py + frameW, panelSize - frameW * 2, panelSize - frameW * 2);
+        // Acoustic perforations (tiny dots)
+        const perfSpacing = 8;
+        const perfSize = 1.5;
 
-        // Recessed shadow (panel sits below grid frame)
-        ctx.fillStyle = 'rgba(0,0,0,0.25)';
-        ctx.fillRect(px + frameW, py + frameW, panelSize - frameW * 2, 4);
-        ctx.fillRect(px + frameW, py + frameW, 4, panelSize - frameW * 2);
+        for (let py = perfSpacing; py < panelSize - frameWidth * 2; py += perfSpacing) {
+          for (let px = perfSpacing; px < panelSize - frameWidth * 2; px += perfSpacing) {
+            const offsetX = (py / perfSpacing) % 2 === 0 ? 0 : perfSpacing / 2;
 
-        ctx.fillStyle = 'rgba(255,255,255,0.12)';
-        ctx.fillRect(px + frameW, py + panelSize - frameW - 4, panelSize - frameW * 2, 4);
-        ctx.fillRect(px + panelSize - frameW - 4, py + frameW, 4, panelSize - frameW * 2);
-
-        // Tiny ventilation dots on some panels
-        if (r === 0 && c === 1) {
-          ctx.fillStyle = 'rgba(0,0,0,0.15)';
-          for (let vy = py + 30; vy < py + panelSize - 30; vy += 12) {
-            for (let vx = px + 30; vx < px + panelSize - 30; vx += 12) {
-              ctx.beginPath();
-              ctx.arc(vx, vy, 2, 0, Math.PI * 2);
-              ctx.fill();
-            }
+            ctx.fillStyle = 'rgba(0, 0, 0, 0.15)';
+            ctx.beginPath();
+            ctx.arc(x + frameWidth + px + offsetX, y + frameWidth + py, perfSize, 0, Math.PI * 2);
+            ctx.fill();
           }
         }
       }
     }
 
-    // Grid frame lines
-    ctx.fillStyle = '#555553';
-    for (let i = 0; i <= panels; i++) {
-      ctx.fillRect(0, i * panelSize - frameW / 2, W, frameW);
-      ctx.fillRect(i * panelSize - frameW / 2, 0, frameW, H);
-    }
-    // Frame highlight
-    ctx.fillStyle = 'rgba(255,255,255,0.08)';
-    for (let i = 0; i <= panels; i++) {
-      ctx.fillRect(0, i * panelSize - frameW / 2, W, 1);
-      ctx.fillRect(i * panelSize - frameW / 2, 0, 1, H);
+    // Grid frame (metal T-bar system)
+    ctx.fillStyle = '#9a9a9a';
+    for (let i = 0; i <= 2; i++) {
+      ctx.fillRect(0, i * panelSize - frameWidth / 2, W, frameWidth);
+      ctx.fillRect(i * panelSize - frameWidth / 2, 0, frameWidth, H);
     }
 
-    // Fluorescent light tube on one panel (top-left)
-    ctx.fillStyle = '#dde8dd';
-    ctx.globalAlpha = 0.6;
-    ctx.fillRect(30, 50, 10, 56);
-    ctx.fillRect(86, 50, 10, 56);
-    ctx.globalAlpha = 0.15;
-    ctx.fillStyle = '#ffffff';
-    ctx.fillRect(20, 40, 86, 76); // glow area
-    ctx.globalAlpha = 1;
+    // Frame highlights (metallic shine)
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.3)';
+    ctx.lineWidth = 1;
+    for (let i = 0; i <= 2; i++) {
+      ctx.beginPath();
+      ctx.moveTo(0, i * panelSize - frameWidth / 2);
+      ctx.lineTo(W, i * panelSize - frameWidth / 2);
+      ctx.stroke();
 
-    addNoise(ctx, W, H, 12);
+      ctx.beginPath();
+      ctx.moveTo(i * panelSize - frameWidth / 2, 0);
+      ctx.lineTo(i * panelSize - frameWidth / 2, H);
+      ctx.stroke();
+    }
+
+    // Water stains (yellow/brown spots)
+    for (let i = 0; i < 2; i++) {
+      const sx = Math.random() * W;
+      const sy = Math.random() * H;
+      const size = 30 + Math.random() * 40;
+
+      const stainGrad = ctx.createRadialGradient(sx, sy, 0, sx, sy, size);
+      stainGrad.addColorStop(0, 'rgba(160, 140, 80, 0.15)');
+      stainGrad.addColorStop(0.6, 'rgba(160, 140, 80, 0.05)');
+      stainGrad.addColorStop(1, 'rgba(160, 140, 80, 0)');
+
+      ctx.fillStyle = stainGrad;
+      ctx.fillRect(0, 0, W, H);
+    }
+
+    addNoise(ctx, W, H, 3);
   });
 }
 
-// ─── Wasteland Wall (Industrial concrete with rust, olive-grey tones) ───
+// ─── Wasteland Wall (Weathered concrete/metal, rust, decay) ───
 
 export function wastelandWallTexture(): THREE.CanvasTexture {
   return getOrCreate('wasteland-wall', 256, 256, (ctx) => {
     const W = 256, H = 256;
 
-    // Base concrete — olive-grey
-    ctx.fillStyle = '#6a6e5a';
+    // Dirty concrete base
+    ctx.fillStyle = '#5a5e52';
     ctx.fillRect(0, 0, W, H);
 
-    const blockRows = 4;
-    const blockH = H / blockRows;
-    const mortarW = 4;
+    // Color variation (stains, weathering)
+    for (let i = 0; i < 15; i++) {
+      const x = Math.random() * W;
+      const y = Math.random() * H;
+      const size = 40 + Math.random() * 80;
 
-    for (let r = 0; r < blockRows; r++) {
-      const by = r * blockH;
-      const offset = r % 2 === 0 ? 0 : W / 4;
-      const blocksPerRow = 2;
-      const blockW = W / blocksPerRow;
-
-      for (let c = -1; c <= blocksPerRow; c++) {
-        const bx = c * blockW + offset;
-        const base = 95 + Math.floor(Math.random() * 24 - 12);
-        const g = base - 2;
-        const b = base - 8;
-        ctx.fillStyle = `rgb(${base}, ${g}, ${b})`;
-        ctx.fillRect(bx + mortarW / 2, by + mortarW / 2, blockW - mortarW, blockH - mortarW);
-
-        ctx.fillStyle = 'rgba(0,0,0,0.14)';
-        ctx.fillRect(bx + mortarW / 2, by + mortarW / 2, blockW - mortarW, 3);
-        ctx.fillRect(bx + mortarW / 2, by + mortarW / 2, 3, blockH - mortarW);
-        ctx.fillStyle = 'rgba(255,255,255,0.06)';
-        ctx.fillRect(bx + mortarW / 2, by + blockH - mortarW / 2 - 3, blockW - mortarW, 3);
-        ctx.fillRect(bx + blockW - mortarW / 2 - 3, by + mortarW / 2, 3, blockH - mortarW);
+      const stainGrad = ctx.createRadialGradient(x, y, 0, x, y, size);
+      const isDark = Math.random() > 0.4;
+      if (isDark) {
+        stainGrad.addColorStop(0, 'rgba(40, 42, 38, 0.4)');
+        stainGrad.addColorStop(1, 'rgba(40, 42, 38, 0)');
+      } else {
+        stainGrad.addColorStop(0, 'rgba(100, 104, 92, 0.3)');
+        stainGrad.addColorStop(1, 'rgba(100, 104, 92, 0)');
       }
-      ctx.fillStyle = '#4a4e42';
-      ctx.fillRect(0, by, W, mortarW);
-    }
-    ctx.fillStyle = '#4a4e42';
-    ctx.fillRect(0, H - mortarW, W, mortarW);
 
-    for (let r = 0; r < blockRows; r++) {
-      const by = r * blockH;
-      const offset = r % 2 === 0 ? 0 : W / 4;
-      const blockW = W / 2;
-      for (let c = 0; c <= 2; c++) {
-        const mx = c * blockW + offset;
-        ctx.fillStyle = '#4a4e42';
-        ctx.fillRect(mx - mortarW / 2, by, mortarW, blockH);
-      }
+      ctx.fillStyle = stainGrad;
+      ctx.fillRect(0, 0, W, H);
     }
 
-    // Rust streaks
-    ctx.globalAlpha = 0.12;
-    ctx.fillStyle = '#8b5a2a';
-    ctx.fillRect(60, 100, 12, 140);
-    ctx.fillStyle = '#7a4a22';
-    ctx.fillRect(175, 30, 10, 90);
-    ctx.fillStyle = '#6a3a18';
-    ctx.fillRect(100, 175, 35, 70);
-    ctx.globalAlpha = 1;
+    // Metal panel overlays (rusted corrugated sheets)
+    const panelCount = 3;
+    for (let i = 0; i < panelCount; i++) {
+      const px = i * (W / panelCount);
+      const panelW = W / panelCount + 5;
 
-    addNoise(ctx, W, H, 20);
+      const rustBase = Math.floor(120 + Math.random() * 20);
+      ctx.fillStyle = `rgb(${rustBase}, ${rustBase - 30}, ${rustBase - 50})`;
+      ctx.fillRect(px, 0, panelW, H);
+
+      ctx.strokeStyle = 'rgba(0, 0, 0, 0.15)';
+      ctx.lineWidth = 1;
+      for (let x = 0; x < panelW; x += 8) {
+        ctx.beginPath();
+        ctx.moveTo(px + x, 0);
+        ctx.lineTo(px + x, H);
+        ctx.stroke();
+      }
+
+      for (let r = 0; r < 4; r++) {
+        const rx = px + Math.random() * panelW;
+        const rustGrad = ctx.createLinearGradient(rx, 0, rx, H);
+        rustGrad.addColorStop(0, 'rgba(140, 70, 30, 0.4)');
+        rustGrad.addColorStop(0.4, 'rgba(120, 60, 25, 0.3)');
+        rustGrad.addColorStop(1, 'rgba(100, 50, 20, 0.1)');
+
+        ctx.fillStyle = rustGrad;
+        ctx.fillRect(rx - 2, 0, 3 + Math.random() * 4, H);
+      }
+    }
+
+    // Bolts/rivets
+    ctx.fillStyle = '#4a4a45';
+    for (let row = 0; row < 4; row++) {
+      for (let i = 0; i < panelCount; i++) {
+        const bx = i * (W / panelCount) + 10;
+        const by = row * (H / 4) + 20;
+
+        ctx.beginPath();
+        ctx.arc(bx, by, 3, 0, Math.PI * 2);
+        ctx.fill();
+
+        ctx.fillStyle = 'rgba(140, 70, 30, 0.3)';
+        ctx.beginPath();
+        ctx.arc(bx, by, 6, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = '#4a4a45';
+      }
+    }
+
+    // Bullet holes / impact damage
+    for (let i = 0; i < 3; i++) {
+      const hx = Math.random() * W;
+      const hy = Math.random() * H;
+
+      ctx.fillStyle = 'rgba(0, 0, 0, 0.8)';
+      ctx.beginPath();
+      ctx.arc(hx, hy, 2 + Math.random() * 2, 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.fillStyle = 'rgba(100, 50, 20, 0.3)';
+      ctx.beginPath();
+      ctx.arc(hx, hy, 5 + Math.random() * 4, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    // Cracks in concrete
+    ctx.strokeStyle = 'rgba(0, 0, 0, 0.4)';
+    ctx.lineWidth = 1.5;
+    for (let i = 0; i < 4; i++) {
+      const sx = Math.random() * W;
+      const sy = Math.random() * H;
+
+      ctx.beginPath();
+      ctx.moveTo(sx, sy);
+
+      let x = sx, y = sy;
+      for (let step = 0; step < 6; step++) {
+        x += (Math.random() - 0.5) * 20;
+        y += (Math.random() - 0.5) * 20;
+        ctx.lineTo(x, y);
+      }
+      ctx.stroke();
+    }
+
+    addNoise(ctx, W, H, 12);
   });
 }
 
-// ─── Wasteland Floor (Faded industrial tile, dust, wear) ───
+// ─── Wasteland Floor (Cracked, dusty desert floor) ───
 
 export function wastelandFloorTexture(): THREE.CanvasTexture {
   return getOrCreate('wasteland-floor', 256, 256, (ctx) => {
     const W = 256, H = 256;
-    ctx.fillStyle = '#3a3e36';
+
+    // Sandy desert base
+    const baseGrad = ctx.createLinearGradient(0, 0, W, H);
+    baseGrad.addColorStop(0, '#b8a890');
+    baseGrad.addColorStop(0.5, '#a89878');
+    baseGrad.addColorStop(1, '#98886a');
+    ctx.fillStyle = baseGrad;
     ctx.fillRect(0, 0, W, H);
 
-    const tiles = 4;
-    const tileSize = W / tiles;
-    const groutW = 4;
+    // Dust clouds (color variation)
+    for (let i = 0; i < 20; i++) {
+      const dx = Math.random() * W;
+      const dy = Math.random() * H;
+      const size = 30 + Math.random() * 60;
 
-    for (let r = 0; r < tiles; r++) {
-      for (let c = 0; c < tiles; c++) {
-        const tx = c * tileSize;
-        const ty = r * tileSize;
-        const base = 68 + Math.floor(Math.random() * 18 - 9);
-        const green = base + 6;
-        ctx.fillStyle = `rgb(${base - 2}, ${green}, ${base - 4})`;
-        ctx.fillRect(tx + groutW / 2, ty + groutW / 2, tileSize - groutW, tileSize - groutW);
+      const dustGrad = ctx.createRadialGradient(dx, dy, 0, dx, dy, size);
+      dustGrad.addColorStop(0, 'rgba(200, 180, 150, 0.2)');
+      dustGrad.addColorStop(1, 'rgba(200, 180, 150, 0)');
 
-        ctx.fillStyle = 'rgba(255,255,255,0.06)';
-        ctx.fillRect(tx + groutW / 2, ty + groutW / 2, tileSize - groutW, 2);
-        ctx.fillRect(tx + groutW / 2, ty + groutW / 2, 2, tileSize - groutW);
-        ctx.fillStyle = 'rgba(0,0,0,0.18)';
-        ctx.fillRect(tx + groutW / 2, ty + tileSize - groutW / 2 - 2, tileSize - groutW, 2);
-        ctx.fillRect(tx + tileSize - groutW / 2 - 2, ty + groutW / 2, 2, tileSize - groutW);
+      ctx.fillStyle = dustGrad;
+      ctx.fillRect(0, 0, W, H);
+    }
 
-        if (Math.random() > 0.5) {
-          ctx.globalAlpha = 0.1;
-          ctx.strokeStyle = '#2a2a26';
-          ctx.lineWidth = 2;
-          const sx = tx + 10 + Math.random() * 30;
-          const sy = ty + 10 + Math.random() * 30;
-          ctx.beginPath();
-          ctx.moveTo(sx, sy);
-          ctx.lineTo(sx + Math.random() * 30 - 15, sy + Math.random() * 30 - 15);
-          ctx.stroke();
-          ctx.globalAlpha = 1;
+    // Large cracks (dried earth)
+    ctx.strokeStyle = 'rgba(0, 0, 0, 0.3)';
+    ctx.lineWidth = 2;
+
+    const crackSeeds = [
+      { x: 0, y: H * 0.3 },
+      { x: W * 0.6, y: 0 },
+      { x: W, y: H * 0.7 },
+    ];
+
+    crackSeeds.forEach((seed) => {
+      ctx.beginPath();
+      ctx.moveTo(seed.x, seed.y);
+
+      let x = seed.x, y = seed.y;
+      for (let step = 0; step < 10; step++) {
+        const angle = Math.random() * Math.PI * 2;
+        x += Math.cos(angle) * (15 + Math.random() * 20);
+        y += Math.sin(angle) * (15 + Math.random() * 20);
+
+        ctx.lineTo(x, y);
+
+        if (Math.random() > 0.7) {
+          const branchX = x + (Math.random() - 0.5) * 30;
+          const branchY = y + (Math.random() - 0.5) * 30;
+          ctx.moveTo(x, y);
+          ctx.lineTo(branchX, branchY);
+          ctx.moveTo(x, y);
         }
       }
+      ctx.stroke();
+    });
+
+    // Small fissures
+    ctx.strokeStyle = 'rgba(0, 0, 0, 0.15)';
+    ctx.lineWidth = 1;
+    for (let i = 0; i < 30; i++) {
+      const fx = Math.random() * W;
+      const fy = Math.random() * H;
+      const length = 10 + Math.random() * 20;
+      const angle = Math.random() * Math.PI * 2;
+
+      ctx.beginPath();
+      ctx.moveTo(fx, fy);
+      ctx.lineTo(fx + Math.cos(angle) * length, fy + Math.sin(angle) * length);
+      ctx.stroke();
     }
 
-    ctx.fillStyle = '#2a2e28';
-    for (let i = 0; i <= tiles; i++) {
-      ctx.fillRect(0, i * tileSize - groutW / 2, W, groutW);
-      ctx.fillRect(i * tileSize - groutW / 2, 0, groutW, H);
+    // Tire tracks
+    ctx.strokeStyle = 'rgba(0, 0, 0, 0.15)';
+    ctx.lineWidth = 8;
+
+    const trackY = H * (0.3 + Math.random() * 0.4);
+    ctx.beginPath();
+    ctx.moveTo(0, trackY);
+    for (let x = 0; x <= W; x += 20) {
+      ctx.lineTo(x, trackY + (Math.random() - 0.5) * 6);
+    }
+    ctx.stroke();
+
+    ctx.beginPath();
+    ctx.moveTo(0, trackY + 30);
+    for (let x = 0; x <= W; x += 20) {
+      ctx.lineTo(x, trackY + 30 + (Math.random() - 0.5) * 6);
+    }
+    ctx.stroke();
+
+    // Small rocks/debris
+    for (let i = 0; i < 15; i++) {
+      const rx = Math.random() * W;
+      const ry = Math.random() * H;
+      const size = 2 + Math.random() * 4;
+
+      ctx.fillStyle = `rgba(${80 + Math.random() * 40}, ${70 + Math.random() * 30}, ${50 + Math.random() * 20}, 0.6)`;
+      ctx.fillRect(rx, ry, size, size);
     }
 
-    addNoise(ctx, W, H, 16);
+    addNoise(ctx, W, H, 8);
   });
 }
 
@@ -465,159 +574,243 @@ export function wastelandCeilingTexture(): THREE.CanvasTexture {
   });
 }
 
-// ─── Wood Crate (Classic military crate with planks, braces, markings) ───
+// ─── Palace Marble Floor (Polished marble with gold inlay) ───
 
 export function palaceMarbleFloorTexture(): THREE.CanvasTexture {
   return getOrCreate('palace-marble-floor', 256, 256, (ctx) => {
-    const W = 256;
-    const H = 256;
-    ctx.fillStyle = '#dfd7c9';
+    const W = 256, H = 256;
+    const tileSize = 128; // 2×2 large format tiles
+
+    // Polished marble base (warmer than walls)
+    ctx.fillStyle = '#f2e6d0';
     ctx.fillRect(0, 0, W, H);
 
-    const tiles = 3;
-    const tileSize = W / tiles;
-    const grout = 3;
+    for (let row = 0; row < 2; row++) {
+      for (let col = 0; col < 2; col++) {
+        const x = col * tileSize;
+        const y = row * tileSize;
 
-    for (let r = 0; r < tiles; r++) {
-      for (let c = 0; c < tiles; c++) {
-        const tx = c * tileSize;
-        const ty = r * tileSize;
-        const grad = ctx.createLinearGradient(tx, ty, tx + tileSize, ty + tileSize);
-        grad.addColorStop(0, '#f6f2ea');
-        grad.addColorStop(0.55, '#d9d0c1');
-        grad.addColorStop(1, '#f1ebdf');
-        ctx.fillStyle = grad;
-        ctx.fillRect(tx + grout / 2, ty + grout / 2, tileSize - grout, tileSize - grout);
+        const tint = Math.random() * 10 - 5;
+        ctx.fillStyle = `rgb(${242 + tint}, ${230 + tint}, ${208 + tint * 0.8})`;
+        ctx.fillRect(x, y, tileSize, tileSize);
 
-        ctx.fillStyle = 'rgba(255,255,255,0.2)';
-        ctx.fillRect(tx + grout / 2, ty + grout / 2, tileSize - grout, 2);
-        ctx.fillRect(tx + grout / 2, ty + grout / 2, 2, tileSize - grout);
-        ctx.fillStyle = 'rgba(0,0,0,0.16)';
-        ctx.fillRect(tx + grout / 2, ty + tileSize - grout / 2 - 2, tileSize - grout, 2);
-        ctx.fillRect(tx + tileSize - grout / 2 - 2, ty + grout / 2, 2, tileSize - grout);
+        ctx.strokeStyle = 'rgba(200, 180, 150, 0.25)';
+        ctx.lineWidth = 2;
 
-        const veins = 2 + Math.floor(Math.random() * 2);
-        for (let v = 0; v < veins; v++) {
-          ctx.strokeStyle = `rgba(120, 112, 100, ${0.14 + Math.random() * 0.1})`;
-          ctx.lineWidth = 1 + Math.random() * 1.2;
-          const y0 = ty + 10 + Math.random() * (tileSize - 20);
+        for (let v = 0; v < 3; v++) {
           ctx.beginPath();
-          ctx.moveTo(tx + 6, y0);
-          for (let x = tx + 6; x < tx + tileSize - 6; x += 14) {
-            const y = y0 + Math.sin((x + v * 13) * 0.08) * (1.5 + Math.random() * 2.2);
-            ctx.lineTo(x, y);
+          ctx.moveTo(x + Math.random() * tileSize, y);
+
+          let vx = x + Math.random() * tileSize;
+          let vy = y;
+
+          for (let step = 0; step < 6; step++) {
+            vx += (Math.random() - 0.5) * 30;
+            vy += tileSize / 6;
+            ctx.lineTo(vx, vy);
           }
+
           ctx.stroke();
         }
       }
     }
 
-    ctx.fillStyle = '#a59a87';
-    for (let i = 0; i <= tiles; i++) {
-      ctx.fillRect(0, i * tileSize - grout / 2, W, grout);
-      ctx.fillRect(i * tileSize - grout / 2, 0, grout, H);
+    // Gold inlay grid (decorative)
+    ctx.strokeStyle = 'rgba(180, 150, 80, 0.6)';
+    ctx.lineWidth = 3;
+
+    for (let i = 0; i <= 2; i++) {
+      ctx.beginPath();
+      ctx.moveTo(0, i * tileSize);
+      ctx.lineTo(W, i * tileSize);
+      ctx.stroke();
+
+      ctx.beginPath();
+      ctx.moveTo(i * tileSize, 0);
+      ctx.lineTo(i * tileSize, H);
+      ctx.stroke();
     }
 
-    addNoise(ctx, W, H, 10);
+    // Gold highlight (metallic shine)
+    ctx.strokeStyle = 'rgba(220, 200, 120, 0.4)';
+    ctx.lineWidth = 1;
+
+    for (let i = 0; i <= 2; i++) {
+      ctx.beginPath();
+      ctx.moveTo(0, i * tileSize - 1);
+      ctx.lineTo(W, i * tileSize - 1);
+      ctx.stroke();
+    }
+
+    // Polished reflection spots
+    for (let i = 0; i < 6; i++) {
+      const hx = Math.random() * W;
+      const hy = Math.random() * H;
+
+      const highlight = ctx.createRadialGradient(hx, hy, 0, hx, hy, 15);
+      highlight.addColorStop(0, 'rgba(255, 255, 255, 0.15)');
+      highlight.addColorStop(1, 'rgba(255, 255, 255, 0)');
+
+      ctx.fillStyle = highlight;
+      ctx.fillRect(0, 0, W, H);
+    }
+
+    addNoise(ctx, W, H, 2);
   });
 }
 
 export function palaceWallTexture(): THREE.CanvasTexture {
   return getOrCreate('palace-wall', 256, 256, (ctx) => {
-    const W = 256;
-    const H = 256;
+    const W = 256, H = 256;
 
-    // Upper plaster
-    const wallGrad = ctx.createLinearGradient(0, 0, 0, H);
-    wallGrad.addColorStop(0, '#ece2d0');
-    wallGrad.addColorStop(1, '#e1d3bc');
-    ctx.fillStyle = wallGrad;
+    // Cream marble base
+    const baseGrad = ctx.createLinearGradient(0, 0, W, H);
+    baseGrad.addColorStop(0, '#f5f0e8');
+    baseGrad.addColorStop(0.5, '#f0ead8');
+    baseGrad.addColorStop(1, '#ebe5d0');
+    ctx.fillStyle = baseGrad;
     ctx.fillRect(0, 0, W, H);
 
-    const wainscotY = 168;
+    // Marble veining (irregular diagonal streaks)
+    ctx.strokeStyle = 'rgba(180, 170, 150, 0.3)';
+    ctx.lineWidth = 1.5;
 
-    // Lower marble wainscot
-    const marbleGrad = ctx.createLinearGradient(0, wainscotY, 0, H);
-    marbleGrad.addColorStop(0, '#ccbca4');
-    marbleGrad.addColorStop(1, '#b8a489');
-    ctx.fillStyle = marbleGrad;
-    ctx.fillRect(0, wainscotY, W, H - wainscotY);
+    for (let i = 0; i < 8; i++) {
+      const startX = Math.random() * W * 0.3;
+      const startY = Math.random() * H;
 
-    for (let i = 0; i < 6; i++) {
-      ctx.strokeStyle = `rgba(95, 86, 72, ${0.12 + Math.random() * 0.08})`;
-      ctx.lineWidth = 1;
-      const y0 = wainscotY + 10 + Math.random() * (H - wainscotY - 20);
       ctx.beginPath();
-      ctx.moveTo(0, y0);
-      for (let x = 0; x <= W; x += 14) {
-        ctx.lineTo(x, y0 + Math.sin((x + i * 17) * 0.08) * 2);
+      ctx.moveTo(startX, startY);
+
+      let x = startX;
+      let y = startY;
+      const angle = -0.3 + Math.random() * 0.2;
+
+      for (let step = 0; step < 12; step++) {
+        x += 20 + Math.random() * 15;
+        y += Math.tan(angle) * 20 + (Math.random() - 0.5) * 10;
+
+        ctx.lineTo(x, y);
       }
+
       ctx.stroke();
     }
 
-    // Single thin gold band at chair-rail height
-    ctx.fillStyle = '#8f6f29';
-    ctx.fillRect(0, wainscotY - 4, W, 2);
-    ctx.fillStyle = '#d7bb73';
-    ctx.fillRect(0, wainscotY - 3, W, 1);
+    // Stone block seams (subtle)
+    ctx.strokeStyle = 'rgba(0, 0, 0, 0.08)';
+    ctx.lineWidth = 2;
 
-    // Very subtle brocade dots
-    ctx.fillStyle = 'rgba(150, 132, 96, 0.08)';
-    for (let y = 24; y < wainscotY - 18; y += 26) {
-      for (let x = 14; x < W; x += 26) {
-        ctx.beginPath();
-        ctx.arc(x, y, 1.2, 0, Math.PI * 2);
-        ctx.fill();
-      }
+    ctx.beginPath();
+    ctx.moveTo(0, H / 2);
+    ctx.lineTo(W, H / 2);
+    ctx.stroke();
+
+    // Gold trim accent
+    ctx.strokeStyle = 'rgba(200, 170, 100, 0.4)';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(0, H / 2 - 1);
+    ctx.lineTo(W, H / 2 - 1);
+    ctx.stroke();
+
+    // Polished surface variation (cloud-like patches)
+    for (let i = 0; i < 10; i++) {
+      const x = Math.random() * W;
+      const y = Math.random() * H;
+      const size = 40 + Math.random() * 50;
+
+      const cloudGrad = ctx.createRadialGradient(x, y, 0, x, y, size);
+      cloudGrad.addColorStop(0, 'rgba(255, 255, 255, 0.08)');
+      cloudGrad.addColorStop(1, 'rgba(255, 255, 255, 0)');
+
+      ctx.fillStyle = cloudGrad;
+      ctx.fillRect(0, 0, W, H);
     }
 
-    addNoise(ctx, W, H, 6);
+    addNoise(ctx, W, H, 2);
   });
 }
 
 export function palaceCeilingTexture(): THREE.CanvasTexture {
   return getOrCreate('palace-ceiling', 256, 256, (ctx) => {
-    const W = 256;
-    const H = 256;
-    ctx.fillStyle = '#efe5d1';
+    const W = 256, H = 256;
+    const cofferSize = 128; // 2×2 coffered panels
+
+    // Rich cream ceiling base
+    ctx.fillStyle = '#f8f4e8';
     ctx.fillRect(0, 0, W, H);
 
-    const coffers = 2;
-    const cell = W / coffers;
-    const trim = 10;
-    for (let r = 0; r < coffers; r++) {
-      for (let c = 0; c < coffers; c++) {
-        const x = c * cell;
-        const y = r * cell;
-        const outer = ctx.createLinearGradient(x, y, x + cell, y);
-        outer.addColorStop(0, '#7d5f1f');
-        outer.addColorStop(0.5, '#d9bf72');
-        outer.addColorStop(1, '#7d5f1f');
-        ctx.fillStyle = outer;
-        ctx.fillRect(x, y, cell, cell);
+    for (let row = 0; row < 2; row++) {
+      for (let col = 0; col < 2; col++) {
+        const x = col * cofferSize;
+        const y = row * cofferSize;
 
-        const inner = ctx.createLinearGradient(x + trim, y + trim, x + cell - trim, y + cell - trim);
-        inner.addColorStop(0, '#f3ead9');
-        inner.addColorStop(1, '#d8c9ac');
-        ctx.fillStyle = inner;
-        ctx.fillRect(x + trim, y + trim, cell - trim * 2, cell - trim * 2);
+        const recessDepth = 12;
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.08)';
+        ctx.fillRect(x + recessDepth, y + recessDepth, cofferSize - recessDepth * 2, cofferSize - recessDepth * 2);
 
-        ctx.strokeStyle = 'rgba(255,240,180,0.25)';
-        ctx.lineWidth = 2;
-        ctx.strokeRect(x + trim + 2, y + trim + 2, cell - trim * 2 - 4, cell - trim * 2 - 4);
+        ctx.fillStyle = '#fffef5';
+        ctx.fillRect(x + recessDepth + 2, y + recessDepth + 2, cofferSize - recessDepth * 2 - 4, cofferSize - recessDepth * 2 - 4);
+
+        const cx = x + cofferSize / 2;
+        const cy = y + cofferSize / 2;
+
+        ctx.fillStyle = 'rgba(180, 160, 100, 0.3)';
+        ctx.beginPath();
+        ctx.arc(cx, cy, 18, 0, Math.PI * 2);
+        ctx.fill();
+
+        ctx.fillStyle = 'rgba(200, 170, 100, 0.5)';
+        ctx.beginPath();
+        ctx.arc(cx, cy, 12, 0, Math.PI * 2);
+        ctx.fill();
+
+        for (let i = 0; i < 8; i++) {
+          const angle = (i / 8) * Math.PI * 2;
+          const px = cx + Math.cos(angle) * 8;
+          const py = cy + Math.sin(angle) * 8;
+
+          ctx.fillStyle = 'rgba(220, 190, 110, 0.4)';
+          ctx.beginPath();
+          ctx.arc(px, py, 3, 0, Math.PI * 2);
+          ctx.fill();
+        }
       }
     }
 
-    ctx.fillStyle = '#a88433';
-    ctx.beginPath();
-    ctx.arc(W / 2, H / 2, 18, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.fillStyle = '#dec26f';
-    ctx.beginPath();
-    ctx.arc(W / 2, H / 2, 10, 0, Math.PI * 2);
-    ctx.fill();
+    // Coffer beams
+    ctx.fillStyle = '#e8dcc0';
+    for (let i = 0; i <= 2; i++) {
+      ctx.fillRect(0, i * cofferSize - 6, W, 12);
+      ctx.fillRect(i * cofferSize - 6, 0, 12, H);
+    }
 
-    addNoise(ctx, W, H, 7);
+    // Gold leaf accent on beams
+    ctx.strokeStyle = 'rgba(200, 170, 100, 0.5)';
+    ctx.lineWidth = 2;
+    for (let i = 0; i <= 2; i++) {
+      ctx.beginPath();
+      ctx.moveTo(0, i * cofferSize - 1);
+      ctx.lineTo(W, i * cofferSize - 1);
+      ctx.stroke();
+
+      ctx.beginPath();
+      ctx.moveTo(i * cofferSize - 1, 0);
+      ctx.lineTo(i * cofferSize - 1, H);
+      ctx.stroke();
+    }
+
+    // Beam highlights
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.3)';
+    ctx.lineWidth = 1;
+    for (let i = 0; i <= 2; i++) {
+      ctx.beginPath();
+      ctx.moveTo(0, i * cofferSize - 7);
+      ctx.lineTo(W, i * cofferSize - 7);
+      ctx.stroke();
+    }
+
+    addNoise(ctx, W, H, 2);
   });
 }
 
@@ -677,229 +870,215 @@ export function palacePaintingTexture(): THREE.CanvasTexture {
   });
 }
 
+// ─── Wood Crate (Military shipping crate, rough pine planks) ───
+
 export function woodCrateTexture(): THREE.CanvasTexture {
   return getOrCreate('wood-crate', 256, 256, (ctx) => {
     const W = 256, H = 256;
 
-    // Warm wood base
     ctx.fillStyle = '#8B6B43';
     ctx.fillRect(0, 0, W, H);
 
-    // Horizontal planks (6 planks)
     const plankCount = 6;
     const plankH = H / plankCount;
-    const gapH = 3;
+    const gapH = 4;
 
     for (let i = 0; i < plankCount; i++) {
       const py = i * plankH;
 
-      // Per-plank color variation
-      const shade = Math.random() * 20 - 10;
-      const r = 139 + shade, g = 107 + shade * 0.8, b = 67 + shade * 0.5;
+      const shade = (Math.random() - 0.5) * 25;
+      const r = 139 + shade;
+      const g = 107 + shade * 0.8;
+      const b = 67 + shade * 0.5;
       ctx.fillStyle = `rgb(${Math.floor(r)}, ${Math.floor(g)}, ${Math.floor(b)})`;
       ctx.fillRect(0, py + gapH / 2, W, plankH - gapH);
 
-      // Wood grain — curved lines across plank
-      ctx.strokeStyle = `rgba(80, 55, 25, 0.25)`;
+      ctx.strokeStyle = `rgba(${60 + Math.random() * 20}, ${40 + Math.random() * 15}, ${20 + Math.random() * 10}, 0.3)`;
       ctx.lineWidth = 1;
+
       for (let l = 0; l < 8; l++) {
-        const gy = py + gapH + 2 + Math.random() * (plankH - gapH * 2 - 4);
+        const gy = py + gapH / 2 + Math.random() * (plankH - gapH);
+
         ctx.beginPath();
         ctx.moveTo(0, gy);
-        for (let gx = 0; gx < W; gx += 40) {
-          ctx.lineTo(gx + 40, gy + Math.random() * 3 - 1.5);
+
+        for (let gx = 0; gx <= W; gx += 15) {
+          ctx.lineTo(gx, gy + (Math.random() - 0.5) * 2);
         }
         ctx.stroke();
       }
 
-      // Knot holes on some planks
-      if (Math.random() > 0.6) {
+      if (Math.random() > 0.5) {
         const kx = 30 + Math.random() * (W - 60);
         const ky = py + plankH / 2;
-        ctx.fillStyle = `rgba(60, 40, 20, 0.5)`;
+
+        ctx.fillStyle = 'rgba(60, 40, 20, 0.4)';
         ctx.beginPath();
-        ctx.ellipse(kx, ky, 6, 4, Math.random() * 0.5, 0, Math.PI * 2);
+        ctx.ellipse(kx, ky, 8, 12, Math.random() * Math.PI, 0, Math.PI * 2);
         ctx.fill();
-        // Ring around knot
-        ctx.strokeStyle = `rgba(70, 50, 25, 0.3)`;
-        ctx.lineWidth = 1;
-        ctx.beginPath();
-        ctx.ellipse(kx, ky, 10, 7, Math.random() * 0.5, 0, Math.PI * 2);
-        ctx.stroke();
       }
-
-      // Plank gap (dark line)
-      ctx.fillStyle = '#3a2810';
-      ctx.fillRect(0, py, W, gapH);
     }
 
-    // Corner brace plates (L-shaped metal at each corner)
-    const braceSize = 35;
-    const braceW = 8;
-    ctx.fillStyle = '#666660';
-    // Top-left
-    ctx.fillRect(0, 0, braceSize, braceW);
-    ctx.fillRect(0, 0, braceW, braceSize);
-    // Top-right
-    ctx.fillRect(W - braceSize, 0, braceSize, braceW);
-    ctx.fillRect(W - braceW, 0, braceW, braceSize);
-    // Bottom-left
-    ctx.fillRect(0, H - braceW, braceSize, braceW);
-    ctx.fillRect(0, H - braceSize, braceW, braceSize);
-    // Bottom-right
-    ctx.fillRect(W - braceSize, H - braceW, braceSize, braceW);
-    ctx.fillRect(W - braceW, H - braceSize, braceW, braceSize);
-
-    // Nails/bolts on braces
-    ctx.fillStyle = '#444440';
-    const nails = [
-      [12, 4], [4, 12], [28, 4], [4, 28],
-      [W - 12, 4], [W - 4, 12], [W - 28, 4], [W - 4, 28],
-      [12, H - 4], [4, H - 12], [28, H - 4], [4, H - 28],
-      [W - 12, H - 4], [W - 4, H - 12], [W - 28, H - 4], [W - 4, H - 28],
-    ];
-    for (const [nx, ny] of nails) {
-      ctx.beginPath();
-      ctx.arc(nx, ny, 3, 0, Math.PI * 2);
-      ctx.fill();
-      // Nail highlight
-      ctx.fillStyle = '#888880';
-      ctx.beginPath();
-      ctx.arc(nx - 1, ny - 1, 1, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.fillStyle = '#444440';
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.6)';
+    for (let i = 0; i < plankCount; i++) {
+      const py = i * plankH;
+      ctx.fillRect(0, py, W, gapH / 2);
     }
 
-    // Stencil marking: "MI6" or "007"
-    ctx.save();
-    ctx.fillStyle = 'rgba(30, 20, 10, 0.35)';
-    ctx.font = 'bold 36px monospace';
-    ctx.textAlign = 'center';
-    ctx.fillText('MI6', W / 2, H / 2 + 12);
-    ctx.restore();
+    const bandPositions = [W * 0.2, W * 0.5, W * 0.8];
+    bandPositions.forEach((bx) => {
+      ctx.fillStyle = 'rgba(0, 0, 0, 0.3)';
+      ctx.fillRect(bx - 12, 0, 24, H);
 
-    addNoise(ctx, W, H, 16);
+      const metalGrad = ctx.createLinearGradient(bx - 10, 0, bx + 10, 0);
+      metalGrad.addColorStop(0, '#4a4a45');
+      metalGrad.addColorStop(0.3, '#6a6a62');
+      metalGrad.addColorStop(0.5, '#5a5a52');
+      metalGrad.addColorStop(0.7, '#6a6a62');
+      metalGrad.addColorStop(1, '#4a4a45');
+      ctx.fillStyle = metalGrad;
+      ctx.fillRect(bx - 10, 0, 20, H);
+
+      for (let i = 0; i < plankCount; i++) {
+        const ry = i * plankH + plankH / 2;
+
+        ctx.fillStyle = '#3a3a35';
+        ctx.beginPath();
+        ctx.arc(bx, ry, 4, 0, Math.PI * 2);
+        ctx.fill();
+
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.2)';
+        ctx.beginPath();
+        ctx.arc(bx - 1, ry - 1, 2, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    });
+
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.6)';
+    ctx.font = 'bold 24px monospace';
+    ctx.fillText('MIL-C-104', W * 0.15, H * 0.9);
+
+    addNoise(ctx, W, H, 6);
   });
 }
 
-// ─── Metal Crate (Military arms crate — riveted steel panels) ───
+// ─── Metal Crate (Steel shipping container with rivets) ───
 
 export function metalCrateTexture(): THREE.CanvasTexture {
   return getOrCreate('metal-crate', 256, 256, (ctx) => {
     const W = 256, H = 256;
 
-    // Steel blue-grey base
     ctx.fillStyle = '#566878';
     ctx.fillRect(0, 0, W, H);
 
-    // Thick outer frame
-    const frameW = 12;
+    const frameW = 18;
     ctx.fillStyle = '#4a5a6a';
     ctx.fillRect(0, 0, W, frameW);
     ctx.fillRect(0, H - frameW, W, frameW);
     ctx.fillRect(0, 0, frameW, H);
     ctx.fillRect(W - frameW, 0, frameW, H);
 
-    // Inner panel — slightly lighter
     ctx.fillStyle = '#667888';
-    ctx.fillRect(frameW + 2, frameW + 2, W - frameW * 2 - 4, H - frameW * 2 - 4);
+    ctx.fillRect(frameW + 3, frameW + 3, W - frameW * 2 - 6, H - frameW * 2 - 6);
 
-    // Panel seam — horizontal center
-    ctx.fillStyle = '#4a5565';
-    ctx.fillRect(frameW, H / 2 - 2, W - frameW * 2, 4);
-    // Panel seam — vertical center
-    ctx.fillRect(W / 2 - 2, frameW, 4, H - frameW * 2);
-
-    // Bevel: top/left highlight, bottom/right shadow
-    ctx.fillStyle = 'rgba(255,255,255,0.10)';
-    ctx.fillRect(0, 0, W, 2);
-    ctx.fillRect(0, 0, 2, H);
-    ctx.fillStyle = 'rgba(0,0,0,0.15)';
-    ctx.fillRect(0, H - 2, W, 2);
-    ctx.fillRect(W - 2, 0, 2, H);
-
-    // Diagonal reinforcement stripes
-    ctx.strokeStyle = 'rgba(60, 70, 80, 0.3)';
-    ctx.lineWidth = 6;
+    ctx.strokeStyle = 'rgba(0, 0, 0, 0.4)';
+    ctx.lineWidth = 3;
     ctx.beginPath();
-    ctx.moveTo(frameW, frameW);
-    ctx.lineTo(W - frameW, H - frameW);
-    ctx.stroke();
-    ctx.beginPath();
-    ctx.moveTo(W - frameW, frameW);
-    ctx.lineTo(frameW, H - frameW);
+    ctx.moveTo(frameW, H / 2);
+    ctx.lineTo(W - frameW, H / 2);
     ctx.stroke();
 
-    // Rivets around edges (every 30px)
-    const rivetR = 4;
-    ctx.fillStyle = '#8899aa';
-    const rivetPositions: [number, number][] = [];
-    for (let x = frameW / 2; x < W; x += 30) {
-      rivetPositions.push([x, frameW / 2]);
-      rivetPositions.push([x, H - frameW / 2]);
-    }
-    for (let y = frameW / 2 + 30; y < H - frameW / 2; y += 30) {
-      rivetPositions.push([frameW / 2, y]);
-      rivetPositions.push([W - frameW / 2, y]);
-    }
-    // Center cross rivets
-    rivetPositions.push([W / 2, H / 2]);
+    ctx.beginPath();
+    ctx.moveTo(W / 2, frameW);
+    ctx.lineTo(W / 2, H - frameW);
+    ctx.stroke();
 
-    for (const [rx, ry] of rivetPositions) {
-      // Rivet body
-      ctx.fillStyle = '#7a8a9a';
+    const rivetSpacing = 32;
+    ctx.fillStyle = '#3a4a5a';
+
+    for (let x = rivetSpacing; x < W - frameW; x += rivetSpacing) {
       ctx.beginPath();
-      ctx.arc(rx, ry, rivetR, 0, Math.PI * 2);
+      ctx.arc(x, frameW / 2, 5, 0, Math.PI * 2);
       ctx.fill();
-      // Highlight
-      ctx.fillStyle = '#a0b0c0';
+
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.15)';
       ctx.beginPath();
-      ctx.arc(rx - 1, ry - 1, 1.5, 0, Math.PI * 2);
+      ctx.arc(x - 1, frameW / 2 - 1, 2, 0, Math.PI * 2);
       ctx.fill();
-      // Shadow
-      ctx.fillStyle = 'rgba(0,0,0,0.2)';
+      ctx.fillStyle = '#3a4a5a';
+
       ctx.beginPath();
-      ctx.arc(rx + 1, ry + 1, rivetR, 0, Math.PI * 2);
+      ctx.arc(x, H - frameW / 2, 5, 0, Math.PI * 2);
       ctx.fill();
     }
 
-    // Scratches across surface
-    ctx.globalAlpha = 0.1;
-    ctx.strokeStyle = '#aabbcc';
-    ctx.lineWidth = 1;
-    for (let i = 0; i < 8; i++) {
-      const sx = 20 + Math.random() * (W - 40);
-      const sy = 20 + Math.random() * (H - 40);
+    for (let y = rivetSpacing; y < H - frameW; y += rivetSpacing) {
       ctx.beginPath();
-      ctx.moveTo(sx, sy);
-      ctx.lineTo(sx + Math.random() * 60 - 30, sy + Math.random() * 60 - 30);
-      ctx.stroke();
-    }
-    ctx.globalAlpha = 1;
+      ctx.arc(frameW / 2, y, 5, 0, Math.PI * 2);
+      ctx.fill();
 
-    // Stencil: "ARMS" or classification mark
+      ctx.beginPath();
+      ctx.arc(W - frameW / 2, y, 5, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    const cornerSize = 40;
+    ctx.strokeStyle = 'rgba(0, 0, 0, 0.3)';
+    ctx.lineWidth = 2;
+
+    ctx.strokeRect(frameW, frameW, cornerSize, cornerSize);
+    ctx.strokeRect(W - frameW - cornerSize, frameW, cornerSize, cornerSize);
+    ctx.strokeRect(frameW, H - frameW - cornerSize, cornerSize, cornerSize);
+    ctx.strokeRect(W - frameW - cornerSize, H - frameW - cornerSize, cornerSize, cornerSize);
+
+    const stripeW = 20;
+    const stripeAngle = Math.PI / 4;
+
     ctx.save();
-    ctx.fillStyle = 'rgba(200, 180, 50, 0.25)';
-    ctx.font = 'bold 28px monospace';
-    ctx.textAlign = 'center';
-    ctx.fillText('CLASSIFIED', W / 2, H / 2 + 50);
+    ctx.translate(frameW + 10, H - frameW - 40);
+    ctx.rotate(-stripeAngle);
+
+    for (let i = 0; i < 3; i++) {
+      ctx.fillStyle = i % 2 === 0 ? '#e8c820' : '#1a1a1a';
+      ctx.fillRect(i * stripeW, 0, stripeW, 12);
+    }
     ctx.restore();
 
-    addNoise(ctx, W, H, 14);
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
+    ctx.font = 'bold 28px monospace';
+    ctx.fillText('AMMO', W * 0.35, H * 0.55);
+
+    ctx.font = 'bold 18px monospace';
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.6)';
+    ctx.fillText('7.62×51mm', W * 0.28, H * 0.65);
+
+    ctx.strokeStyle = 'rgba(0, 0, 0, 0.2)';
+    ctx.lineWidth = 1;
+    for (let i = 0; i < 10; i++) {
+      const sx = frameW + Math.random() * (W - frameW * 2);
+      const sy = frameW + Math.random() * (H - frameW * 2);
+      const length = 20 + Math.random() * 40;
+      const angle = Math.random() * Math.PI * 2;
+
+      ctx.beginPath();
+      ctx.moveTo(sx, sy);
+      ctx.lineTo(sx + Math.cos(angle) * length, sy + Math.sin(angle) * length);
+      ctx.stroke();
+    }
+
+    addNoise(ctx, W, H, 4);
   });
 }
 
-// ─── Barrel (Military barrel with metal bands, stencil, hazard marking) ───
+// ─── Barrel (Olive drab military drum with bands) ───
 
 export function barrelTexture(): THREE.CanvasTexture {
   return getOrCreate('barrel', 128, 256, (ctx) => {
     const W = 128, H = 256;
 
-    // Olive drab body
     ctx.fillStyle = '#5a6b44';
     ctx.fillRect(0, 0, W, H);
 
-    // Vertical stave lines (subtle)
     ctx.strokeStyle = 'rgba(60, 80, 40, 0.25)';
     ctx.lineWidth = 1;
     for (let x = W / 6; x < W; x += W / 6) {
@@ -909,86 +1088,95 @@ export function barrelTexture(): THREE.CanvasTexture {
       ctx.stroke();
     }
 
-    // Slight barrel curvature shading (darker at edges, lighter center)
-    const grad = ctx.createLinearGradient(0, 0, W, 0);
-    grad.addColorStop(0, 'rgba(0,0,0,0.15)');
-    grad.addColorStop(0.2, 'rgba(0,0,0,0.03)');
-    grad.addColorStop(0.5, 'rgba(255,255,255,0.05)');
-    grad.addColorStop(0.8, 'rgba(0,0,0,0.03)');
-    grad.addColorStop(1, 'rgba(0,0,0,0.15)');
-    ctx.fillStyle = grad;
+    const curvatureGrad = ctx.createLinearGradient(0, 0, W, 0);
+    curvatureGrad.addColorStop(0, 'rgba(0,0,0,0.2)');
+    curvatureGrad.addColorStop(0.15, 'rgba(0,0,0,0.05)');
+    curvatureGrad.addColorStop(0.5, 'rgba(255,255,255,0.08)');
+    curvatureGrad.addColorStop(0.85, 'rgba(0,0,0,0.05)');
+    curvatureGrad.addColorStop(1, 'rgba(0,0,0,0.2)');
+    ctx.fillStyle = curvatureGrad;
     ctx.fillRect(0, 0, W, H);
 
-    // Metal bands: top rim, upper band, middle band, lower band, bottom rim
-    const bandH = 14;
-    const bands = [4, 50, 120, 190, H - bandH - 4];
-    for (const by of bands) {
-      // Band body
-      ctx.fillStyle = '#484848';
-      ctx.fillRect(0, by, W, bandH);
+    const bandPositions = [H * 0.15, H * 0.5, H * 0.85];
 
-      // Band highlight (top edge)
-      ctx.fillStyle = '#6a6a6a';
-      ctx.fillRect(0, by, W, 2);
+    bandPositions.forEach((by) => {
+      ctx.fillStyle = 'rgba(0, 0, 0, 0.4)';
+      ctx.fillRect(0, by + 2, W, 8);
 
-      // Band shadow (bottom edge)
-      ctx.fillStyle = '#2e2e2e';
-      ctx.fillRect(0, by + bandH - 2, W, 2);
+      const bandGrad = ctx.createLinearGradient(0, by - 5, 0, by + 8);
+      bandGrad.addColorStop(0, '#3a3a35');
+      bandGrad.addColorStop(0.3, '#5a5a52');
+      bandGrad.addColorStop(0.5, '#6a6a62');
+      bandGrad.addColorStop(0.7, '#5a5a52');
+      bandGrad.addColorStop(1, '#3a3a35');
+      ctx.fillStyle = bandGrad;
+      ctx.fillRect(0, by - 5, W, 13);
 
-      // Rivets on band
-      ctx.fillStyle = '#5a5a5a';
-      for (let rx = 15; rx < W; rx += 30) {
-        ctx.beginPath();
-        ctx.arc(rx, by + bandH / 2, 3, 0, Math.PI * 2);
-        ctx.fill();
-      }
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.2)';
+      ctx.fillRect(0, by - 4, W, 1);
+
+      ctx.fillStyle = 'rgba(140, 70, 30, 0.3)';
+      ctx.fillRect(0, by - 6, W, 1);
+      ctx.fillRect(0, by + 8, W, 1);
+    });
+
+    for (let i = 0; i < 8; i++) {
+      const rx = Math.random() * W;
+      const startY = bandPositions[Math.floor(Math.random() * bandPositions.length)];
+      const length = 30 + Math.random() * 60;
+
+      const rustGrad = ctx.createLinearGradient(rx, startY, rx, startY + length);
+      rustGrad.addColorStop(0, 'rgba(140, 70, 30, 0.5)');
+      rustGrad.addColorStop(0.6, 'rgba(120, 60, 25, 0.3)');
+      rustGrad.addColorStop(1, 'rgba(100, 50, 20, 0)');
+
+      ctx.fillStyle = rustGrad;
+      ctx.fillRect(rx - 1, startY, 2 + Math.random() * 3, length);
     }
 
-    // Rust streaks dripping down from bands
-    ctx.globalAlpha = 0.15;
-    ctx.fillStyle = '#8b5a2a';
-    ctx.fillRect(20, 64, 6, 40);
-    ctx.fillRect(90, 134, 5, 35);
-    ctx.fillRect(50, 204, 7, 30);
-    ctx.globalAlpha = 1;
+    for (let i = 0; i < 4; i++) {
+      const dx = Math.random() * W;
+      const dy = Math.random() * H;
 
-    // Hazard diamond label (center of barrel)
-    const labelX = W / 2 - 25;
-    const labelY = 140;
-    const labelW = 50;
-    const labelH = 40;
+      ctx.fillStyle = 'rgba(0, 0, 0, 0.4)';
+      ctx.beginPath();
+      ctx.ellipse(dx, dy, 12, 8, Math.random() * Math.PI, 0, Math.PI * 2);
+      ctx.fill();
 
-    ctx.fillStyle = '#ccaa22';
-    ctx.fillRect(labelX, labelY, labelW, labelH);
-    ctx.strokeStyle = '#222222';
-    ctx.lineWidth = 2;
-    ctx.strokeRect(labelX, labelY, labelW, labelH);
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.15)';
+      ctx.beginPath();
+      ctx.ellipse(dx - 2, dy - 2, 8, 5, Math.random() * Math.PI, 0, Math.PI * 2);
+      ctx.fill();
+    }
 
-    // Hazard text
-    ctx.fillStyle = '#222222';
-    ctx.font = 'bold 14px monospace';
-    ctx.textAlign = 'center';
-    ctx.fillText('HAZARD', W / 2, labelY + 16);
-    ctx.font = 'bold 11px monospace';
-    ctx.fillText('CLASS 3', W / 2, labelY + 32);
-    ctx.textAlign = 'start';
+    ctx.save();
+    ctx.translate(W / 2, H * 0.35);
 
-    // Upper stencil: serial number
-    ctx.fillStyle = 'rgba(220, 220, 200, 0.2)';
-    ctx.font = '11px monospace';
-    ctx.textAlign = 'center';
-    ctx.fillText('LOT-007-B', W / 2, 90);
-    ctx.textAlign = 'start';
+    ctx.strokeStyle = 'rgba(0, 0, 0, 0.3)';
+    ctx.lineWidth = 3;
+    ctx.fillStyle = 'rgba(230, 200, 0, 0.4)';
 
-    // Dent marks
-    ctx.globalAlpha = 0.08;
-    ctx.fillStyle = '#2a2a2a';
     ctx.beginPath();
-    ctx.ellipse(35, 220, 12, 8, 0.3, 0, Math.PI * 2);
+    ctx.arc(0, 0, 8, 0, Math.PI * 2);
     ctx.fill();
-    ctx.globalAlpha = 1;
 
-    addNoise(ctx, W, H, 16);
+    for (let i = 0; i < 3; i++) {
+      const angle = (i / 3) * Math.PI * 2 - Math.PI / 2;
+
+      ctx.save();
+      ctx.rotate(angle);
+      ctx.beginPath();
+      ctx.moveTo(10, 0);
+      ctx.lineTo(25, -8);
+      ctx.lineTo(25, 8);
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+      ctx.restore();
+    }
+    ctx.restore();
+
+    addNoise(ctx, W, H, 8);
   });
 }
 
@@ -1025,224 +1213,156 @@ export function wallTrimTexture(): THREE.CanvasTexture {
   });
 }
 
-// ─── Facility Door (Steel security door with handle, hinges, reinforcement) ───
+// ─── Facility Door (Industrial metal security door) ───
 
 export function facilityDoorTexture(): THREE.CanvasTexture {
   return getOrCreate('facility-door', 128, 256, (ctx) => {
     const W = 128, H = 256;
 
-    // Steel grey base
-    ctx.fillStyle = '#606870';
+    const baseGrad = ctx.createLinearGradient(0, 0, W, 0);
+    baseGrad.addColorStop(0, '#3a3e42');
+    baseGrad.addColorStop(0.5, '#4a4e52');
+    baseGrad.addColorStop(1, '#3a3e42');
+    ctx.fillStyle = baseGrad;
     ctx.fillRect(0, 0, W, H);
 
-    // Outer frame border
-    const frame = 6;
-    ctx.fillStyle = '#4a5058';
-    ctx.fillRect(0, 0, W, frame);
-    ctx.fillRect(0, H - frame, W, frame);
-    ctx.fillRect(0, 0, frame, H);
-    ctx.fillRect(W - frame, 0, frame, H);
+    const panelInset = 15;
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.2)';
+    ctx.fillRect(panelInset, panelInset, W - panelInset * 2, H - panelInset * 2);
 
-    // Frame bevel — highlight top/left, shadow bottom/right
-    ctx.fillStyle = 'rgba(255,255,255,0.12)';
-    ctx.fillRect(0, 0, W, 2);
-    ctx.fillRect(0, 0, 2, H);
-    ctx.fillStyle = 'rgba(0,0,0,0.18)';
-    ctx.fillRect(0, H - 2, W, 2);
-    ctx.fillRect(W - 2, 0, 2, H);
+    ctx.fillStyle = '#42464a';
+    ctx.fillRect(panelInset + 2, panelInset + 2, W - panelInset * 2 - 4, H - panelInset * 2 - 4);
 
-    // Two recessed panels (upper and lower)
-    const panelInset = 14;
-    const panelGap = 10;
-    const panelH = (H - frame * 2 - panelGap * 3) / 2;
+    const barCount = 4;
+    for (let i = 1; i <= barCount; i++) {
+      const by = (i / (barCount + 1)) * H;
 
-    for (let i = 0; i < 2; i++) {
-      const py = frame + panelGap + i * (panelH + panelGap);
+      ctx.fillStyle = 'rgba(0, 0, 0, 0.3)';
+      ctx.fillRect(panelInset, by + 1, W - panelInset * 2, 8);
 
-      // Recessed panel body
-      ctx.fillStyle = '#586068';
-      ctx.fillRect(panelInset, py, W - panelInset * 2, panelH);
+      ctx.fillStyle = '#5a5e62';
+      ctx.fillRect(panelInset, by, W - panelInset * 2, 8);
 
-      // Panel shadow (recessed: top/left dark, bottom/right light)
-      ctx.fillStyle = 'rgba(0,0,0,0.20)';
-      ctx.fillRect(panelInset, py, W - panelInset * 2, 3);
-      ctx.fillRect(panelInset, py, 3, panelH);
-
-      ctx.fillStyle = 'rgba(255,255,255,0.10)';
-      ctx.fillRect(panelInset, py + panelH - 3, W - panelInset * 2, 3);
-      ctx.fillRect(W - panelInset - 3, py, 3, panelH);
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.1)';
+      ctx.fillRect(panelInset, by, W - panelInset * 2, 1);
     }
 
-    // Horizontal reinforcement bar across middle
-    const barY = H / 2 - 4;
-    ctx.fillStyle = '#505860';
-    ctx.fillRect(frame, barY, W - frame * 2, 8);
-    ctx.fillStyle = 'rgba(255,255,255,0.08)';
-    ctx.fillRect(frame, barY, W - frame * 2, 1);
-    ctx.fillStyle = 'rgba(0,0,0,0.12)';
-    ctx.fillRect(frame, barY + 7, W - frame * 2, 1);
+    const lockX = W - panelInset - 20;
+    const lockY = H / 2;
 
-    // Door handle (right side, center height)
-    const handleX = W - 28;
-    const handleY = H / 2 - 10;
-    // Handle plate
-    ctx.fillStyle = '#888890';
-    ctx.fillRect(handleX - 4, handleY - 8, 16, 36);
-    ctx.fillStyle = 'rgba(0,0,0,0.15)';
-    ctx.strokeStyle = '#555555';
-    ctx.lineWidth = 1;
-    ctx.strokeRect(handleX - 4, handleY - 8, 16, 36);
-    // Handle bar
-    ctx.fillStyle = '#a0a0a8';
-    ctx.fillRect(handleX, handleY, 10, 4);
-    ctx.fillRect(handleX, handleY, 4, 16);
-    // Handle highlight
-    ctx.fillStyle = 'rgba(255,255,255,0.3)';
-    ctx.fillRect(handleX, handleY, 10, 1);
+    ctx.fillStyle = '#2a2e32';
+    ctx.fillRect(lockX - 10, lockY - 25, 28, 50);
 
-    // Keyhole (below handle)
-    ctx.fillStyle = '#333333';
+    ctx.fillStyle = '#1a1e22';
     ctx.beginPath();
-    ctx.arc(handleX + 4, handleY + 24, 3, 0, Math.PI * 2);
+    ctx.arc(lockX, lockY, 8, 0, Math.PI * 2);
     ctx.fill();
 
-    // Hinges (left side, top and bottom)
-    const hingeW = 8;
-    const hingeH = 20;
-    for (const hy of [30, H - 50]) {
-      ctx.fillStyle = '#707878';
-      ctx.fillRect(frame - 2, hy, hingeW, hingeH);
-      // Hinge pin
-      ctx.fillStyle = '#888888';
-      ctx.beginPath();
-      ctx.arc(frame + hingeW / 2 - 2, hy + hingeH / 2, 3, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.fillStyle = '#aaaaaa';
-      ctx.beginPath();
-      ctx.arc(frame + hingeW / 2 - 3, hy + hingeH / 2 - 1, 1, 0, Math.PI * 2);
-      ctx.fill();
+    ctx.fillStyle = '#000000';
+    ctx.beginPath();
+    ctx.arc(lockX, lockY, 3, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.fillStyle = '#8a3a3a';
+    ctx.beginPath();
+    ctx.arc(lockX, lockY - 18, 3, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.fillStyle = '#3a8a3a';
+    ctx.beginPath();
+    ctx.arc(lockX, lockY + 18, 3, 0, Math.PI * 2);
+    ctx.fill();
+
+    const stripeW = 10;
+    for (let x = 0; x < W; x += stripeW * 2) {
+      ctx.fillStyle = (x / (stripeW * 2)) % 2 === 0 ? '#e8c820' : '#1a1a1a';
+      ctx.fillRect(x, 0, stripeW, 8);
     }
 
-    // Small window at top of door (wire-reinforced glass)
-    const winX = W / 2 - 20;
-    const winY = frame + panelGap + 15;
-    const winW = 40;
-    const winH = 30;
-    ctx.fillStyle = '#3a5555';
-    ctx.fillRect(winX, winY, winW, winH);
-    // Window frame
-    ctx.strokeStyle = '#505860';
-    ctx.lineWidth = 3;
-    ctx.strokeRect(winX, winY, winW, winH);
-    // Wire mesh pattern
-    ctx.strokeStyle = 'rgba(100, 120, 120, 0.3)';
+    ctx.fillStyle = 'rgba(232, 200, 32, 0.8)';
+    ctx.font = 'bold 14px monospace';
+    ctx.textAlign = 'center';
+    ctx.fillText('AUTHORIZED', W / 2, H * 0.12);
+    ctx.fillText('ONLY', W / 2, H * 0.12 + 18);
+
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.05)';
     ctx.lineWidth = 1;
-    for (let wx = winX + 6; wx < winX + winW; wx += 6) {
+    for (let i = 0; i < 15; i++) {
+      const sx = lockX - 30 + Math.random() * 25;
+      const sy = lockY - 40 + Math.random() * 80;
+      const length = 10 + Math.random() * 20;
+
       ctx.beginPath();
-      ctx.moveTo(wx, winY);
-      ctx.lineTo(wx, winY + winH);
-      ctx.stroke();
-    }
-    for (let wy = winY + 6; wy < winY + winH; wy += 6) {
-      ctx.beginPath();
-      ctx.moveTo(winX, wy);
-      ctx.lineTo(winX + winW, wy);
+      ctx.moveTo(sx, sy);
+      ctx.lineTo(sx + length, sy + (Math.random() - 0.5) * 10);
       ctx.stroke();
     }
 
-    addNoise(ctx, W, H, 12);
+    addNoise(ctx, W, H, 4);
   });
 }
 
-// ─── Locked Door variant (red-tinted with warning stripe) ───
+// ─── Locked Door (Red warning, key card clearance) ───
 
 export function lockedDoorTexture(): THREE.CanvasTexture {
   return getOrCreate('locked-door', 128, 256, (ctx) => {
-    // Start from same base as facility door
     const W = 128, H = 256;
 
-    // Darker steel base with red tint
-    ctx.fillStyle = '#5a4448';
+    const baseGrad = ctx.createLinearGradient(0, 0, W, 0);
+    baseGrad.addColorStop(0, '#4a2222');
+    baseGrad.addColorStop(0.5, '#5a2a2a');
+    baseGrad.addColorStop(1, '#4a2222');
+    ctx.fillStyle = baseGrad;
     ctx.fillRect(0, 0, W, H);
 
-    // Outer frame
-    const frame = 6;
-    ctx.fillStyle = '#4a3840';
-    ctx.fillRect(0, 0, W, frame);
-    ctx.fillRect(0, H - frame, W, frame);
-    ctx.fillRect(0, 0, frame, H);
-    ctx.fillRect(W - frame, 0, frame, H);
+    const stripeAngle = Math.PI / 4;
+    const stripeW = 20;
+    const stripeSpacing = stripeW * 2;
 
-    // Frame bevel
-    ctx.fillStyle = 'rgba(255,255,255,0.10)';
-    ctx.fillRect(0, 0, W, 2);
-    ctx.fillRect(0, 0, 2, H);
-    ctx.fillStyle = 'rgba(0,0,0,0.20)';
-    ctx.fillRect(0, H - 2, W, 2);
-    ctx.fillRect(W - 2, 0, 2, H);
-
-    // Two recessed panels
-    const panelInset = 14;
-    const panelGap = 10;
-    const panelH = (H - frame * 2 - panelGap * 3) / 2;
-
-    for (let i = 0; i < 2; i++) {
-      const py = frame + panelGap + i * (panelH + panelGap);
-      ctx.fillStyle = '#503840';
-      ctx.fillRect(panelInset, py, W - panelInset * 2, panelH);
-
-      ctx.fillStyle = 'rgba(0,0,0,0.20)';
-      ctx.fillRect(panelInset, py, W - panelInset * 2, 3);
-      ctx.fillRect(panelInset, py, 3, panelH);
-
-      ctx.fillStyle = 'rgba(255,255,255,0.08)';
-      ctx.fillRect(panelInset, py + panelH - 3, W - panelInset * 2, 3);
-      ctx.fillRect(W - panelInset - 3, py, 3, panelH);
-    }
-
-    // Danger stripe across middle (black and yellow diagonal)
-    const stripeY = H / 2 - 10;
-    const stripeH = 20;
     ctx.save();
-    ctx.beginPath();
-    ctx.rect(frame, stripeY, W - frame * 2, stripeH);
-    ctx.clip();
-    for (let sx = -stripeH; sx < W + stripeH; sx += 20) {
-      ctx.fillStyle = '#ccaa00';
-      ctx.beginPath();
-      ctx.moveTo(sx, stripeY);
-      ctx.lineTo(sx + 10, stripeY);
-      ctx.lineTo(sx + 10 + stripeH, stripeY + stripeH);
-      ctx.lineTo(sx + stripeH, stripeY + stripeH);
-      ctx.closePath();
-      ctx.fill();
+    ctx.translate(W / 2, H / 2);
+    ctx.rotate(stripeAngle);
+
+    for (let x = -H; x < H; x += stripeSpacing) {
+      ctx.fillStyle = '#e8c820';
+      ctx.fillRect(x, -H, stripeW, H * 2);
     }
     ctx.restore();
-    // Black in between (already visible as base color)
 
-    // Heavy lock plate
-    const lockX = W / 2 - 12;
-    const lockY = H / 2 + 20;
-    ctx.fillStyle = '#888888';
-    ctx.fillRect(lockX, lockY, 24, 30);
-    ctx.strokeStyle = '#555555';
-    ctx.lineWidth = 2;
-    ctx.strokeRect(lockX, lockY, 24, 30);
-    // Keyhole
-    ctx.fillStyle = '#222222';
+    const panelW = 60;
+    const panelH = 80;
+    const panelX = W / 2 - panelW / 2;
+    const panelY = H / 2 - panelH / 2;
+
+    ctx.fillStyle = '#2a2a2a';
+    ctx.fillRect(panelX, panelY, panelW, panelH);
+
+    ctx.fillStyle = '#1a1a1a';
+    ctx.fillRect(panelX + 10, panelY + 20, panelW - 20, 15);
+
+    const ledX = panelX + panelW / 2;
+    const ledY = panelY + 50;
+
+    ctx.fillStyle = '#ff0000';
+    ctx.shadowColor = '#ff0000';
+    ctx.shadowBlur = 8;
     ctx.beginPath();
-    ctx.arc(lockX + 12, lockY + 12, 4, 0, Math.PI * 2);
+    ctx.arc(ledX, ledY, 5, 0, Math.PI * 2);
     ctx.fill();
-    ctx.fillRect(lockX + 10, lockY + 12, 4, 10);
+    ctx.shadowBlur = 0;
 
-    // "RESTRICTED" stencil
-    ctx.fillStyle = 'rgba(200, 60, 60, 0.4)';
-    ctx.font = 'bold 14px monospace';
+    ctx.fillStyle = '#ffffff';
+    ctx.font = 'bold 16px monospace';
     ctx.textAlign = 'center';
-    ctx.fillText('RESTRICTED', W / 2, H - 30);
+    ctx.fillText('LOCKED', W / 2, H * 0.75);
+
+    ctx.font = '10px monospace';
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.7)';
+    ctx.fillText('CLEARANCE', W / 2, H * 0.8);
+    ctx.fillText('REQUIRED', W / 2, H * 0.85);
     ctx.textAlign = 'start';
 
-    addNoise(ctx, W, H, 14);
+    addNoise(ctx, W, H, 4);
   });
 }
 
@@ -1367,46 +1487,65 @@ export function mountainWallTexture(): THREE.CanvasTexture {
   });
 }
 
-// ─── Door Frame Texture (dark metal surround) ───
+// ─── Door Frame (Brushed metal) ───
 
 export function doorFrameTexture(): THREE.CanvasTexture {
-  return getOrCreate('door-frame', 32, 256, (ctx) => {
-    const W = 32, H = 256;
+  return getOrCreate('door-frame', 128, 128, (ctx) => {
+    const W = 128, H = 128;
 
-    // Dark steel frame
-    ctx.fillStyle = '#3a3e44';
+    ctx.fillStyle = '#8a8a8a';
     ctx.fillRect(0, 0, W, H);
 
-    // Inner edge highlight
-    ctx.fillStyle = 'rgba(255,255,255,0.12)';
-    ctx.fillRect(W - 2, 0, 2, H);
+    for (let i = 0; i < 200; i++) {
+      const x = Math.random() * W;
+      const alpha = 0.02 + Math.random() * 0.08;
+      const bright = Math.random() > 0.5;
 
-    // Outer edge shadow
-    ctx.fillStyle = 'rgba(0,0,0,0.2)';
-    ctx.fillRect(0, 0, 2, H);
+      ctx.strokeStyle = bright ? `rgba(255, 255, 255, ${alpha})` : `rgba(0, 0, 0, ${alpha})`;
+      ctx.lineWidth = 1;
 
-    // Horizontal grooves every ~50px
-    ctx.fillStyle = 'rgba(0,0,0,0.15)';
-    for (let y = 40; y < H; y += 50) {
-      ctx.fillRect(2, y, W - 4, 2);
-      ctx.fillStyle = 'rgba(255,255,255,0.06)';
-      ctx.fillRect(2, y + 2, W - 4, 1);
-      ctx.fillStyle = 'rgba(0,0,0,0.15)';
+      ctx.beginPath();
+      ctx.moveTo(x, 0);
+      ctx.lineTo(x, H);
+      ctx.stroke();
     }
 
-    // Bolt holes at top, mid, bottom
-    for (const by of [20, H / 2, H - 20]) {
-      ctx.fillStyle = '#555560';
-      ctx.beginPath();
-      ctx.arc(W / 2, by, 4, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.fillStyle = '#6a6a70';
-      ctx.beginPath();
-      ctx.arc(W / 2 - 1, by - 1, 1.5, 0, Math.PI * 2);
-      ctx.fill();
-    }
+    const anodizedGrad = ctx.createLinearGradient(0, 0, W, 0);
+    anodizedGrad.addColorStop(0, 'rgba(120, 130, 140, 0.1)');
+    anodizedGrad.addColorStop(0.5, 'rgba(160, 170, 180, 0.15)');
+    anodizedGrad.addColorStop(1, 'rgba(120, 130, 140, 0.1)');
+    ctx.fillStyle = anodizedGrad;
+    ctx.fillRect(0, 0, W, H);
 
-    addNoise(ctx, W, H, 10);
+    const screwPositions = [
+      { x: W * 0.2, y: H * 0.2 },
+      { x: W * 0.8, y: H * 0.2 },
+      { x: W * 0.2, y: H * 0.8 },
+      { x: W * 0.8, y: H * 0.8 },
+    ];
+
+    screwPositions.forEach((pos) => {
+      ctx.fillStyle = 'rgba(0, 0, 0, 0.4)';
+      ctx.beginPath();
+      ctx.arc(pos.x, pos.y, 6, 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.fillStyle = '#6a6a6a';
+      ctx.beginPath();
+      ctx.arc(pos.x, pos.y, 4, 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.strokeStyle = '#3a3a3a';
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.moveTo(pos.x - 3, pos.y);
+      ctx.lineTo(pos.x + 3, pos.y);
+      ctx.moveTo(pos.x, pos.y - 3);
+      ctx.lineTo(pos.x, pos.y + 3);
+      ctx.stroke();
+    });
+
+    addNoise(ctx, W, H, 3);
   });
 }
 

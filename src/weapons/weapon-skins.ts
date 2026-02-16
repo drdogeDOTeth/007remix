@@ -339,7 +339,7 @@ export const WEAPON_SKIN_LABELS: Record<WeaponSkin, string> = {
   tiger: 'Orange Tiger',
   flag: 'Red White Blue',
   battleworn: 'Battle Worn',
-  plasma: 'Plasma Accent',
+  plasma: 'Electric Plasma',
 };
 
 export const WEAPON_SKIN_LIST: WeaponSkin[] = ['default', 'gilded', 'tiger', 'flag', 'battleworn', 'plasma'];
@@ -429,15 +429,48 @@ export function getSkinPreviewDataUrl(skin: WeaponSkin): string {
     ctx.strokeStyle = 'rgba(40,30,15,0.5)';
     for (let y = 3; y < h; y += 5) ctx.fillRect(leftW, y, rightW, 1);
   } else if (skin === 'plasma') {
-    ctx.fillStyle = '#0c1014';
+    // Dark base
+    ctx.fillStyle = '#0a0e14';
     ctx.fillRect(0, 0, leftW, h);
-    const plasmaGrad = ctx.createLinearGradient(0, 0, leftW, 0);
-    plasmaGrad.addColorStop(0, 'rgba(0,200,255,0.15)');
-    plasmaGrad.addColorStop(0.5, 'rgba(170,0,255,0.25)');
-    plasmaGrad.addColorStop(1, 'rgba(0,200,255,0.15)');
-    ctx.fillStyle = plasmaGrad;
-    ctx.fillRect(0, h / 4, leftW, h / 2);
-    ctx.fillStyle = '#1a1520';
+    // Electric vein pattern (branching lines)
+    ctx.strokeStyle = 'rgba(0,180,255,0.6)';
+    ctx.lineWidth = 1.2;
+    ctx.beginPath();
+    ctx.moveTo(2, h * 0.3);
+    ctx.quadraticCurveTo(leftW * 0.3, h * 0.5, leftW * 0.5, h * 0.35);
+    ctx.quadraticCurveTo(leftW * 0.7, h * 0.2, leftW - 2, h * 0.45);
+    ctx.stroke();
+    ctx.strokeStyle = 'rgba(0,212,255,0.8)';
+    ctx.lineWidth = 0.8;
+    ctx.beginPath();
+    ctx.moveTo(4, h * 0.7);
+    ctx.quadraticCurveTo(leftW * 0.4, h * 0.55, leftW * 0.6, h * 0.7);
+    ctx.quadraticCurveTo(leftW * 0.8, h * 0.85, leftW - 4, h * 0.6);
+    ctx.stroke();
+    // Branch lines
+    ctx.strokeStyle = 'rgba(68,136,255,0.4)';
+    ctx.lineWidth = 0.5;
+    for (let i = 0; i < 6; i++) {
+      const sx = 4 + Math.random() * (leftW - 8);
+      const sy = 4 + Math.random() * (h - 8);
+      ctx.beginPath();
+      ctx.moveTo(sx, sy);
+      ctx.lineTo(sx + (Math.random() - 0.5) * 12, sy + (Math.random() - 0.5) * 10);
+      ctx.stroke();
+    }
+    // Glow spots
+    const grd1 = ctx.createRadialGradient(leftW * 0.3, h * 0.4, 0, leftW * 0.3, h * 0.4, 8);
+    grd1.addColorStop(0, 'rgba(0,212,255,0.35)');
+    grd1.addColorStop(1, 'rgba(0,212,255,0)');
+    ctx.fillStyle = grd1;
+    ctx.fillRect(0, 0, leftW, h);
+    const grd2 = ctx.createRadialGradient(leftW * 0.7, h * 0.65, 0, leftW * 0.7, h * 0.65, 6);
+    grd2.addColorStop(0, 'rgba(170,0,255,0.3)');
+    grd2.addColorStop(1, 'rgba(170,0,255,0)');
+    ctx.fillStyle = grd2;
+    ctx.fillRect(0, 0, leftW, h);
+    // Wood side
+    ctx.fillStyle = '#141020';
     ctx.fillRect(leftW, 0, rightW, h);
   } else {
     ctx.fillStyle = '#252528';

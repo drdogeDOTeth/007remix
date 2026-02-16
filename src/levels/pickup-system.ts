@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { createSubdividedBox } from '../core/geometry-utils';
 import {
   healthTexture,
   armorTexture,
@@ -144,8 +145,8 @@ function buildHealthMesh(): THREE.Group {
   const mat = new THREE.MeshBasicMaterial({ map: tex, transparent: true, opacity: 0.95 });
 
   // Cross shape: two intersecting boxes
-  const h = new THREE.Mesh(new THREE.BoxGeometry(0.24, 0.08, 0.08), mat);
-  const v = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.24, 0.08), mat);
+  const h = new THREE.Mesh(createSubdividedBox(0.24, 0.08, 0.08), mat);
+  const v = new THREE.Mesh(createSubdividedBox(0.08, 0.24, 0.08), mat);
   g.add(h);
   g.add(v);
   return g;
@@ -160,9 +161,12 @@ function buildArmorMesh(): THREE.Group {
     metalness: 0.6,
   });
 
-  // Wider, flatter box — shield-like
-  const shield = new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.24, 0.06), mat);
-  g.add(shield);
+  // Shield silhouette: inverted T (top bar + stem)
+  const topBar = new THREE.Mesh(createSubdividedBox(0.22, 0.06, 0.05), mat);
+  g.add(topBar);
+  const stem = new THREE.Mesh(createSubdividedBox(0.08, 0.18, 0.05), mat);
+  stem.position.y = -0.12; // below the bar
+  g.add(stem);
   return g;
 }
 
@@ -186,9 +190,12 @@ function buildAmmoMesh(type: PickupType): THREE.Group {
     opacity: 0.95,
   });
 
-  // Small ammo crate shape
-  const box = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.14, 0.16), mat);
-  g.add(box);
+  // Magazine clip shape: body + feed lips
+  const body = new THREE.Mesh(createSubdividedBox(0.06, 0.18, 0.04), mat);
+  g.add(body);
+  const feedLips = new THREE.Mesh(createSubdividedBox(0.06, 0.03, 0.045), mat);
+  feedLips.position.y = 0.105; // above body
+  g.add(feedLips);
   return g;
 }
 
@@ -208,7 +215,7 @@ function buildWeaponFallbackMesh(type: PickupType): THREE.Group {
     emissive: tint,
     emissiveIntensity: 0.3,
   });
-  const box = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.18, 0.14), mat);
+  const box = new THREE.Mesh(createSubdividedBox(0.5, 0.18, 0.14), mat);
   g.add(box);
   return g;
 }
@@ -218,8 +225,11 @@ function buildKeyMesh(): THREE.Group {
   const tex = keyTexture();
   const mat = new THREE.MeshBasicMaterial({ map: tex, transparent: true, opacity: 0.95 });
 
-  // Flat card shape
-  const card = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.12, 0.02), mat);
+  // Key card with raised chip
+  const card = new THREE.Mesh(createSubdividedBox(0.16, 0.1, 0.015), mat);
   g.add(card);
+  const chip = new THREE.Mesh(createSubdividedBox(0.05, 0.05, 0.01), mat);
+  chip.position.z = 0.0125; // on front face of card
+  g.add(chip);
   return g;
 }

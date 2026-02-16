@@ -27,14 +27,8 @@ import {
 } from './procedural-textures';
 
 const WALL_THICKNESS = 0.2;
-const FLOOR_TILE_SIZE = 3.0;
-const WALL_TILE_WIDTH = 3.4;
-const WALL_TILE_HEIGHT = 4.0;
-const CEILING_TILE_SIZE = 2.4;
-
-function repeatForSize(size: number, tileSize: number, min = 1): number {
-  return Math.max(min, size / tileSize);
-}
+/** World units per texture repeat — matches Quick Play (e.g. 20×20 room → repeat 5,5) */
+const UNITS_PER_TEXTURE = 4;
 
 export interface LevelBuilderDeps {
   scene: THREE.Scene;
@@ -105,12 +99,12 @@ export function buildLevel(level: LevelSchema, deps: LevelBuilderDeps): void {
   const floorMat = (color = 0x888888, useSnow = false, width = 8, depth = 8) => {
     const tex = (useSnow ? snowTex : floorTex).clone();
     tex.needsUpdate = true;
-    tex.repeat.set(
-      repeatForSize(width, useSnow ? 3.2 : FLOOR_TILE_SIZE),
-      repeatForSize(depth, useSnow ? 3.2 : FLOOR_TILE_SIZE),
-    );
     tex.wrapS = THREE.RepeatWrapping;
     tex.wrapT = THREE.RepeatWrapping;
+    tex.repeat.set(
+      Math.max(1, width / UNITS_PER_TEXTURE),
+      Math.max(1, depth / UNITS_PER_TEXTURE),
+    );
     const roughness = useSnow ? 0.9 : isWasteland ? 0.75 : isPalace ? 0.26 : 0.8;
     const metalness = useSnow ? 0.05 : isWasteland ? 0.12 : isPalace ? 0.05 : 0.2;
     return new THREE.MeshStandardMaterial({
@@ -123,12 +117,12 @@ export function buildLevel(level: LevelSchema, deps: LevelBuilderDeps): void {
   const wallMat = (color = 0x999999, useMountain = false, span = 6, wallHeight = 4) => {
     const tex = (useMountain ? mountainTex : wallTex).clone();
     tex.needsUpdate = true;
-    tex.repeat.set(
-      repeatForSize(span, useMountain ? 3.0 : WALL_TILE_WIDTH),
-      repeatForSize(wallHeight, useMountain ? 2.8 : WALL_TILE_HEIGHT),
-    );
     tex.wrapS = THREE.RepeatWrapping;
     tex.wrapT = THREE.RepeatWrapping;
+    tex.repeat.set(
+      Math.max(1, span / UNITS_PER_TEXTURE),
+      Math.max(1, wallHeight / UNITS_PER_TEXTURE),
+    );
     const roughness = useMountain ? 0.85 : isWasteland ? 0.75 : isPalace ? 0.46 : 0.7;
     const metalness = useMountain ? 0.05 : isWasteland ? 0.12 : isPalace ? 0.08 : 0.1;
     return new THREE.MeshStandardMaterial({
@@ -141,12 +135,12 @@ export function buildLevel(level: LevelSchema, deps: LevelBuilderDeps): void {
   const ceilingMat = (_color = 0x888888, width = 8, depth = 8) => {
     const tex = ceilTex.clone();
     tex.needsUpdate = true;
-    tex.repeat.set(
-      repeatForSize(width, CEILING_TILE_SIZE),
-      repeatForSize(depth, CEILING_TILE_SIZE),
-    );
     tex.wrapS = THREE.RepeatWrapping;
     tex.wrapT = THREE.RepeatWrapping;
+    tex.repeat.set(
+      Math.max(1, width / UNITS_PER_TEXTURE),
+      Math.max(1, depth / UNITS_PER_TEXTURE),
+    );
     const roughness = isWasteland ? 0.8 : isPalace ? 0.55 : 0.9;
     const metalness = isWasteland ? 0.08 : isPalace ? 0.04 : 0;
     return new THREE.MeshStandardMaterial({

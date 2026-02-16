@@ -6,6 +6,7 @@ import * as THREE from 'three';
 import { getTextureSetForSkin, cloneTextureWithRepeat } from './weapon-skins';
 import type { WeaponSkin, SkinTextureRole, WeaponPartUVScale } from './weapon-skins';
 import { createPlasmaAccentMaterial } from './weapon-plasma-material';
+import { createSubdividedBox, createSubdividedCylinder } from '../core/geometry-utils';
 
 export type WeaponType = 'pistol' | 'rifle' | 'shotgun' | 'sniper';
 
@@ -49,14 +50,17 @@ function createMaterial(
     metalnessMap.repeat.set(repeatX, repeatY);
   }
 
-  return new THREE.MeshStandardMaterial({
+  // Only include PBR maps if they exist (avoid THREE.js warnings)
+  const matProps: THREE.MeshStandardMaterialParameters = {
     map,
-    roughnessMap,
-    metalnessMap,
     color: 0xffffff,
     roughness: set.roughnessMap ? 1 : baseRoughness,
     metalness: set.metalnessMap ? 1 : baseMetalness,
-  });
+  };
+  if (roughnessMap) matProps.roughnessMap = roughnessMap;
+  if (metalnessMap) matProps.metalnessMap = metalnessMap;
+
+  return new THREE.MeshStandardMaterial(matProps);
 }
 
 /** Build the full weapon mesh (player view, pickup, enemy held). */
@@ -80,13 +84,13 @@ function buildPistolMesh(skin: WeaponSkin): THREE.Group {
     roughness: 0.5,
     metalness: 0.6,
   });
-  const body = new THREE.Mesh(new THREE.BoxGeometry(0.046, 0.046, 0.25), longMetalMat);
+  const body = new THREE.Mesh(createSubdividedBox(0.046, 0.046, 0.25), longMetalMat);
   body.position.set(0, 0.04, -0.03); gun.add(body);
-  const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.014, 0.014, 0.09, 8), cylinderMetalMat);
+  const barrel = new THREE.Mesh(createSubdividedCylinder(0.014, 0.014, 0.09, 8), cylinderMetalMat);
   barrel.rotation.x = Math.PI / 2; barrel.position.set(0, 0.04, -0.2); gun.add(barrel);
   const barrelRing = new THREE.Mesh(new THREE.CylinderGeometry(0.017, 0.017, 0.01, 8), shortMetalMat);
   barrelRing.rotation.x = Math.PI / 2; barrelRing.position.set(0, 0.04, -0.245); gun.add(barrelRing);
-  const slide = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.034, 0.18), longMetalMat);
+  const slide = new THREE.Mesh(createSubdividedBox(0.04, 0.034, 0.18), longMetalMat);
   slide.position.set(0, 0.01, 0); gun.add(slide);
   for (let i = 0; i < 4; i++) {
     const serr = new THREE.Mesh(new THREE.BoxGeometry(0.042, 0.003, 0.005), accentMat);
@@ -120,7 +124,7 @@ function buildPistolMesh(skin: WeaponSkin): THREE.Group {
   screwL.rotation.z = Math.PI / 2; screwL.position.set(-0.022, -0.05, 0.04); gun.add(screwL);
   const screwR = new THREE.Mesh(screwGeo, screwMat);
   screwR.rotation.z = Math.PI / 2; screwR.position.set(0.022, -0.05, 0.04); gun.add(screwR);
-  const mag = new THREE.Mesh(new THREE.BoxGeometry(0.028, 0.065, 0.032), longMetalMat);
+  const mag = new THREE.Mesh(createSubdividedBox(0.028, 0.065, 0.032), longMetalMat);
   mag.position.set(0, -0.065, 0.05);
   mag.name = 'reloadMag';
   (mag.userData as Record<string, number>).restY = -0.065;
@@ -140,13 +144,13 @@ function buildRifleMesh(skin: WeaponSkin): THREE.Group {
     roughness: 0.5,
     metalness: 0.6,
   });
-  const receiver = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.055, 0.32), longMetalMat);
+  const receiver = new THREE.Mesh(createSubdividedBox(0.05, 0.055, 0.32), longMetalMat);
   receiver.position.set(0, 0.02, -0.05); gun.add(receiver);
-  const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.013, 0.013, 0.2, 8), cylinderMetalMat);
+  const barrel = new THREE.Mesh(createSubdividedCylinder(0.013, 0.013, 0.2, 8), cylinderMetalMat);
   barrel.rotation.x = Math.PI / 2; barrel.position.set(0, 0.03, -0.32); gun.add(barrel);
   const muzzleRing = new THREE.Mesh(new THREE.CylinderGeometry(0.016, 0.016, 0.008, 8), shortMetalMat);
   muzzleRing.rotation.x = Math.PI / 2; muzzleRing.position.set(0, 0.03, -0.42); gun.add(muzzleRing);
-  const handguard = new THREE.Mesh(new THREE.BoxGeometry(0.035, 0.035, 0.15), longMetalMat);
+  const handguard = new THREE.Mesh(createSubdividedBox(0.035, 0.035, 0.15), longMetalMat);
   handguard.position.set(0, 0.03, -0.25); gun.add(handguard);
   for (let i = 0; i < 3; i++) {
     const slot = new THREE.Mesh(new THREE.BoxGeometry(0.037, 0.004, 0.018), accentMat);
@@ -176,12 +180,12 @@ function buildRifleMesh(skin: WeaponSkin): THREE.Group {
   pin2.rotation.z = Math.PI / 2; pin2.position.set(-0.027, 0.02, 0.06); gun.add(pin2);
   const buttPlate = new THREE.Mesh(new THREE.BoxGeometry(0.038, 0.05, 0.02), shortMetalMat);
   buttPlate.position.set(0, -0.01, 0.26); gun.add(buttPlate);
-  const mag = new THREE.Mesh(new THREE.BoxGeometry(0.032, 0.085, 0.042), longMetalMat);
+  const mag = new THREE.Mesh(createSubdividedBox(0.032, 0.085, 0.042), longMetalMat);
   mag.position.set(0, -0.045, -0.02);
   mag.name = 'reloadMag';
   (mag.userData as Record<string, number>).restY = -0.045;
   gun.add(mag);
-  const stock = new THREE.Mesh(new THREE.BoxGeometry(0.042, 0.055, 0.14), longWoodMat);
+  const stock = new THREE.Mesh(createSubdividedBox(0.042, 0.055, 0.14), longWoodMat);
   stock.position.set(0, -0.01, 0.15); gun.add(stock);
   const grip = new THREE.Mesh(new THREE.BoxGeometry(0.038, 0.075, 0.038), shortWoodMat);
   grip.position.set(0, -0.045, 0.05); grip.rotation.x = 0.2; gun.add(grip);
@@ -200,11 +204,11 @@ function buildShotgunMesh(skin: WeaponSkin): THREE.Group {
     roughness: 0.5,
     metalness: 0.6,
   });
-  const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.024, 0.024, 0.4, 8), cylinderMetalMat);
+  const barrel = new THREE.Mesh(createSubdividedCylinder(0.024, 0.024, 0.4, 8), cylinderMetalMat);
   barrel.rotation.x = Math.PI / 2; barrel.position.set(0, 0.03, -0.2); gun.add(barrel);
   const muzzleRing = new THREE.Mesh(new THREE.CylinderGeometry(0.027, 0.027, 0.01, 8), shortMetalMat);
   muzzleRing.rotation.x = Math.PI / 2; muzzleRing.position.set(0, 0.03, -0.4); gun.add(muzzleRing);
-  const magTube = new THREE.Mesh(new THREE.CylinderGeometry(0.012, 0.012, 0.32, 8), cylinderMetalMat);
+  const magTube = new THREE.Mesh(createSubdividedCylinder(0.012, 0.012, 0.32, 8), cylinderMetalMat);
   magTube.rotation.x = Math.PI / 2; magTube.position.set(0, -0.02, -0.15); gun.add(magTube);
   const tubeCap = new THREE.Mesh(new THREE.CylinderGeometry(0.015, 0.015, 0.012, 8), shortMetalMat);
   tubeCap.rotation.x = Math.PI / 2; tubeCap.position.set(0, -0.02, -0.31); gun.add(tubeCap);
@@ -224,11 +228,11 @@ function buildShotgunMesh(skin: WeaponSkin): THREE.Group {
   }
   const ejectionPort = new THREE.Mesh(new THREE.BoxGeometry(0.004, 0.025, 0.04), accentMat);
   ejectionPort.position.set(0.03, 0.015, 0.04); gun.add(ejectionPort);
-  const receiver = new THREE.Mesh(new THREE.BoxGeometry(0.055, 0.065, 0.15), longMetalMat);
+  const receiver = new THREE.Mesh(createSubdividedBox(0.055, 0.065, 0.15), longMetalMat);
   receiver.position.set(0, 0.01, 0.05); gun.add(receiver);
   const safety = new THREE.Mesh(new THREE.CylinderGeometry(0.004, 0.004, 0.006, 6), accentMat);
   safety.position.set(0, 0.045, 0.09); gun.add(safety);
-  const stock = new THREE.Mesh(new THREE.BoxGeometry(0.042, 0.058, 0.18), longWoodMat);
+  const stock = new THREE.Mesh(createSubdividedBox(0.042, 0.058, 0.18), longWoodMat);
   stock.position.set(0, -0.005, 0.2); gun.add(stock);
   const buttPad = new THREE.Mesh(new THREE.BoxGeometry(0.044, 0.06, 0.008), accentMat);
   buttPad.position.set(0, -0.005, 0.292); gun.add(buttPad);
@@ -260,19 +264,19 @@ function buildSniperMesh(skin: WeaponSkin): THREE.Group {
   const scopeMat = createMaterial(skin, 'scope', 0.2, 0.9, 'scope');
   const longWoodMat = createMaterial(skin, 'woodDark', 0.6, 0.1, 'longWood');
   const shortWoodMat = createMaterial(skin, 'woodDark', 0.6, 0.1, 'shortWood');
-  const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.013, 0.016, 0.45, 8), cylinderMetalMat);
+  const barrel = new THREE.Mesh(createSubdividedCylinder(0.013, 0.016, 0.45, 8), cylinderMetalMat);
   barrel.rotation.x = Math.PI / 2; barrel.position.set(0, 0.03, -0.25); gun.add(barrel);
   const muzzleBrake = new THREE.Mesh(new THREE.CylinderGeometry(0.022, 0.018, 0.04, 8), shortMetalMat);
   muzzleBrake.rotation.x = Math.PI / 2; muzzleBrake.position.set(0, 0.03, -0.48); gun.add(muzzleBrake);
-  const receiver = new THREE.Mesh(new THREE.BoxGeometry(0.042, 0.052, 0.2), longMetalMat);
+  const receiver = new THREE.Mesh(createSubdividedBox(0.042, 0.052, 0.2), longMetalMat);
   receiver.position.set(0, 0.02, 0); gun.add(receiver);
-  const scope = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, 0.12, 8), scopeMat);
+  const scope = new THREE.Mesh(createSubdividedCylinder(0.02, 0.02, 0.12, 8), scopeMat);
   scope.rotation.x = Math.PI / 2; scope.position.set(0, 0.07, -0.02); gun.add(scope);
   const scopeRingFront = new THREE.Mesh(new THREE.CylinderGeometry(0.025, 0.025, 0.015, 8), shortMetalMat);
   scopeRingFront.rotation.x = Math.PI / 2; scopeRingFront.position.set(0, 0.07, -0.06); gun.add(scopeRingFront);
   const scopeRingRear = new THREE.Mesh(new THREE.CylinderGeometry(0.025, 0.025, 0.015, 8), shortMetalMat);
   scopeRingRear.rotation.x = Math.PI / 2; scopeRingRear.position.set(0, 0.07, 0.02); gun.add(scopeRingRear);
-  const stock = new THREE.Mesh(new THREE.BoxGeometry(0.042, 0.058, 0.2), longWoodMat);
+  const stock = new THREE.Mesh(createSubdividedBox(0.042, 0.058, 0.2), longWoodMat);
   stock.position.set(0, 0, 0.2); gun.add(stock);
   const cheekRest = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.04, 0.08), shortWoodMat);
   cheekRest.position.set(0, 0.035, 0.15); gun.add(cheekRest);
@@ -282,7 +286,7 @@ function buildSniperMesh(skin: WeaponSkin): THREE.Group {
   boltKnob.position.set(0.03, 0.035, 0.02); gun.add(boltKnob);
   const bolt = new THREE.Mesh(new THREE.CylinderGeometry(0.006, 0.006, 0.025, 6), shortMetalMat);
   bolt.position.set(0.025, 0.03, 0.02); gun.add(bolt);
-  const mag = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.075, 0.036), longMetalMat);
+  const mag = new THREE.Mesh(createSubdividedBox(0.03, 0.075, 0.036), longMetalMat);
   mag.position.set(0, -0.038, -0.02);
   mag.name = 'reloadMag';
   (mag.userData as Record<string, number>).restY = -0.038;

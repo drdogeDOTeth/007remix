@@ -8,7 +8,7 @@ function seededRandom(seed: number): () => number {
     seed |= 0;
     seed = (seed + 0x6d2b79f5) | 0; // mulberry32
     const t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
-    return ((t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ 0) / 4294967296;
+    return ((t + Math.imul(t ^ (t >>> 7), 61 | t)) >>> 0) / 4294967296;
   };
 }
 
@@ -132,297 +132,513 @@ function applyWearLayer(
 
 /** Dark gunmetal — pistol/rifle receiver, barrel */
 export function weaponMetalDarkTexture(): THREE.CanvasTexture {
-  return getOrCreate('weapon-metal-dark', 64, 64, (ctx) => {
-    // Base gradient — slight vertical variation for depth
-    const grad = ctx.createLinearGradient(0, 0, 0, 64);
-    grad.addColorStop(0, '#2e2e32');
-    grad.addColorStop(0.3, '#252528');
-    grad.addColorStop(0.7, '#222225');
-    grad.addColorStop(1, '#1e1e22');
+  return getOrCreate('weapon-metal-dark', 128, 128, (ctx) => {
+    const w = 128, h = 128;
+    // Multi-stop gradient base — anisotropic brushed steel look
+    const grad = ctx.createLinearGradient(0, 0, 0, h);
+    grad.addColorStop(0, '#32323a');
+    grad.addColorStop(0.15, '#2a2a30');
+    grad.addColorStop(0.35, '#252528');
+    grad.addColorStop(0.5, '#222228');
+    grad.addColorStop(0.65, '#1f1f25');
+    grad.addColorStop(0.85, '#1c1c22');
+    grad.addColorStop(1, '#18181e');
     ctx.fillStyle = grad;
-    ctx.fillRect(0, 0, 64, 64);
-    // Machining lines (horizontal, varying opacity)
-    for (let y = 0; y < 64; y += 4) {
-      ctx.strokeStyle = `rgba(0,0,0,${0.15 + Math.random() * 0.15})`;
-      ctx.lineWidth = 1;
+    ctx.fillRect(0, 0, w, h);
+
+    // Subtle horizontal banding (parkerizing finish)
+    for (let y = 0; y < h; y += 2) {
+      const a = 0.04 + Math.sin(y * 0.3) * 0.03;
+      ctx.fillStyle = `rgba(${y % 4 === 0 ? 0 : 40},${y % 4 === 0 ? 0 : 42},${y % 4 === 0 ? 0 : 48},${a})`;
+      ctx.fillRect(0, y, w, 1);
+    }
+
+    // Machining lines — varying weight and spacing
+    const rnd = seededRandom(101);
+    for (let y = 0; y < h; y += 3 + Math.floor(rnd() * 3)) {
+      ctx.strokeStyle = `rgba(0,0,0,${0.1 + rnd() * 0.18})`;
+      ctx.lineWidth = 0.5 + rnd() * 0.8;
       ctx.beginPath();
-      ctx.moveTo(0, y);
-      ctx.lineTo(64, y);
+      ctx.moveTo(0, y + rnd() * 0.5);
+      ctx.lineTo(w, y + rnd() * 0.5);
       ctx.stroke();
     }
-    // Brushed scratches (thin diagonal lines)
-    ctx.strokeStyle = 'rgba(60,62,68,0.25)';
-    ctx.lineWidth = 0.5;
-    for (let i = 0; i < 14; i++) {
-      const sx = Math.random() * 64;
-      const sy = Math.random() * 64;
+
+    // Anisotropic brushing (fine diagonal micro-scratches)
+    ctx.globalCompositeOperation = 'overlay';
+    for (let i = 0; i < 40; i++) {
+      const sx = rnd() * w;
+      const sy = rnd() * h;
+      const len = 6 + rnd() * 30;
+      const angle = -0.1 + rnd() * 0.2;
+      ctx.strokeStyle = `rgba(${55 + rnd() * 20},${57 + rnd() * 20},${65 + rnd() * 20},${0.1 + rnd() * 0.18})`;
+      ctx.lineWidth = 0.3 + rnd() * 0.5;
       ctx.beginPath();
       ctx.moveTo(sx, sy);
-      ctx.lineTo(sx + 8 + Math.random() * 20, sy + (Math.random() - 0.5) * 3);
+      ctx.lineTo(sx + len * Math.cos(angle), sy + len * Math.sin(angle));
       ctx.stroke();
     }
-    // Edge highlight (top and left — simulating light catch)
-    ctx.fillStyle = 'rgba(90,92,100,0.45)';
-    ctx.fillRect(0, 0, 64, 2);
-    ctx.fillRect(0, 0, 2, 64);
-    // Bottom shadow edge
-    ctx.fillStyle = 'rgba(0,0,0,0.3)';
-    ctx.fillRect(0, 62, 64, 2);
-    addNoise(ctx, 64, 64, 14);
+    ctx.globalCompositeOperation = 'source-over';
+
+    // Specular catch — faint light band across middle
+    const specGrad = ctx.createLinearGradient(0, h * 0.3, 0, h * 0.5);
+    specGrad.addColorStop(0, 'rgba(70,72,82,0)');
+    specGrad.addColorStop(0.5, 'rgba(70,72,82,0.12)');
+    specGrad.addColorStop(1, 'rgba(70,72,82,0)');
+    ctx.fillStyle = specGrad;
+    ctx.fillRect(0, h * 0.3, w, h * 0.2);
+
+    // Edge highlights (top/left light catch, bottom/right shadow)
+    ctx.fillStyle = 'rgba(95,97,108,0.5)';
+    ctx.fillRect(0, 0, w, 2);
+    ctx.fillRect(0, 0, 2, h);
+    ctx.fillStyle = 'rgba(0,0,0,0.35)';
+    ctx.fillRect(0, h - 2, w, 2);
+    ctx.fillRect(w - 2, 0, 2, h);
+
+    addNoise(ctx, w, h, 10);
   });
 }
 
 /** Dark gunmetal with wear and tear */
 export function weaponMetalDarkWornTexture(): THREE.CanvasTexture {
-  return getOrCreate('weapon-metal-dark-worn', 64, 64, (ctx) => {
+  return getOrCreate('weapon-metal-dark-worn', 128, 128, (ctx) => {
     ctx.drawImage((weaponMetalDarkTexture() as THREE.CanvasTexture).image, 0, 0);
-    applyWearLayer(ctx, 64, 64, 0.85, 42);
+    applyWearLayer(ctx, 128, 128, 0.85, 42);
   }) as THREE.CanvasTexture;
 }
 
 /** Slightly lighter metal — rifle body */
 export function weaponMetalMidTexture(): THREE.CanvasTexture {
-  return getOrCreate('weapon-metal-mid', 64, 64, (ctx) => {
-    // Gradient base
-    const grad = ctx.createLinearGradient(0, 0, 64, 0);
-    grad.addColorStop(0, '#353538');
-    grad.addColorStop(0.4, '#3a3a40');
-    grad.addColorStop(0.6, '#333338');
-    grad.addColorStop(1, '#303035');
+  return getOrCreate('weapon-metal-mid', 128, 128, (ctx) => {
+    const w = 128, h = 128;
+    // Multi-directional gradient base — blued steel
+    const grad = ctx.createLinearGradient(0, 0, w * 0.3, h);
+    grad.addColorStop(0, '#3a3a42');
+    grad.addColorStop(0.2, '#383840');
+    grad.addColorStop(0.4, '#3e3e48');
+    grad.addColorStop(0.6, '#36363e');
+    grad.addColorStop(0.8, '#333340');
+    grad.addColorStop(1, '#30303a');
     ctx.fillStyle = grad;
-    ctx.fillRect(0, 0, 64, 64);
-    // Fine machining lines
-    for (let y = 0; y < 64; y += 3) {
-      ctx.strokeStyle = `rgba(0,0,0,${0.1 + Math.random() * 0.12})`;
-      ctx.lineWidth = 1;
+    ctx.fillRect(0, 0, w, h);
+
+    // Horizontal machining — fine lathe marks
+    const rnd = seededRandom(202);
+    for (let y = 0; y < h; y += 2 + Math.floor(rnd() * 2)) {
+      ctx.strokeStyle = `rgba(0,0,0,${0.06 + rnd() * 0.14})`;
+      ctx.lineWidth = 0.4 + rnd() * 0.6;
       ctx.beginPath();
       ctx.moveTo(0, y);
-      ctx.lineTo(64, y);
+      ctx.lineTo(w, y);
       ctx.stroke();
     }
-    // Brushed scratches
-    ctx.strokeStyle = 'rgba(75,77,85,0.2)';
-    ctx.lineWidth = 0.5;
-    for (let i = 0; i < 10; i++) {
-      const sx = Math.random() * 64;
-      const sy = Math.random() * 64;
+
+    // Anisotropic brushing (directional scratches)
+    ctx.globalCompositeOperation = 'overlay';
+    for (let i = 0; i < 35; i++) {
+      const sx = rnd() * w;
+      const sy = rnd() * h;
+      const len = 8 + rnd() * 25;
+      ctx.strokeStyle = `rgba(${68 + rnd() * 25},${70 + rnd() * 25},${80 + rnd() * 25},${0.08 + rnd() * 0.15})`;
+      ctx.lineWidth = 0.3 + rnd() * 0.4;
       ctx.beginPath();
       ctx.moveTo(sx, sy);
-      ctx.lineTo(sx + 10 + Math.random() * 15, sy + (Math.random() - 0.5) * 2);
+      ctx.lineTo(sx + len, sy + (rnd() - 0.5) * 3);
       ctx.stroke();
     }
-    // Specular band (horizontal reflective strip)
-    ctx.fillStyle = 'rgba(110,112,120,0.3)';
-    ctx.fillRect(0, 28, 64, 3);
+    ctx.globalCompositeOperation = 'source-over';
+
+    // Multiple specular bands (reflective strips at varying heights)
+    for (const bandY of [0.25, 0.45, 0.7]) {
+      const specGrad = ctx.createLinearGradient(0, h * (bandY - 0.04), 0, h * (bandY + 0.04));
+      specGrad.addColorStop(0, 'rgba(100,102,115,0)');
+      specGrad.addColorStop(0.5, 'rgba(100,102,115,0.15)');
+      specGrad.addColorStop(1, 'rgba(100,102,115,0)');
+      ctx.fillStyle = specGrad;
+      ctx.fillRect(0, h * (bandY - 0.04), w, h * 0.08);
+    }
+
     // Edge highlights
-    ctx.fillStyle = 'rgba(100,102,108,0.4)';
-    ctx.fillRect(0, 0, 64, 1);
-    ctx.fillStyle = 'rgba(0,0,0,0.25)';
-    ctx.fillRect(0, 63, 64, 1);
-    addNoise(ctx, 64, 64, 12);
+    ctx.fillStyle = 'rgba(108,110,120,0.45)';
+    ctx.fillRect(0, 0, w, 2);
+    ctx.fillRect(0, 0, 2, h);
+    ctx.fillStyle = 'rgba(0,0,0,0.3)';
+    ctx.fillRect(0, h - 2, w, 2);
+    ctx.fillRect(w - 2, 0, 2, h);
+
+    addNoise(ctx, w, h, 9);
   });
 }
 
 /** Rifle metal with wear */
 export function weaponMetalMidWornTexture(): THREE.CanvasTexture {
-  return getOrCreate('weapon-metal-mid-worn', 64, 64, (ctx) => {
+  return getOrCreate('weapon-metal-mid-worn', 128, 128, (ctx) => {
     ctx.drawImage((weaponMetalMidTexture() as THREE.CanvasTexture).image, 0, 0);
-    applyWearLayer(ctx, 64, 64, 0.8, 137);
+    applyWearLayer(ctx, 128, 128, 0.8, 137);
   }) as THREE.CanvasTexture;
 }
 
 /** Very dark — scope tube, bolt */
 export function weaponMetalScopeTexture(): THREE.CanvasTexture {
-  return getOrCreate('weapon-metal-scope', 32, 32, (ctx) => {
-    ctx.fillStyle = '#141418';
-    ctx.fillRect(0, 0, 32, 32);
-    // Matte coating — very subtle circular polish marks
-    ctx.strokeStyle = 'rgba(40,42,50,0.25)';
-    ctx.lineWidth = 0.5;
-    for (let i = 0; i < 6; i++) {
-      const cx = Math.random() * 32;
-      const cy = Math.random() * 32;
+  return getOrCreate('weapon-metal-scope', 64, 64, (ctx) => {
+    const w = 64, h = 64;
+    // Deep matte black base with subtle gradient
+    const grad = ctx.createLinearGradient(0, 0, w, h);
+    grad.addColorStop(0, '#16161c');
+    grad.addColorStop(0.3, '#121218');
+    grad.addColorStop(0.7, '#101016');
+    grad.addColorStop(1, '#0e0e14');
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, w, h);
+
+    // Matte coating — circular polish marks (anodized finish)
+    const rnd = seededRandom(303);
+    ctx.strokeStyle = 'rgba(38,40,50,0.2)';
+    ctx.lineWidth = 0.4;
+    for (let i = 0; i < 14; i++) {
+      const cx = rnd() * w;
+      const cy = rnd() * h;
       ctx.beginPath();
-      ctx.arc(cx, cy, 3 + Math.random() * 5, 0, Math.PI * 2);
+      ctx.arc(cx, cy, 2 + rnd() * 6, 0, Math.PI * 2);
       ctx.stroke();
     }
-    // Glint highlight
-    ctx.fillStyle = 'rgba(60,62,70,0.35)';
-    ctx.fillRect(0, 0, 32, 1);
-    ctx.fillStyle = 'rgba(50,52,60,0.2)';
-    ctx.fillRect(0, 14, 32, 2);
-    addNoise(ctx, 32, 32, 10);
+
+    // Circumferential machining lines (lathe marks on cylinder)
+    for (let y = 0; y < h; y += 3 + Math.floor(rnd() * 3)) {
+      ctx.strokeStyle = `rgba(30,32,40,${0.08 + rnd() * 0.1})`;
+      ctx.lineWidth = 0.3 + rnd() * 0.3;
+      ctx.beginPath();
+      ctx.moveTo(0, y);
+      ctx.lineTo(w, y);
+      ctx.stroke();
+    }
+
+    // Specular glint
+    const specGrad = ctx.createLinearGradient(0, h * 0.35, 0, h * 0.5);
+    specGrad.addColorStop(0, 'rgba(55,58,70,0)');
+    specGrad.addColorStop(0.5, 'rgba(55,58,70,0.18)');
+    specGrad.addColorStop(1, 'rgba(55,58,70,0)');
+    ctx.fillStyle = specGrad;
+    ctx.fillRect(0, h * 0.35, w, h * 0.15);
+
+    // Edge highlight
+    ctx.fillStyle = 'rgba(60,62,75,0.35)';
+    ctx.fillRect(0, 0, w, 1);
+    addNoise(ctx, w, h, 8);
   });
 }
 
 /** Rubberized grip — dark with diamond knurl pattern */
 export function weaponGripTexture(): THREE.CanvasTexture {
-  return getOrCreate('weapon-grip', 32, 32, (ctx) => {
-    ctx.fillStyle = '#1a1a1c';
-    ctx.fillRect(0, 0, 32, 32);
+  return getOrCreate('weapon-grip', 64, 64, (ctx) => {
+    const w = 64, h = 64;
+    // Dark rubber base with subtle gradient
+    const grad = ctx.createLinearGradient(0, 0, 0, h);
+    grad.addColorStop(0, '#1e1e22');
+    grad.addColorStop(0.5, '#1a1a1e');
+    grad.addColorStop(1, '#161618');
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, w, h);
+
     // Diamond knurl pattern (diagonal crosshatch)
-    ctx.strokeStyle = 'rgba(0,0,0,0.5)';
-    ctx.lineWidth = 0.8;
-    for (let i = -32; i < 64; i += 4) {
+    ctx.strokeStyle = 'rgba(0,0,0,0.45)';
+    ctx.lineWidth = 0.7;
+    for (let i = -h; i < w + h; i += 5) {
       ctx.beginPath();
       ctx.moveTo(i, 0);
-      ctx.lineTo(i + 32, 32);
+      ctx.lineTo(i + h, h);
       ctx.stroke();
       ctx.beginPath();
-      ctx.moveTo(i + 32, 0);
-      ctx.lineTo(i, 32);
+      ctx.moveTo(i + h, 0);
+      ctx.lineTo(i, h);
       ctx.stroke();
     }
-    // Raised diamond dots at intersections
-    ctx.fillStyle = 'rgba(45,45,50,0.4)';
-    for (let y = 2; y < 32; y += 4) {
-      for (let x = 2; x < 32; x += 4) {
-        ctx.fillRect(x, y, 1, 1);
+
+    // Raised diamond dots at intersections (stippled rubber)
+    const rnd = seededRandom(404);
+    for (let y = 2; y < h; y += 5) {
+      for (let x = 2; x < w; x += 5) {
+        const b = 40 + rnd() * 15;
+        ctx.fillStyle = `rgba(${b},${b},${b + 5},0.35)`;
+        ctx.beginPath();
+        ctx.arc(x, y, 0.8 + rnd() * 0.4, 0, Math.PI * 2);
+        ctx.fill();
       }
     }
+
+    // Finger indentation zones (subtle dark bands)
+    for (const bandY of [0.25, 0.5, 0.75]) {
+      const ig = ctx.createLinearGradient(0, h * (bandY - 0.06), 0, h * (bandY + 0.06));
+      ig.addColorStop(0, 'rgba(0,0,0,0)');
+      ig.addColorStop(0.5, 'rgba(0,0,0,0.08)');
+      ig.addColorStop(1, 'rgba(0,0,0,0)');
+      ctx.fillStyle = ig;
+      ctx.fillRect(0, h * (bandY - 0.06), w, h * 0.12);
+    }
+
     // Edge highlights
-    ctx.fillStyle = 'rgba(50,50,55,0.3)';
-    ctx.fillRect(0, 0, 32, 1);
-    addNoise(ctx, 32, 32, 12);
+    ctx.fillStyle = 'rgba(50,50,58,0.3)';
+    ctx.fillRect(0, 0, w, 1);
+    addNoise(ctx, w, h, 10);
   });
 }
 
 /** Wood — rifle stock (warm brown) */
 export function weaponWoodLightTexture(): THREE.CanvasTexture {
-  return getOrCreate('weapon-wood-light', 64, 64, (ctx) => {
-    // Base with warm gradient
-    const grad = ctx.createLinearGradient(0, 0, 0, 64);
-    grad.addColorStop(0, '#7a5530');
-    grad.addColorStop(0.5, '#6b4a2a');
-    grad.addColorStop(1, '#604025');
+  return getOrCreate('weapon-wood-light', 128, 128, (ctx) => {
+    const w = 128, h = 128;
+    const rnd = seededRandom(501);
+
+    // Rich warm base with multiple gradient stops
+    const grad = ctx.createLinearGradient(0, 0, w * 0.15, h);
+    grad.addColorStop(0, '#7e5832');
+    grad.addColorStop(0.2, '#74502c');
+    grad.addColorStop(0.4, '#6b4a28');
+    grad.addColorStop(0.6, '#6e4d2a');
+    grad.addColorStop(0.8, '#644626');
+    grad.addColorStop(1, '#5e4022');
     ctx.fillStyle = grad;
-    ctx.fillRect(0, 0, 64, 64);
-    // Wood grain — multiple layers of wavy lines
-    for (let i = 0; i < 12; i++) {
-      const y = 3 + i * 5 + (Math.random() * 3 - 1.5);
-      const darkness = 0.25 + Math.random() * 0.2;
-      ctx.strokeStyle = `rgba(50,30,12,${darkness})`;
-      ctx.lineWidth = 0.8 + Math.random() * 0.8;
+    ctx.fillRect(0, 0, w, h);
+
+    // Heartwood color variation (subtle warm zone)
+    const heartGrad = ctx.createRadialGradient(w * 0.6, h * 0.5, 10, w * 0.6, h * 0.5, w * 0.5);
+    heartGrad.addColorStop(0, 'rgba(130,80,40,0.08)');
+    heartGrad.addColorStop(1, 'rgba(130,80,40,0)');
+    ctx.fillStyle = heartGrad;
+    ctx.fillRect(0, 0, w, h);
+
+    // Wood grain — multiple layers with varying waviness and thickness
+    for (let i = 0; i < 24; i++) {
+      const baseY = 2 + i * 5 + (rnd() * 4 - 2);
+      const darkness = 0.15 + rnd() * 0.25;
+      const r = 35 + rnd() * 20;
+      const g = 20 + rnd() * 12;
+      const b = 6 + rnd() * 8;
+      ctx.strokeStyle = `rgba(${r},${g},${b},${darkness})`;
+      ctx.lineWidth = 0.5 + rnd() * 1.2;
       ctx.beginPath();
-      ctx.moveTo(0, y);
-      for (let x = 0; x <= 64; x += 8) {
-        ctx.lineTo(x, y + (Math.random() * 3 - 1.5));
+      ctx.moveTo(0, baseY);
+      const freq = 0.05 + rnd() * 0.08;
+      const amp = 1 + rnd() * 3;
+      const phase = rnd() * Math.PI * 2;
+      for (let x = 0; x <= w; x += 4) {
+        ctx.lineTo(x, baseY + Math.sin(x * freq + phase) * amp + (rnd() - 0.5) * 1.5);
       }
       ctx.stroke();
     }
-    // Wood knot (small dark oval)
-    ctx.fillStyle = 'rgba(40,25,10,0.4)';
+
+    // Secondary fine grain (pore structure)
+    ctx.globalCompositeOperation = 'multiply';
+    for (let i = 0; i < 40; i++) {
+      const y = rnd() * h;
+      ctx.strokeStyle = `rgba(55,35,15,${0.06 + rnd() * 0.08})`;
+      ctx.lineWidth = 0.3;
+      ctx.beginPath();
+      ctx.moveTo(0, y);
+      ctx.lineTo(w, y + (rnd() - 0.5) * 2);
+      ctx.stroke();
+    }
+    ctx.globalCompositeOperation = 'source-over';
+
+    // Wood knot with growth rings
+    const kx = 42 + rnd() * 40, ky = 60 + rnd() * 30;
+    for (let r = 8; r > 1; r -= 1.5) {
+      ctx.strokeStyle = `rgba(40,25,10,${0.15 + (8 - r) * 0.04})`;
+      ctx.lineWidth = 0.6;
+      ctx.beginPath();
+      ctx.ellipse(kx, ky, r + rnd() * 1.5, r * 0.6 + rnd(), 0.3, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+    ctx.fillStyle = 'rgba(35,20,8,0.4)';
     ctx.beginPath();
-    ctx.ellipse(42, 35, 5, 3, 0.3, 0, Math.PI * 2);
+    ctx.ellipse(kx, ky, 3, 2, 0.3, 0, Math.PI * 2);
     ctx.fill();
-    ctx.strokeStyle = 'rgba(50,30,15,0.5)';
-    ctx.lineWidth = 0.8;
-    ctx.beginPath();
-    ctx.ellipse(42, 35, 7, 4, 0.3, 0, Math.PI * 2);
-    ctx.stroke();
-    // Varnish sheen — faint bright band
-    ctx.fillStyle = 'rgba(140,100,60,0.15)';
-    ctx.fillRect(0, 20, 64, 6);
-    addNoise(ctx, 64, 64, 18);
+
+    // Varnish sheen bands (oil finish)
+    for (const bandY of [0.2, 0.55, 0.8]) {
+      const vGrad = ctx.createLinearGradient(0, h * (bandY - 0.05), 0, h * (bandY + 0.05));
+      vGrad.addColorStop(0, 'rgba(150,105,60,0)');
+      vGrad.addColorStop(0.5, 'rgba(150,105,60,0.1)');
+      vGrad.addColorStop(1, 'rgba(150,105,60,0)');
+      ctx.fillStyle = vGrad;
+      ctx.fillRect(0, h * (bandY - 0.05), w, h * 0.1);
+    }
+
+    addNoise(ctx, w, h, 14);
   });
 }
 
 /** Wood light with wear (chipped varnish, darker grain) */
 export function weaponWoodLightWornTexture(): THREE.CanvasTexture {
-  return getOrCreate('weapon-wood-light-worn', 64, 64, (ctx) => {
+  return getOrCreate('weapon-wood-light-worn', 128, 128, (ctx) => {
     ctx.drawImage((weaponWoodLightTexture() as THREE.CanvasTexture).image, 0, 0);
-    applyWearLayer(ctx, 64, 64, 0.6, 219);
+    applyWearLayer(ctx, 128, 128, 0.6, 219);
   }) as THREE.CanvasTexture;
 }
 
 /** Wood — shotgun (reddish brown) */
 export function weaponWoodMidTexture(): THREE.CanvasTexture {
-  return getOrCreate('weapon-wood-mid', 64, 64, (ctx) => {
+  return getOrCreate('weapon-wood-mid', 128, 128, (ctx) => {
+    const w = 128, h = 128;
+    const rnd = seededRandom(502);
+
     // Rich reddish-brown base
-    const grad = ctx.createLinearGradient(0, 0, 0, 64);
-    grad.addColorStop(0, '#653e24');
-    grad.addColorStop(0.5, '#5a3820');
-    grad.addColorStop(1, '#50301c');
+    const grad = ctx.createLinearGradient(0, 0, w * 0.1, h);
+    grad.addColorStop(0, '#6a4228');
+    grad.addColorStop(0.15, '#633e24');
+    grad.addColorStop(0.35, '#5c3820');
+    grad.addColorStop(0.55, '#5e3a22');
+    grad.addColorStop(0.75, '#54321e');
+    grad.addColorStop(1, '#4e2e1a');
     ctx.fillStyle = grad;
-    ctx.fillRect(0, 0, 64, 64);
-    // Dense grain pattern
-    for (let i = 0; i < 14; i++) {
-      const y = 2 + i * 4.5 + (Math.random() * 2 - 1);
-      ctx.strokeStyle = `rgba(40,22,10,${0.3 + Math.random() * 0.2})`;
-      ctx.lineWidth = 0.6 + Math.random() * 1.0;
+    ctx.fillRect(0, 0, w, h);
+
+    // Dense grain pattern — tightly spaced
+    for (let i = 0; i < 28; i++) {
+      const baseY = 1 + i * 4.5 + (rnd() * 3 - 1.5);
+      const darkness = 0.18 + rnd() * 0.25;
+      ctx.strokeStyle = `rgba(38,20,8,${darkness})`;
+      ctx.lineWidth = 0.4 + rnd() * 1.1;
       ctx.beginPath();
-      ctx.moveTo(0, y);
-      for (let x = 0; x <= 64; x += 8) {
-        ctx.lineTo(x, y + (Math.random() * 2.5 - 1.25));
+      ctx.moveTo(0, baseY);
+      const freq = 0.04 + rnd() * 0.06;
+      const amp = 0.8 + rnd() * 2;
+      const phase = rnd() * Math.PI * 2;
+      for (let x = 0; x <= w; x += 4) {
+        ctx.lineTo(x, baseY + Math.sin(x * freq + phase) * amp + (rnd() - 0.5) * 1);
       }
       ctx.stroke();
     }
-    // Subtle knot
-    ctx.fillStyle = 'rgba(35,18,8,0.35)';
+
+    // Pore detail (fine lines between main grain)
+    ctx.globalCompositeOperation = 'multiply';
+    for (let i = 0; i < 35; i++) {
+      const y = rnd() * h;
+      ctx.strokeStyle = `rgba(45,25,10,${0.05 + rnd() * 0.06})`;
+      ctx.lineWidth = 0.2;
+      ctx.beginPath();
+      ctx.moveTo(0, y);
+      ctx.lineTo(w, y + (rnd() - 0.5) * 1.5);
+      ctx.stroke();
+    }
+    ctx.globalCompositeOperation = 'source-over';
+
+    // Knot with growth rings
+    const kx = 25 + rnd() * 20, ky = 85 + rnd() * 20;
+    for (let r = 6; r > 1; r -= 1.2) {
+      ctx.strokeStyle = `rgba(32,16,6,${0.12 + (6 - r) * 0.04})`;
+      ctx.lineWidth = 0.5;
+      ctx.beginPath();
+      ctx.ellipse(kx, ky, r + rnd() * 1, r * 0.65, -0.2, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+    ctx.fillStyle = 'rgba(30,15,6,0.35)';
     ctx.beginPath();
-    ctx.ellipse(18, 48, 4, 2.5, -0.2, 0, Math.PI * 2);
+    ctx.ellipse(kx, ky, 2, 1.5, -0.2, 0, Math.PI * 2);
     ctx.fill();
+
     // Oil finish sheen
-    ctx.fillStyle = 'rgba(120,80,45,0.12)';
-    ctx.fillRect(0, 30, 64, 5);
-    addNoise(ctx, 64, 64, 16);
+    for (const bandY of [0.3, 0.6]) {
+      const oGrad = ctx.createLinearGradient(0, h * (bandY - 0.04), 0, h * (bandY + 0.04));
+      oGrad.addColorStop(0, 'rgba(130,85,48,0)');
+      oGrad.addColorStop(0.5, 'rgba(130,85,48,0.09)');
+      oGrad.addColorStop(1, 'rgba(130,85,48,0)');
+      ctx.fillStyle = oGrad;
+      ctx.fillRect(0, h * (bandY - 0.04), w, h * 0.08);
+    }
+
+    addNoise(ctx, w, h, 12);
   });
 }
 
 /** Wood mid with wear */
 export function weaponWoodMidWornTexture(): THREE.CanvasTexture {
-  return getOrCreate('weapon-wood-mid-worn', 64, 64, (ctx) => {
+  return getOrCreate('weapon-wood-mid-worn', 128, 128, (ctx) => {
     ctx.drawImage((weaponWoodMidTexture() as THREE.CanvasTexture).image, 0, 0);
-    applyWearLayer(ctx, 64, 64, 0.55, 311);
+    applyWearLayer(ctx, 128, 128, 0.55, 311);
   }) as THREE.CanvasTexture;
 }
 
 /** Wood — sniper (darker walnut) */
 export function weaponWoodDarkTexture(): THREE.CanvasTexture {
-  return getOrCreate('weapon-wood-dark', 64, 64, (ctx) => {
-    // Deep walnut base
-    const grad = ctx.createLinearGradient(0, 0, 0, 64);
-    grad.addColorStop(0, '#42301c');
+  return getOrCreate('weapon-wood-dark', 128, 128, (ctx) => {
+    const w = 128, h = 128;
+    const rnd = seededRandom(503);
+
+    // Deep walnut base with rich depth
+    const grad = ctx.createLinearGradient(0, 0, w * 0.12, h);
+    grad.addColorStop(0, '#46341e');
+    grad.addColorStop(0.2, '#402e1a');
     grad.addColorStop(0.4, '#3a2818');
-    grad.addColorStop(1, '#302014');
+    grad.addColorStop(0.6, '#362616');
+    grad.addColorStop(0.8, '#322214');
+    grad.addColorStop(1, '#2c1e10');
     ctx.fillStyle = grad;
-    ctx.fillRect(0, 0, 64, 64);
-    // Tight grain — walnut has finer, darker grain lines
-    for (let i = 0; i < 16; i++) {
-      const y = 1 + i * 4 + (Math.random() * 2 - 1);
-      ctx.strokeStyle = `rgba(20,12,5,${0.35 + Math.random() * 0.2})`;
-      ctx.lineWidth = 0.5 + Math.random() * 0.8;
-      ctx.beginPath();
-      ctx.moveTo(0, y);
-      for (let x = 0; x <= 64; x += 6) {
-        ctx.lineTo(x, y + (Math.random() * 1.5 - 0.75));
-      }
-      ctx.stroke();
-    }
-    // Walnut figure (wavy interlocking pattern)
-    ctx.strokeStyle = 'rgba(25,15,8,0.3)';
-    ctx.lineWidth = 1.2;
-    for (let i = 0; i < 3; i++) {
-      const baseY = 15 + i * 18;
+    ctx.fillRect(0, 0, w, h);
+
+    // Tight grain — walnut has very fine, dark grain lines
+    for (let i = 0; i < 32; i++) {
+      const baseY = 1 + i * 4 + (rnd() * 3 - 1.5);
+      const darkness = 0.2 + rnd() * 0.25;
+      ctx.strokeStyle = `rgba(18,10,4,${darkness})`;
+      ctx.lineWidth = 0.3 + rnd() * 0.9;
       ctx.beginPath();
       ctx.moveTo(0, baseY);
-      for (let x = 0; x <= 64; x += 4) {
-        ctx.lineTo(x, baseY + Math.sin(x * 0.2 + i) * 3);
+      const freq = 0.03 + rnd() * 0.05;
+      const amp = 0.5 + rnd() * 1.5;
+      const phase = rnd() * Math.PI * 2;
+      for (let x = 0; x <= w; x += 3) {
+        ctx.lineTo(x, baseY + Math.sin(x * freq + phase) * amp + (rnd() - 0.5) * 0.8);
       }
       ctx.stroke();
     }
-    // Polish sheen
-    ctx.fillStyle = 'rgba(80,55,30,0.1)';
-    ctx.fillRect(0, 25, 64, 8);
-    addNoise(ctx, 64, 64, 14);
+
+    // Walnut figure (interlocking wavy chatoyance)
+    ctx.globalCompositeOperation = 'overlay';
+    for (let i = 0; i < 6; i++) {
+      const baseY = 10 + i * 20 + rnd() * 10;
+      ctx.strokeStyle = `rgba(22,14,6,${0.15 + rnd() * 0.12})`;
+      ctx.lineWidth = 1.0 + rnd() * 0.8;
+      ctx.beginPath();
+      ctx.moveTo(0, baseY);
+      for (let x = 0; x <= w; x += 3) {
+        ctx.lineTo(x, baseY + Math.sin(x * 0.08 + i * 1.5) * 4 * Math.cos(x * 0.02 + i));
+      }
+      ctx.stroke();
+    }
+    ctx.globalCompositeOperation = 'source-over';
+
+    // Pore structure
+    for (let i = 0; i < 30; i++) {
+      const y = rnd() * h;
+      ctx.strokeStyle = `rgba(15,8,3,${0.04 + rnd() * 0.05})`;
+      ctx.lineWidth = 0.2;
+      ctx.beginPath();
+      ctx.moveTo(0, y);
+      ctx.lineTo(w, y + (rnd() - 0.5) * 1);
+      ctx.stroke();
+    }
+
+    // High-gloss polish sheen
+    for (const bandY of [0.25, 0.55, 0.8]) {
+      const pGrad = ctx.createLinearGradient(0, h * (bandY - 0.05), 0, h * (bandY + 0.05));
+      pGrad.addColorStop(0, 'rgba(90,62,35,0)');
+      pGrad.addColorStop(0.5, 'rgba(90,62,35,0.08)');
+      pGrad.addColorStop(1, 'rgba(90,62,35,0)');
+      ctx.fillStyle = pGrad;
+      ctx.fillRect(0, h * (bandY - 0.05), w, h * 0.1);
+    }
+
+    addNoise(ctx, w, h, 11);
   });
 }
 
 /** Wood dark with wear */
 export function weaponWoodDarkWornTexture(): THREE.CanvasTexture {
-  return getOrCreate('weapon-wood-dark-worn', 64, 64, (ctx) => {
+  return getOrCreate('weapon-wood-dark-worn', 128, 128, (ctx) => {
     ctx.drawImage((weaponWoodDarkTexture() as THREE.CanvasTexture).image, 0, 0);
-    applyWearLayer(ctx, 64, 64, 0.5, 447);
+    applyWearLayer(ctx, 128, 128, 0.5, 447);
   }) as THREE.CanvasTexture;
 }
 
@@ -433,12 +649,21 @@ export function weaponWoodDarkWornTexture(): THREE.CanvasTexture {
 /** Roughness map for metal — scratches and wear = rougher */
 export function weaponRoughnessMapMetal(worn = false): THREE.DataTexture {
   const key = worn ? 'pbr-roughness-metal-worn' : 'pbr-roughness-metal';
-  return getOrCreatePBRMap(key, 64, 64, (data, w, h) => {
+  return getOrCreatePBRMap(key, 128, 128, (data, w, h) => {
     const rnd = seededRandom(worn ? 53 : 7);
-    for (let i = 0; i < w * h; i++) {
-      let v = worn ? 55 + rnd() * 50 : 40 + rnd() * 35; // Base roughness
-      if (rnd() < (worn ? 0.15 : 0.06)) v += 80 + rnd() * 60; // Scratch
-      data[i] = Math.min(255, Math.floor(v));
+    for (let y = 0; y < h; y++) {
+      // Horizontal banding (machining marks affect roughness)
+      const bandRough = Math.sin(y * 0.4) * 8;
+      for (let x = 0; x < w; x++) {
+        const i = y * w + x;
+        let v = worn ? 55 + rnd() * 45 : 35 + rnd() * 30;
+        v += bandRough;
+        // Scratch lines (higher roughness)
+        if (rnd() < (worn ? 0.12 : 0.05)) v += 70 + rnd() * 50;
+        // Polished spots (lower roughness)
+        if (rnd() < 0.03) v -= 15 + rnd() * 15;
+        data[i] = Math.max(0, Math.min(255, Math.floor(v)));
+      }
     }
   });
 }
@@ -446,31 +671,51 @@ export function weaponRoughnessMapMetal(worn = false): THREE.DataTexture {
 /** Metalness map for metal — polished = high */
 export function weaponMetalnessMapMetal(worn = false): THREE.DataTexture {
   const key = worn ? 'pbr-metalness-metal-worn' : 'pbr-metalness-metal';
-  return getOrCreatePBRMap(key, 64, 64, (data, w, h) => {
+  return getOrCreatePBRMap(key, 128, 128, (data, w, h) => {
     const rnd = seededRandom(worn ? 71 : 13);
-    for (let i = 0; i < w * h; i++) {
-      let v = 220 + rnd() * 35; // High metalness
-      if (rnd() < (worn ? 0.12 : 0.04)) v -= 60 + rnd() * 80; // Scratched area
-      data[i] = Math.max(0, Math.min(255, Math.floor(v)));
+    for (let y = 0; y < h; y++) {
+      for (let x = 0; x < w; x++) {
+        const i = y * w + x;
+        let v = 220 + rnd() * 35;
+        // Scratched areas lose metalness
+        if (rnd() < (worn ? 0.1 : 0.03)) v -= 50 + rnd() * 70;
+        // Oxidation spots (low metalness)
+        if (worn && rnd() < 0.04) v -= 80 + rnd() * 40;
+        data[i] = Math.max(0, Math.min(255, Math.floor(v)));
+      }
     }
   });
 }
 
 /** Roughness for wood (moderate, varnish sheen) */
 export function weaponRoughnessMapWood(): THREE.DataTexture {
-  return getOrCreatePBRMap('pbr-roughness-wood', 64, 64, (data, w, h) => {
+  return getOrCreatePBRMap('pbr-roughness-wood', 128, 128, (data, w, h) => {
     const rnd = seededRandom(29);
-    for (let i = 0; i < w * h; i++) {
-      const v = 120 + rnd() * 80;
-      data[i] = Math.min(255, Math.floor(v));
+    for (let y = 0; y < h; y++) {
+      // Grain-aligned roughness variation
+      const grainRough = Math.sin(y * 0.5) * 15;
+      for (let x = 0; x < w; x++) {
+        const i = y * w + x;
+        let v = 115 + rnd() * 70 + grainRough;
+        // Varnish pools (smoother)
+        if (rnd() < 0.05) v -= 25 + rnd() * 20;
+        data[i] = Math.max(0, Math.min(255, Math.floor(v)));
+      }
     }
   });
 }
 
-/** Metalness for wood (low — dielectric) */
+/** Metalness for wood (low — dielectric, with varnish sheen) */
 export function weaponMetalnessMapWood(): THREE.DataTexture {
-  return getOrCreatePBRMap('pbr-metalness-wood', 64, 64, (data) => {
-    for (let i = 0; i < data.length; i++) data[i] = 15;
+  return getOrCreatePBRMap('pbr-metalness-wood', 128, 128, (data, w, h) => {
+    const rnd = seededRandom(31);
+    for (let i = 0; i < w * h; i++) {
+      // Mostly dielectric with slight varnish reflection
+      let v = 12 + rnd() * 8;
+      // Varnished spots have slight metalness (gloss)
+      if (rnd() < 0.06) v += 10 + rnd() * 12;
+      data[i] = Math.min(255, Math.floor(v));
+    }
   });
 }
 

@@ -159,6 +159,38 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - Variable-rate rendering: Three.js renders at browser's refresh rate
 - Input handling: key press state tracked per-frame, mouse deltas reset after each frame
 
+### Geometry & UV Mapping
+
+**CRITICAL**: Always use geometry utility functions from `src/core/geometry-utils.ts` to prevent texture stretching/warping.
+
+- **Never use Three.js primitives directly** for textured surfaces:
+  - ❌ `new THREE.BoxGeometry(...)`
+  - ❌ `new THREE.CylinderGeometry(...)`
+  - ❌ `new THREE.PlaneGeometry(...)`
+  - ✅ `createSubdividedBox(...)`
+  - ✅ `createSubdividedCylinder(...)`
+  - ✅ `createSubdividedPlane(...)`
+
+- **How it works**:
+  - Automatically subdivides geometry based on dimensions (TEXTURE_SCALE = 256 pixels/unit)
+  - Calculates UVs using vertex normals to detect face orientation
+  - Tiles textures based on world-space size: 0.5 units = one full texture repeat
+  - Cylinders tile horizontally by circumference, vertically by height
+
+- **Applied throughout**:
+  - Weapons: all weapon parts (`weapon-mesh-factory.ts`)
+  - Levels: walls, floors, ceilings (`level-builder.ts`)
+  - Props: crates, barrels (`level-builder.ts` buildProp)
+  - Doors: panels, frames (`door-system.ts`)
+  - Pickups: all item meshes (`pickup-system.ts`)
+
+- **Documentation**: See `docs/UV_MAPPING_GUIDE.md` for comprehensive guide
+
+- **Exceptions** (when primitives are OK):
+  - Very small geometry (< 0.05 units) where stretching is imperceptible
+  - Untextured geometry (solid colors, emissive materials)
+  - Temporary debug visualization
+
 ## File Organization
 
 ```
