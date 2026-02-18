@@ -52,8 +52,12 @@ export class InputManager {
     document.addEventListener('mouseup', this.onMouseUp);
     document.addEventListener('wheel', this.onWheel, { passive: false });
     document.addEventListener('pointerlockchange', this.onPointerLockChange);
-    document.addEventListener('contextmenu', (e) => e.preventDefault());
+    document.addEventListener('contextmenu', this.onContextMenu);
   }
+
+  private onContextMenu = (e: MouseEvent): void => {
+    e.preventDefault();
+  };
 
   /** Register mobile input provider. When provided and active, its state is merged. */
   setMobileInputProvider(provider: (() => MobileInputState | null) | null): void {
@@ -313,6 +317,7 @@ export class InputManager {
     document.removeEventListener('mouseup', this.onMouseUp);
     document.removeEventListener('wheel', this.onWheel);
     document.removeEventListener('pointerlockchange', this.onPointerLockChange);
+    document.removeEventListener('contextmenu', this.onContextMenu);
     this.setMobileInputProvider(null);
   }
 }

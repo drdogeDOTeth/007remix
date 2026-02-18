@@ -21,6 +21,11 @@ export class TriggerSystem {
     this.triggers.set(def.id, { def, fired: false });
   }
 
+  /** Clear all triggers (for level switch). */
+  clear(): void {
+    this.triggers.clear();
+  }
+
   update(): void {
     const pos = this.getPlayerPos();
     const player = new THREE.Vector3(pos.x, pos.y, pos.z);

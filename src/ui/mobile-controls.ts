@@ -49,6 +49,16 @@ export class MobileControls {
 
   private justPressedThisFrame: string[] = [];
 
+  /** Stored handlers for document listeners (must remove in dispose) */
+  private moveStickOnMove: ((e: TouchEvent | MouseEvent) => void) | null = null;
+  private moveStickOnEnd: ((e?: TouchEvent | MouseEvent) => void) | null = null;
+  private moveStickBoundTouchend: ((e: TouchEvent) => void) | null = null;
+  private moveStickBoundMouseup: (() => void) | null = null;
+  private lookZoneOnMove: ((e: TouchEvent | MouseEvent) => void) | null = null;
+  private lookZoneOnEnd: ((e?: TouchEvent | MouseEvent) => void) | null = null;
+  private lookZoneBoundTouchend: ((e: TouchEvent) => void) | null = null;
+  private lookZoneBoundMouseup: ((e: MouseEvent) => void) | null = null;
+
   constructor() {
     this.container = document.createElement('div');
     this.container.id = 'mobile-controls';
@@ -242,13 +252,17 @@ export class MobileControls {
         knob.style.transform = 'translate(-50%, -50%)';
       }
     };
+    this.moveStickOnMove = onMove;
+    this.moveStickOnEnd = onEnd;
+    this.moveStickBoundTouchend = (e: TouchEvent) => onEnd(e);
+    this.moveStickBoundMouseup = () => onEnd();
     this.moveStickEl.addEventListener('touchstart', onStart, { passive: false });
     document.addEventListener('touchmove', onMove, { passive: false });
-    document.addEventListener('touchend', (e) => onEnd(e));
-    document.addEventListener('touchcancel', (e) => onEnd(e));
+    document.addEventListener('touchend', this.moveStickBoundTouchend!);
+    document.addEventListener('touchcancel', this.moveStickBoundTouchend!);
     this.moveStickEl.addEventListener('mousedown', onStart);
     document.addEventListener('mousemove', onMove);
-    document.addEventListener('mouseup', () => onEnd());
+    document.addEventListener('mouseup', this.moveStickBoundMouseup!);
   }
 
   private setupLookZone(): void {
@@ -295,13 +309,17 @@ export class MobileControls {
       this.lookTouchActive = false;
       this.lookTouchId = null;
     };
+    this.lookZoneOnMove = onMove;
+    this.lookZoneOnEnd = onEnd;
+    this.lookZoneBoundTouchend = (e: TouchEvent) => onEnd(e);
+    this.lookZoneBoundMouseup = (e: MouseEvent) => onEnd(e);
     this.lookZoneEl.addEventListener('touchstart', onStart, { passive: false });
     document.addEventListener('touchmove', onMove, { passive: false });
-    document.addEventListener('touchend', (e) => onEnd(e));
-    document.addEventListener('touchcancel', (e) => onEnd(e));
+    document.addEventListener('touchend', this.lookZoneBoundTouchend!);
+    document.addEventListener('touchcancel', this.lookZoneBoundTouchend!);
     this.lookZoneEl.addEventListener('mousedown', onStart);
     document.addEventListener('mousemove', onMove);
-    document.addEventListener('mouseup', (e) => onEnd(e));
+    document.addEventListener('mouseup', this.lookZoneBoundMouseup!);
   }
 
   private getLookZoneTouchPos(e: TouchEvent | MouseEvent): { x: number; y: number } | null {
@@ -446,5 +464,41 @@ export class MobileControls {
 
   static isSupported(): boolean {
     return isMobileDevice();
+  }
+
+  dispose(): void {
+    if (this.moveStickOnMove) {
+      document.removeEventListener('touchmove', this.moveStickOnMove as EventListener);
+      document.removeEventListener('mousemove', this.moveStickOnMove as EventListener);
+      this.moveStickOnMove = null;
+    }
+    if (this.moveStickBoundTouchend) {
+      document.removeEventListener('touchend', this.moveStickBoundTouchend);
+      document.removeEventListener('touchcancel', this.moveStickBoundTouchend);
+      this.moveStickBoundTouchend = null;
+    }
+    if (this.moveStickBoundMouseup) {
+      document.removeEventListener('mouseup', this.moveStickBoundMouseup);
+      this.moveStickBoundMouseup = null;
+    }
+    if (this.lookZoneOnMove) {
+      document.removeEventListener('touchmove', this.lookZoneOnMove as EventListener);
+      document.removeEventListener('mousemove', this.lookZoneOnMove as EventListener);
+      this.lookZoneOnMove = null;
+    }
+    if (this.lookZoneBoundTouchend) {
+      document.removeEventListener('touchend', this.lookZoneBoundTouchend);
+      document.removeEventListener('touchcancel', this.lookZoneBoundTouchend);
+      this.lookZoneBoundTouchend = null;
+    }
+    if (this.lookZoneBoundMouseup) {
+      document.removeEventListener('mouseup', this.lookZoneBoundMouseup);
+      this.lookZoneBoundMouseup = null;
+    }
+    this.moveStickOnEnd = null;
+    this.lookZoneOnEnd = null;
+    if (this.container.parentNode) {
+      this.container.parentNode.removeChild(this.container);
+    }
   }
 }

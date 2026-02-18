@@ -139,14 +139,10 @@ async function init(): Promise<void> {
   const screenGlitch = new ScreenGlitch();
   screenGlitch.start();
 
-  // Helper to hide CCTV background
+  // Helper to hide CCTV background and dispose resources (resize listeners, WebGL, etc.)
   const hideCCTVBackground = () => {
-    const cctvCanvas = document.getElementById('cctv-render-canvas');
-    if (cctvCanvas) {
-      cctvCanvas.style.display = 'none';
-    }
-    cctvBackground.stop();
-    screenGlitch.stop();
+    cctvBackground.dispose();
+    screenGlitch.dispose();
   };
 
   // Quick Play: single room, click to start

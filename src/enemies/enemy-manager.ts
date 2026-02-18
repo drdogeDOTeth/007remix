@@ -344,6 +344,21 @@ export class EnemyManager {
     return this._repulsion;
   }
 
+  /** Clear all enemies (for level switch). Removes from scene, physics, disposes models. */
+  clear(): void {
+    for (const enemy of this.enemies) {
+      this.scene.remove(enemy.group);
+      this.removeEnemyPhysics(enemy);
+      if ('disposeRagdoll' in enemy.model && typeof (enemy.model as any).disposeRagdoll === 'function') {
+        (enemy.model as any).disposeRagdoll();
+      }
+      if ('dispose' in enemy.model && typeof (enemy.model as any).dispose === 'function') {
+        (enemy.model as any).dispose();
+      }
+    }
+    this.enemies = [];
+  }
+
   /** Remove an enemy's physics body and collider so the player can walk through corpses. Call when enemy dies. */
   removeEnemyPhysics(enemy: EnemyBase): void {
     try {

@@ -116,10 +116,19 @@ export class LightPool {
 
   /**
    * Dispose of all lights in the pool.
+   * PointLight has no dispose() — remove from parent, reset state, clear references.
    */
   dispose(): void {
-    this.availableLights.forEach((light) => light.dispose());
-    this.activeLights.forEach((_, light) => light.dispose());
+    const allLights = [
+      ...this.availableLights,
+      ...Array.from(this.activeLights.keys()),
+    ];
+    for (const light of allLights) {
+      if (light.parent) light.parent.remove(light);
+      light.intensity = 0;
+      light.visible = false;
+      light.position.set(0, 0, 0);
+    }
     this.availableLights = [];
     this.activeLights.clear();
   }

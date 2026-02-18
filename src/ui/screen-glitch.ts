@@ -10,6 +10,7 @@ export class ScreenGlitch {
   private lastGlitchTime = 0;
   private glitchDuration = 0;
   private isGlitching = false;
+  private resizeHandler: (() => void) | null = null;
 
   constructor() {
     this.createOverlay();
@@ -34,13 +35,14 @@ export class ScreenGlitch {
 
     this.ctx = this.overlayCanvas.getContext('2d');
 
-    // Handle resize
-    window.addEventListener('resize', () => {
+    // Handle resize — store ref so we can remove in dispose()
+    this.resizeHandler = () => {
       if (this.overlayCanvas) {
         this.overlayCanvas.width = window.innerWidth;
         this.overlayCanvas.height = window.innerHeight;
       }
-    });
+    };
+    window.addEventListener('resize', this.resizeHandler);
   }
 
   private drawStatic(): void {
@@ -129,9 +131,14 @@ export class ScreenGlitch {
    */
   dispose(): void {
     this.stop();
+    if (this.resizeHandler) {
+      window.removeEventListener('resize', this.resizeHandler);
+      this.resizeHandler = null;
+    }
     if (this.overlayCanvas) {
       this.overlayCanvas.remove();
       this.overlayCanvas = null;
     }
+    this.ctx = null;
   }
 }

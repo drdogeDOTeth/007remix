@@ -40,4 +40,10 @@ export class ObjectiveSystem {
   get allComplete(): boolean {
     return this.objectives.length > 0 && this.objectives.every((o) => o.completed);
   }
+
+  /** Clear all objectives (for level switch). */
+  clear(): void {
+    this.objectives = [];
+    this.completedIds.clear();
+  }
 }

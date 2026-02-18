@@ -161,6 +161,25 @@ export class DestructibleSystem {
     return prop;
   }
 
+  /** Clear all props, debris, and barrel flashes (for level switch). */
+  clear(): void {
+    for (const prop of this.props.slice()) {
+      this.removeSilent(prop);
+    }
+    for (const d of this.debris) {
+      this.scene.remove(d.mesh);
+    }
+    this.debris = [];
+    for (const bf of this.barrelFlashes) {
+      this.scene.remove(bf.light);
+      globalLightPool.release(bf.light);
+      this.scene.remove(bf.flash);
+      bf.geo.dispose();
+      bf.mat.dispose();
+    }
+    this.barrelFlashes = [];
+  }
+
   /** Find prop by Rapier collider handle. */
   getByColliderHandle(handle: number): DestructibleProp | null {
     for (const p of this.props) {
@@ -214,7 +233,7 @@ export class DestructibleSystem {
    * Used when syncing destroyed state for new joiners.
    */
   private removeSilent(prop: DestructibleProp): void {
-    this.scene.remove(prop.mesh);
+    prop.mesh.parent?.remove(prop.mesh);
     prop.mesh.traverse((child) => {
       if (child instanceof THREE.Mesh) {
         child.geometry.dispose();
@@ -280,8 +299,8 @@ export class DestructibleSystem {
     // Notify for networking (before removal)
     this.onPropDestroyedFull?.(prop);
 
-    // Remove visual
-    this.scene.remove(prop.mesh);
+    // Remove visual (use parent — mesh may be under levelGroup, not scene)
+    prop.mesh.parent?.remove(prop.mesh);
     // Dispose geometry+material on the mesh
     prop.mesh.traverse((child) => {
       if (child instanceof THREE.Mesh) {

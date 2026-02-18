@@ -126,6 +126,7 @@ export class Game {
   private objectivesDisplay: ObjectivesDisplay | null = null;
   private inventoryScreen: InventoryScreen;
   private weaponPreviewMeshCache = new Map<string, THREE.Group>();
+  private readonly MAX_WEAPON_PREVIEW_CACHE = 12;
 
   private flashlight: THREE.SpotLight;
   private flashlightOn = false;
@@ -160,6 +161,8 @@ export class Game {
   private missionElapsed = 0;
   private levelName = '';
   private navMesh: NavMesh | null = null;
+  /** Level geometry container for disposal on level switch. */
+  private levelGroup: THREE.Group | null = null;
 
   // Player spawn position (for single-player respawn)
   private playerSpawnPosition = { x: 0, y: 0.5, z: 0 };
@@ -749,47 +752,46 @@ export class Game {
     this.loop = new GameLoop((dt) => this.tick(dt));
 
     // Event listeners
-    this.events.on('weapon:fired', (data: any) => {
-      this.hud.flashCrosshairFire();
-
-      // Send weapon fire event to server in multiplayer mode (Phase 3)
-      if (this.networkMode === 'client' && this.networkManager) {
-        // Check if we hit a remote player
-        let hitPlayerId: string | undefined;
-        if (data.hit && data.hit.collider) {
-          const remotePlayer = this.remotePlayerManager?.getPlayerByCollider(data.hit.collider);
-          if (remotePlayer) {
-            hitPlayerId = remotePlayer.id;
-            console.log(`[Game] Hit remote player: ${hitPlayerId}`);
-          }
-        }
-
-        const weaponType = getCanonicalWeaponType(this.weaponManager.currentWeapon.stats.name);
-
-        console.log(`[Game] Sending weapon fire: ${weaponType}, hitPlayerId: ${hitPlayerId ?? 'none'}`);
-
-        this.networkManager.sendWeaponFire({
-          playerId: this.networkManager.playerId!,
-          timestamp: performance.now(),
-          weaponType,
-          origin: {
-            x: data.position.x,
-            y: data.position.y,
-            z: data.position.z,
-          },
-          direction: {
-            x: data.direction.x,
-            y: data.direction.y,
-            z: data.direction.z,
-          },
-          hitPlayerId,
-          hitPoint: data.hit?.point
-            ? { x: data.hit.point.x, y: data.hit.point.y, z: data.hit.point.z }
-            : undefined,
-        });
-      }
-    });
+    this.events.on('weapon:fired', this.onWeaponFired);
   }
+
+  private onWeaponFired = (data: any): void => {
+    this.hud.flashCrosshairFire();
+
+    if (this.networkMode === 'client' && this.networkManager) {
+      let hitPlayerId: string | undefined;
+      if (data.hit && data.hit.collider) {
+        const remotePlayer = this.remotePlayerManager?.getPlayerByCollider(data.hit.collider);
+        if (remotePlayer) {
+          hitPlayerId = remotePlayer.id;
+          console.log(`[Game] Hit remote player: ${hitPlayerId}`);
+        }
+      }
+
+      const weaponType = getCanonicalWeaponType(this.weaponManager.currentWeapon.stats.name);
+      console.log(`[Game] Sending weapon fire: ${weaponType}, hitPlayerId: ${hitPlayerId ?? 'none'}`);
+
+      this.networkManager.sendWeaponFire({
+        playerId: this.networkManager.playerId!,
+        timestamp: performance.now(),
+        weaponType,
+        origin: {
+          x: data.position.x,
+          y: data.position.y,
+          z: data.position.z,
+        },
+        direction: {
+          x: data.direction.x,
+          y: data.direction.y,
+          z: data.direction.z,
+        },
+        hitPlayerId,
+        hitPoint: data.hit?.point
+          ? { x: data.hit.point.x, y: data.hit.point.y, z: data.hit.point.z }
+          : undefined,
+      });
+    }
+  };
 
   /** Show mission briefing (level mode only). Call before start(). */
   showBriefing(level: LevelSchema): void {
@@ -804,6 +806,9 @@ export class Game {
   /** Build level from schema (level mode). Call after showBriefing → user clicks Start. */
   loadLevel(level: LevelSchema): void {
     if (!this.doorSystem || !this.triggerSystem || !this.objectiveSystem) return;
+
+    this.disposeLevel();
+
     this.levelName = level.name;
     this.missionElapsed = 0;
 
@@ -813,6 +818,9 @@ export class Game {
       prevPropDestroyed?.(prop);
       this.navMesh?.unblockAt(prop.position.x, prop.position.z);
     };
+
+    this.levelGroup = new THREE.Group();
+    this.scene.add(this.levelGroup);
 
     buildLevel(level, {
       scene: this.scene,
@@ -828,7 +836,34 @@ export class Game {
         this.player.setPosition(x, y, z);
       },
       navMesh: this.navMesh ?? undefined,
+      levelGroup: this.levelGroup,
     });
+  }
+
+  /** Dispose previous level before loading a new one. Clears systems and level geometry. */
+  private disposeLevel(): void {
+    this.doorSystem?.clear();
+    this.triggerSystem?.clear();
+    this.objectiveSystem?.clear();
+    this.pickupSystem?.clear();
+    this.destructibleSystem?.clear();
+    this.enemyManager?.clear();
+    this.navMesh = null;
+
+    if (this.levelGroup) {
+      this.scene.remove(this.levelGroup);
+      this.levelGroup.traverse((child) => {
+        if (child instanceof THREE.Mesh) {
+          if (child.geometry) child.geometry.dispose();
+          const mat = child.material;
+          if (mat) {
+            if (Array.isArray(mat)) mat.forEach((m) => m.dispose());
+            else (mat as THREE.Material).dispose();
+          }
+        }
+      });
+      this.levelGroup = null;
+    }
   }
 
   start(): void {
@@ -876,8 +911,18 @@ export class Game {
     this.paused = false;
     this.loop.stop();
     stopMusic();
+    this.dispose();
     // Reload the page to cleanly reset everything (physics, scene, etc.)
     window.location.reload();
+  }
+
+  /** Teardown listeners and resources before reload or level switch. */
+  dispose(): void {
+    this.canvas.removeEventListener('click', this.onCanvasClick);
+    this.events.off('weapon:fired', this.onWeaponFired);
+    this.input.dispose();
+    this.mobileControls?.dispose();
+    this.networkManager?.dispose();
   }
 
   /**
@@ -1121,6 +1166,14 @@ export class Game {
             let mesh = this.weaponPreviewMeshCache.get(key);
             if (!mesh) {
               mesh = this.weaponManager.getPreviewMesh(type, skin);
+              if (this.weaponPreviewMeshCache.size >= this.MAX_WEAPON_PREVIEW_CACHE) {
+                const firstKey = this.weaponPreviewMeshCache.keys().next().value;
+                if (firstKey !== undefined) this.weaponPreviewMeshCache.delete(firstKey);
+              }
+              this.weaponPreviewMeshCache.set(key, mesh);
+            } else {
+              // Move to end (LRU: keep recently used)
+              this.weaponPreviewMeshCache.delete(key);
               this.weaponPreviewMeshCache.set(key, mesh);
             }
             mesh.rotation.y = rotationY;

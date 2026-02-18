@@ -180,6 +180,23 @@ export class DoorSystem {
     });
   }
 
+  /** Clear all doors (for level switch). Removes from scene, colliders, disposes materials. */
+  clear(): void {
+    for (const state of this.doors.values()) {
+      this.scene.remove(state.mesh);
+      if (state.collider) this.physics.removeCollider(state.collider, true);
+      state.mesh.traverse((child) => {
+        if ('geometry' in child && child.geometry) child.geometry.dispose();
+        if ('material' in child && child.material) {
+          const m = child.material as THREE.Material;
+          if (Array.isArray(m)) m.forEach((mat) => mat.dispose());
+          else m.dispose();
+        }
+      });
+    }
+    this.doors.clear();
+  }
+
   /** Unlock a door by id (e.g. from trigger). */
   unlockDoor(doorId: string): void {
     const state = this.doors.get(doorId);

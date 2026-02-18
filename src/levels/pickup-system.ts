@@ -64,6 +64,14 @@ export class PickupSystem {
     p.keyId = keyId;
   }
 
+  /** Clear all pickups (for level switch). */
+  clear(): void {
+    for (const p of this.pickups) {
+      this.scene.remove(p.mesh);
+    }
+    this.pickups = [];
+  }
+
   spawn(type: PickupType, x: number, y: number, z: number, amount: number): void {
     const baseY = y + PICKUP_FLOOR_OFFSET;
     const group = new THREE.Group();
@@ -121,7 +129,7 @@ export class PickupSystem {
       const dist = playerPos.distanceTo(pickup.mesh.position);
       if (dist < COLLECT_RADIUS) {
         pickup.collected = true;
-        if (pickup.light) pickup.light.dispose();
+        // Light is child of pickup.mesh — scene.remove removes it; PointLight has no dispose()
         this.scene.remove(pickup.mesh);
         this.onPickupCollected?.(pickup.type, pickup.amount, pickup.keyId);
       }

@@ -68,6 +68,8 @@ export interface LevelBuilderDeps {
   setPlayerPosition: (x: number, y: number, z: number) => void;
   /** Navmesh for AI pathfinding. Built from level schema when provided. */
   navMesh?: NavMesh;
+  /** Level geometry container. When provided, lights and static geometry are added here for disposal on level switch. */
+  levelGroup?: THREE.Group;
 }
 
 /**
@@ -84,7 +86,10 @@ export function buildLevel(level: LevelSchema, deps: LevelBuilderDeps): void {
     pickupSystem,
     setPlayerPosition,
     navMesh,
+    levelGroup,
   } = deps;
+
+  const levelContainer = levelGroup ?? scene;
 
   // Lights — ambient + hemisphere, point lights per room
   const hasOutdoor = level.rooms.some((r) => r.outdoor);
@@ -95,13 +100,13 @@ export function buildLevel(level: LevelSchema, deps: LevelBuilderDeps): void {
   const ambientColor = hasOutdoor ? 0xaaccdd : isLab ? 0x6a8a9a : isWasteland ? 0x7ea4ad : 0x8899aa;
   const ambientIntensity = hasOutdoor ? 2.2 : isLab ? 1.6 : isWasteland ? 1.45 : 1.8;
   const ambient = new THREE.AmbientLight(ambientColor, ambientIntensity);
-  scene.add(ambient);
+  levelContainer.add(ambient);
 
   const hemiSky = hasOutdoor ? 0xeef5ff : isLab ? 0xb8d4e8 : isWasteland ? 0xb8e4eb : 0xddeeff;
   const hemiGround = hasOutdoor ? 0xccdddd : isLab ? 0x2a3036 : isWasteland ? 0x1f2623 : 0x445544;
   const hemiIntensity = hasOutdoor ? 1.1 : isLab ? 0.9 : isWasteland ? 0.95 : 0.9;
   const hemi = new THREE.HemisphereLight(hemiSky, hemiGround, hemiIntensity);
-  scene.add(hemi);
+  levelContainer.add(hemi);
 
   for (const room of level.rooms) {
     const [lx, ly, lz] = [room.x, room.y + 1.5, room.z];
@@ -113,7 +118,7 @@ export function buildLevel(level: LevelSchema, deps: LevelBuilderDeps): void {
     pointLight.position.set(lx, ly, lz);
     pointLight.castShadow = true;
     pointLight.shadow.mapSize.set(512, 512);
-    scene.add(pointLight);
+    levelContainer.add(pointLight);
   }
 
   // Materials — procedural textures
@@ -222,10 +227,10 @@ export function buildLevel(level: LevelSchema, deps: LevelBuilderDeps): void {
   const indoorRooms = level.rooms.filter((r) => !r.outdoor);
   const outdoorRooms = level.rooms.filter((r) => r.outdoor);
   for (const room of indoorRooms) {
-    buildRoom(room, level.doors, scene, physics, floorMat, wallMat, ceilingMat, null, isPalace, isWasteland, isLab);
+    buildRoom(room, level.doors, levelContainer, physics, floorMat, wallMat, ceilingMat, null, isPalace, isWasteland, isLab);
   }
   for (const room of outdoorRooms) {
-    buildRoom(room, level.doors, scene, physics, floorMat, wallMat, ceilingMat, indoorRooms, isPalace, isWasteland, isLab);
+    buildRoom(room, level.doors, levelContainer, physics, floorMat, wallMat, ceilingMat, indoorRooms, isPalace, isWasteland, isLab);
   }
 
   if (isPalace) {
@@ -240,13 +245,13 @@ export function buildLevel(level: LevelSchema, deps: LevelBuilderDeps): void {
   // Props (destructible)
   if (level.props) {
     for (const prop of level.props) {
-      buildProp(prop, scene, physics, deps.destructibleSystem);
+      buildProp(prop, levelContainer, physics, deps.destructibleSystem);
     }
   }
 
   // Lab props (glass tanks, tubes with glowing fluid)
   if (level.labProps) {
-    buildLabProps(level.labProps, scene, physics);
+    buildLabProps(level.labProps, levelContainer, physics);
   }
 
   // Player spawn
@@ -280,7 +285,7 @@ export function buildLevel(level: LevelSchema, deps: LevelBuilderDeps): void {
   for (const t of level.triggers) {
     triggerSystem.addTrigger(t);
     if (t.onEnter === 'mission:complete') {
-      buildExtractionMarker(scene, t.x, t.y, t.z);
+      buildExtractionMarker(levelContainer, t.x, t.y, t.z);
     }
   }
 
