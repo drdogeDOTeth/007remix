@@ -3,12 +3,17 @@
  * These types define the structure of messages exchanged between client and server.
  */
 
+/** Multiplayer map identifier. */
+export type MultiplayerMapId = 'crossfire' | 'wasteland' | 'custom';
+
 /**
  * Message sent when a player connects to the server.
  */
 export interface PlayerConnectedEvent {
   playerId: string;
   username: string;
+  /** Map selected in lobby. Server uses for spawn points. */
+  mapId?: MultiplayerMapId;
 }
 
 /**
@@ -55,6 +60,8 @@ export interface DestroyedDestructible {
  */
 export interface GameStateSnapshot {
   timestamp: number;
+  /** Map this snapshot is for. Client ignores if it doesn't match local map. */
+  mapId?: 'crossfire' | 'wasteland' | 'custom';
   players: Record<string, PlayerStateUpdate>;
   destroyedDestructibles?: DestroyedDestructible[]; // For new joiners + sync
 }

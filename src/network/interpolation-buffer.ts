@@ -100,8 +100,8 @@ export class InterpolationBuffer {
     const elapsed = targetTime - from.timestamp;
     let t = duration > 0 ? elapsed / duration : 0;
 
-    // Clamp t to prevent extrapolation artifacts
-    t = Math.max(0, Math.min(1.2, t)); // Allow slight extrapolation for smoother motion
+    // Clamp t to 1.0 — extrapolation causes visual/hitbox drift over time
+    t = Math.max(0, Math.min(1, t));
 
     // Linearly interpolate position and rotation
     return {

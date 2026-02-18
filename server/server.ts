@@ -1,6 +1,12 @@
 import { createServer } from 'http';
 import { Server as SocketIOServer } from 'socket.io';
 import { GameRoom } from './game-room.js';
+import type { MultiplayerMapId } from '../src/levels/multiplayer-arena.js';
+
+const VALID_MAP_IDS: MultiplayerMapId[] = ['crossfire', 'wasteland', 'custom'];
+
+/** Socket.IO room name prefix to avoid collisions */
+const ROOM_PREFIX = 'map:';
 
 /**
  * Port to run the server on.
@@ -9,12 +15,13 @@ const PORT = process.env.PORT || 3001;
 
 /**
  * Main game server using Socket.IO.
- * Handles player connections and manages game rooms.
+ * Supports map-specific rooms so players only see others in the same level.
  */
 class GameServer {
   private httpServer;
   private io: SocketIOServer;
-  private gameRoom: GameRoom;
+  private gameRooms = new Map<MultiplayerMapId, GameRoom>();
+  private socketToMapId = new Map<string, MultiplayerMapId>();
 
   constructor() {
     // Create HTTP server
@@ -28,16 +35,25 @@ class GameServer {
       },
     });
 
-    // Create a single game room for now (Phase 1)
-    // In Phase 4, we'll support multiple rooms
-    this.gameRoom = new GameRoom();
-
-    // Set up broadcast callback
-    this.gameRoom.onBroadcast = (eventName, data) => {
-      this.io.emit(eventName, data);
-    };
-
     this.setupSocketHandlers();
+  }
+
+  private roomName(mapId: MultiplayerMapId): string {
+    return ROOM_PREFIX + mapId;
+  }
+
+  private getOrCreateRoom(mapId: MultiplayerMapId): GameRoom {
+    let room = this.gameRooms.get(mapId);
+    if (!room) {
+      room = new GameRoom();
+      const roomName = this.roomName(mapId);
+      room.onBroadcast = (eventName, data) => {
+        this.io.to(roomName).emit(eventName, data);
+      };
+      this.gameRooms.set(mapId, room);
+      console.log(`[Server] Created room for map: ${mapId} (${roomName})`);
+    }
+    return room;
   }
 
   /**
@@ -47,67 +63,105 @@ class GameServer {
     this.io.on('connection', (socket) => {
       console.log(`[Server] Client connected: ${socket.id}`);
 
-      // Player connected event
-      socket.on('player:connected', (data: { playerId: string; username: string }) => {
-        this.gameRoom.addPlayer(socket.id, data.username);
+      // Player connected event - join map-specific room
+      socket.on('player:connected', (data: { playerId: string; username: string; mapId?: string }) => {
+        const mapId = (VALID_MAP_IDS.includes(data.mapId as MultiplayerMapId) ? data.mapId : 'crossfire') as MultiplayerMapId;
+        const roomName = this.roomName(mapId);
+        this.socketToMapId.set(socket.id, mapId);
+        socket.join(roomName);
 
-        // Broadcast to all clients that a new player joined
-        this.io.emit('player:connected', {
+        const gameRoom = this.getOrCreateRoom(mapId);
+        gameRoom.addPlayer(socket.id, data.username, mapId);
+
+        console.log(`[Server] ${data.username} joined ${mapId} (room: ${roomName})`);
+
+        // Broadcast only to others in this map's room
+        this.io.to(roomName).emit('player:connected', {
           playerId: socket.id,
           username: data.username,
         });
       });
 
-      // Player state update
+      // Player state update - route to correct room
       socket.on('player:state:update', (state: any) => {
-        this.gameRoom.updatePlayerState(socket.id, state);
+        const mapId = this.socketToMapId.get(socket.id);
+        if (mapId) {
+          this.gameRooms.get(mapId)?.updatePlayerState(socket.id, state);
+        }
       });
 
       // Weapon fire event (Phase 3)
       socket.on('weapon:fire', (event: any) => {
-        console.log(`[Server] Received weapon:fire event from ${socket.id}:`, event);
-        this.gameRoom.handleWeaponFire(event);
+        const mapId = this.socketToMapId.get(socket.id);
+        if (mapId) {
+          this.gameRooms.get(mapId)?.handleWeaponFire(event);
+        }
       });
 
       // Grenade throw event (Phase 5)
       socket.on('grenade:throw', (event: any) => {
-        this.gameRoom.handleGrenadeThrow(event);
+        const mapId = this.socketToMapId.get(socket.id);
+        if (mapId) {
+          this.gameRooms.get(mapId)?.handleGrenadeThrow(event);
+        }
       });
 
       // Grenade explosion event (Phase 5)
       socket.on('grenade:explosion', (event: any) => {
-        this.gameRoom.handleGrenadeExplosion(event);
+        const mapId = this.socketToMapId.get(socket.id);
+        if (mapId) {
+          this.gameRooms.get(mapId)?.handleGrenadeExplosion(event);
+        }
       });
 
-      // Gas damage event - client reports when in gas cloud
+      // Gas damage event
       socket.on('player:gas:damage', (event: any) => {
-        this.gameRoom.handleGasDamage(socket.id, event);
+        const mapId = this.socketToMapId.get(socket.id);
+        if (mapId) {
+          this.gameRooms.get(mapId)?.handleGasDamage(socket.id, event);
+        }
       });
 
-      // Enemy damage event - client reports when enemy NPC hits player
+      // Enemy damage event
       socket.on('player:enemy:damage', (event: any) => {
-        this.gameRoom.handleEnemyDamage(socket.id, event);
+        const mapId = this.socketToMapId.get(socket.id);
+        if (mapId) {
+          this.gameRooms.get(mapId)?.handleEnemyDamage(socket.id, event);
+        }
       });
 
       // Flashlight toggle event (Phase 5)
       socket.on('flashlight:toggle', (event: any) => {
-        this.gameRoom.handleFlashlightToggle(event);
+        const mapId = this.socketToMapId.get(socket.id);
+        if (mapId) {
+          this.gameRooms.get(mapId)?.handleFlashlightToggle(event);
+        }
       });
 
       // Destructible destroyed event (Phase 5)
       socket.on('destructible:destroyed', (event: any) => {
-        this.gameRoom.handleDestructibleDestroyed(event);
+        const mapId = this.socketToMapId.get(socket.id);
+        if (mapId) {
+          this.gameRooms.get(mapId)?.handleDestructibleDestroyed(event);
+        }
       });
 
       // Player disconnected
       socket.on('disconnect', () => {
+        const mapId = this.socketToMapId.get(socket.id);
+        if (mapId) {
+          this.gameRooms.get(mapId)?.removePlayer(socket.id);
+          this.io.to(this.roomName(mapId)).emit('player:disconnected', { playerId: socket.id });
+          this.socketToMapId.delete(socket.id);
+          // Clean up empty rooms (optional - keeps room for rejoins)
+          const room = this.gameRooms.get(mapId);
+          if (room && room.playerCount === 0) {
+            room.dispose();
+            this.gameRooms.delete(mapId);
+            console.log(`[Server] Disposed empty room: ${mapId}`);
+          }
+        }
         console.log(`[Server] Client disconnected: ${socket.id}`);
-        this.gameRoom.removePlayer(socket.id);
-
-        // Broadcast to all clients that player left
-        this.io.emit('player:disconnected', {
-          playerId: socket.id,
-        });
       });
     });
   }
@@ -126,7 +180,11 @@ class GameServer {
    * Stop the server.
    */
   stop(): void {
-    this.gameRoom.dispose();
+    for (const room of this.gameRooms.values()) {
+      room.dispose();
+    }
+    this.gameRooms.clear();
+    this.socketToMapId.clear();
     this.io.close();
     this.httpServer.close();
   }

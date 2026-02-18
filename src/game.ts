@@ -77,8 +77,8 @@ export interface GameOptions {
   levelMode?: boolean;
   networkMode?: 'local' | 'client';
   networkManager?: NetworkManager;
-  /** Multiplayer map to load. Default: 'crossfire'. */
-  mapId?: 'crossfire' | 'wasteland';
+  /** Multiplayer map to load. Default: 'crossfire'. Use 'custom' for GLB+HDRI arena. */
+  mapId?: 'crossfire' | 'wasteland' | 'custom';
   /** Pre-loaded level for quick play (skips briefing, loads immediately). */
   level?: LevelSchema;
   /** Custom quickplay: load GLB + HDRI from public/maps/quickplay/, populate with props. */
@@ -195,6 +195,8 @@ export class Game {
   // Multiplayer networking
   private networkMode: 'local' | 'client';
   private networkManager: NetworkManager | null = null;
+  /** Map we joined (for filtering snapshots from wrong rooms) */
+  private multiplayerMapId: 'crossfire' | 'wasteland' | 'custom' | null = null;
   private remotePlayerManager: RemotePlayerManager | null = null;
   private lastNetworkUpdate = 0;
   private networkUpdateRate = NetworkConfig.UPDATE_RATES.PLAYER_STATE; // Hz
@@ -217,6 +219,7 @@ export class Game {
     this.customQuickplay = options.customQuickplay ?? false;
     this.networkMode = options.networkMode ?? 'local';
     this.networkManager = options.networkManager ?? null;
+    this.multiplayerMapId = options.mapId ?? null;
     this.physics = physics;
     this.events = new EventBus();
     this.renderer = new Renderer(canvas);
@@ -510,7 +513,7 @@ export class Game {
         this.loadLevel(options.level);
       }
     } else if (this.networkMode === 'client') {
-      // Multiplayer arena: schema-based procedural map with two primary lanes.
+      // Multiplayer arena: procedural maps or Custom Arena (GLB+HDRI).
       this.doorSystem = new DoorSystem(
         this.scene,
         this.physics,
@@ -521,7 +524,13 @@ export class Game {
       this.triggerSystem = new TriggerSystem(() => this.player.getPosition());
       this.triggerSystem.onTrigger = (event) => this.handleTrigger(event);
       this.objectiveSystem = new ObjectiveSystem();
-      this.loadLevel(createMultiplayerArena(options.mapId ?? 'crossfire'));
+      if (options.mapId === 'custom') {
+        // Custom Arena: use prepareCustomScene() before start(), same as single-player
+        this.customQuickplay = true;
+        // No loadLevel — scene built in prepareCustomScene()
+      } else {
+        this.loadLevel(createMultiplayerArena(options.mapId ?? 'crossfire'));
+      }
     } else if (options.customQuickplay) {
       // Custom quickplay: scene built async in prepareCustomScene() before start().
     } else {
@@ -533,16 +542,24 @@ export class Game {
     // Initialize multiplayer components if in network mode
     if (this.networkMode === 'client' && this.networkManager) {
       const cameraPos = new THREE.Vector3();
+      const getGroundHeightProvider = () =>
+        this.customQuickplay && this.getGroundHeight
+          ? (x: number, z: number) => this.getGroundHeight!(x, z)
+          : null;
       this.remotePlayerManager = new RemotePlayerManager(
         this.scene,
         this.physics,
         () => this.networkManager?.playerId ?? null,
-        () => this.fpsCamera.camera.getWorldPosition(cameraPos) || cameraPos
+        () => this.fpsCamera.camera.getWorldPosition(cameraPos) || cameraPos,
+        getGroundHeightProvider
       );
       this.nameTagManager = new NameTagManager(this.fpsCamera.camera);
 
-      // Handle game state snapshots from server
+      // Handle game state snapshots from server (ignore if from wrong map room)
       this.networkManager.onGameStateSnapshot = (snapshot) => {
+        if (snapshot.mapId != null && this.multiplayerMapId != null && snapshot.mapId !== this.multiplayerMapId) {
+          return; // Stale/wrong room snapshot - ignore
+        }
         this.remotePlayerManager?.updateFromSnapshot(snapshot);
         this.updateScoreboardFromSnapshot(snapshot);
         this.syncDestroyedDestructibles(snapshot.destroyedDestructibles);

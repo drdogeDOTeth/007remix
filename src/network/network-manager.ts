@@ -1,5 +1,6 @@
 import { io, Socket } from 'socket.io-client';
 import { NetworkConfig } from './network-config';
+import type { MultiplayerMapId } from './network-events';
 import {
   NetworkEventType,
   PlayerConnectedEvent,
@@ -93,8 +94,9 @@ export class NetworkManager {
   /**
    * Connect to the game server.
    * Returns a promise that resolves when connection is established.
+   * @param mapId Optional map selected in lobby (used by server for spawn points).
    */
-  async connect(): Promise<void> {
+  async connect(mapId?: MultiplayerMapId): Promise<void> {
     return new Promise((resolve, reject) => {
       this.socket = io(NetworkConfig.SERVER_URL, {
         reconnection: NetworkConfig.RECONNECTION.enabled,
@@ -110,10 +112,12 @@ export class NetworkManager {
         this._playerId = this.socket!.id ?? null;
 
         // Send initial player info
-        this.socket!.emit(NetworkEventType.PLAYER_CONNECTED, {
+        const payload: PlayerConnectedEvent = {
           playerId: this._playerId,
           username: this.username,
-        } as PlayerConnectedEvent);
+        };
+        if (mapId) payload.mapId = mapId;
+        this.socket!.emit(NetworkEventType.PLAYER_CONNECTED, payload);
 
         resolve();
       });

@@ -30,7 +30,7 @@ function mulberry32(seed: number): () => number {
   };
 }
 
-export type MultiplayerMapId = 'crossfire' | 'wasteland';
+export type MultiplayerMapId = 'crossfire' | 'wasteland' | 'custom';
 
 const CROSSFIRE_ROOM_COLORS = {
   spawn: { floor: 0xf0e5d2, wall: 0xe9ddc6 },
@@ -46,7 +46,7 @@ const WASTELAND_ROOM_COLORS = {
   switch: { floor: 0x44585f, wall: 0x36464f },
 };
 
-function createRooms(mapId: MultiplayerMapId): RoomDef[] {
+function createRooms(mapId: Exclude<MultiplayerMapId, 'custom'>): RoomDef[] {
   const c = mapId === 'wasteland' ? WASTELAND_ROOM_COLORS : CROSSFIRE_ROOM_COLORS;
   const rooms: RoomDef[] = [
     {
@@ -268,12 +268,35 @@ export function getMultiplayerArenaDefaultSpawnPoint(): SpawnDef {
   return { ...first };
 }
 
+/** Spawn points for Custom Arena (GLB from public/maps/quickplay/). Tuned to DEFAULT_CUSTOM_SPAWN area. */
+export function getCustomArenaSpawnPoints(): SpawnDef[] {
+  const base = { x: -1.32, y: 14.63, z: 63.1 };
+  const spread = 18;
+  return [
+    { x: base.x, y: base.y, z: base.z },
+    { x: base.x + spread, y: base.y, z: base.z },
+    { x: base.x - spread, y: base.y, z: base.z },
+    { x: base.x, y: base.y, z: base.z + spread },
+    { x: base.x, y: base.y, z: base.z - spread },
+    { x: base.x + spread * 0.7, y: base.y, z: base.z + spread * 0.7 },
+    { x: base.x - spread * 0.7, y: base.y, z: base.z - spread * 0.7 },
+    { x: base.x + spread * 0.5, y: base.y, z: base.z - spread * 0.5 },
+  ];
+}
+
+/** Spawn points for a given map. Used by server for respawn/initial spawn. */
+export function getSpawnPointsForMap(mapId: MultiplayerMapId): SpawnDef[] {
+  if (mapId === 'custom') return getCustomArenaSpawnPoints();
+  return getMultiplayerArenaSpawnPoints();
+}
+
 export const MULTIPLAYER_MAPS: { id: MultiplayerMapId; name: string; description: string }[] = [
   { id: 'crossfire', name: 'Crossfire Complex', description: 'Palace-style arena' },
   { id: 'wasteland', name: 'Verdigris Depot', description: 'Oxidized service-bay arena' },
+  { id: 'custom', name: 'Custom Arena', description: 'GLB + HDRI from maps/quickplay' },
 ];
 
-const MAP_META: Record<MultiplayerMapId, { name: string; theme: 'palace' | 'wasteland'; briefing: string }> = {
+const MAP_META: Record<Exclude<MultiplayerMapId, 'custom'>, { name: string; theme: 'palace' | 'wasteland'; briefing: string }> = {
   crossfire: {
     name: 'Crossfire Complex',
     theme: 'palace',
@@ -289,7 +312,7 @@ const MAP_META: Record<MultiplayerMapId, { name: string; theme: 'palace' | 'wast
 };
 
 export function createMultiplayerArena(
-  mapId: MultiplayerMapId = 'crossfire',
+  mapId: Exclude<MultiplayerMapId, 'custom'> = 'crossfire',
   config: Partial<ArenaLayoutConfig> = {},
 ): LevelSchema {
   const finalConfig: ArenaLayoutConfig = {

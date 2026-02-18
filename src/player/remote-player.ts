@@ -16,6 +16,9 @@ import { bakeGuardSpriteSheet, bakeCustomModelSpriteSheet } from '../enemies/spr
 /** Callback to get camera world position for sprite billboarding */
 type GetCameraPosition = () => THREE.Vector3;
 
+/** Callback to get ground height at (x,z) for terrain snapping (Custom Arena). */
+type GetGroundHeight = (x: number, z: number) => number;
+
 /**
  * RemotePlayer represents another player in the multiplayer game.
  * Handles rendering, interpolation, animation, and physics collider.
@@ -62,18 +65,21 @@ export class RemotePlayer {
   private spriteMode = false;
   private sprite: EnemySprite | null = null;
   private getCameraPosition: GetCameraPosition | null = null;
+  private getGroundHeight: GetGroundHeight | null = null;
 
   constructor(
     id: string,
     username: string,
     scene: THREE.Scene,
     physics: PhysicsWorld,
-    getCameraPosition: GetCameraPosition | null = null
+    getCameraPosition: GetCameraPosition | null = null,
+    getGroundHeight: GetGroundHeight | null = null
   ) {
     this.id = id;
     this.username = username;
     this.physics = physics;
     this.getCameraPosition = getCameraPosition;
+    this.getGroundHeight = getGroundHeight;
 
     const cfg = ENEMY_RENDER_CONFIG;
 
@@ -153,6 +159,17 @@ export class RemotePlayer {
    * Update remote player state from server snapshot.
    */
   updateFromServer(state: PlayerStateUpdate): void {
+    // Detect large position jumps (respawn, teleport) - clear buffer to avoid interpolating across the gap
+    if (this.currentState) {
+      const dx = state.position.x - this.currentState.position.x;
+      const dy = state.position.y - this.currentState.position.y;
+      const dz = state.position.z - this.currentState.position.z;
+      const distSq = dx * dx + dy * dy + dz * dz;
+      if (distSq > 100) {
+        this.interpolationBuffer.clear();
+        this.hasInitialPosition = false;
+      }
+    }
     this.interpolationBuffer.addSnapshot(state.timestamp, state);
     this.currentState = state;
     this.lastUpdateTime = performance.now();
@@ -240,28 +257,29 @@ export class RemotePlayer {
         this.rotationOverrideYaw = null;
       }
 
-      // Update physics collider position (for hit detection) - use interpolated (not smoothed) for accuracy
-      this.rigidBody.setTranslation(
-        {
-          x: interpolatedState.position.x,
-          y: interpolatedState.position.y,
-          z: interpolatedState.position.z,
-        },
-        true
-      );
+      // Use same position for collider and model so hitbox matches what you see
+      const pos = interpolatedState.position;
+      const capsuleFeetOffset = 0.9; // halfHeight 0.6 + radius 0.3
 
-      // Update visual position
-      const yOffset = this.spriteMode ? 1.0 : (this.customAnimator ? 1.0 : 1.3);
-      this.model.position.set(
-        this.smoothedPosition.x,
-        this.smoothedPosition.y - yOffset,
-        this.smoothedPosition.z
-      );
+      this.rigidBody.setTranslation({ x: pos.x, y: pos.y, z: pos.z }, true);
 
-      // Update shadow position (3D mode only; sprite shadow is child of model)
+      // Model: use server position so visual matches collider. Optional terrain snap
+      // only nudges down if we'd otherwise be floating (avoids model above hitbox).
+      let modelY = pos.y - capsuleFeetOffset;
+      if (this.getGroundHeight) {
+        const terrainY = this.getGroundHeight(pos.x, pos.z);
+        if (terrainY < modelY - 0.2) {
+          modelY = terrainY; // Sink to terrain if we'd be floating
+        }
+      } else {
+        const yOffset = this.spriteMode ? 1.0 : (this.customAnimator ? 1.0 : 1.3);
+        modelY = pos.y - yOffset;
+      }
+      this.model.position.set(pos.x, modelY, pos.z);
+
+      // Shadow: match model or collider feet
       if (!this.spriteMode) {
-        this.shadowMesh.position.x = interpolatedState.position.x;
-        this.shadowMesh.position.z = interpolatedState.position.z;
+        this.shadowMesh.position.set(pos.x, modelY + 0.01, pos.z);
       }
 
       if (this.spriteMode && this.sprite && this.getCameraPosition) {
@@ -421,6 +439,10 @@ export class RemotePlayer {
     this.model.rotation.x = 0;
     this.model.quaternion.identity();
     this.shadowMesh.visible = true;
+
+    // Clear interpolation buffer so we don't blend from death position
+    this.interpolationBuffer.clear();
+    this.hasInitialPosition = false;
 
     if (this.spriteMode && this.sprite) {
       this.sprite.play('idle');

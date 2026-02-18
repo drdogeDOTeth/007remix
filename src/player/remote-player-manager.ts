@@ -7,6 +7,12 @@ import type { PhysicsWorld } from '../core/physics-world';
 /** Callback to get camera world position for sprite billboarding */
 export type GetCameraPosition = () => THREE.Vector3;
 
+/** Callback to get ground height at (x,z) for terrain snapping (Custom Arena). */
+export type GetGroundHeight = (x: number, z: number) => number;
+
+/** Getter for ground height (resolved lazily - e.g. after prepareCustomScene). */
+export type GetGroundHeightProvider = () => GetGroundHeight | null;
+
 /**
  * RemotePlayerManager manages all remote players in a multiplayer session.
  * Handles spawning, updating, and removing remote players.
@@ -18,17 +24,20 @@ export class RemotePlayerManager {
   private colliderToPlayerId: Map<number, string> = new Map(); // Collider handle -> player ID
   private getLocalPlayerId: () => string | null;
   private getCameraPosition: GetCameraPosition | null;
+  private getGroundHeightProvider: GetGroundHeightProvider | null;
 
   constructor(
     scene: THREE.Scene,
     physics: PhysicsWorld,
     getLocalPlayerId: () => string | null,
-    getCameraPosition: GetCameraPosition | null = null
+    getCameraPosition: GetCameraPosition | null = null,
+    getGroundHeightProvider: GetGroundHeightProvider | null = null
   ) {
     this.scene = scene;
     this.physics = physics;
     this.getLocalPlayerId = getLocalPlayerId ?? (() => null);
     this.getCameraPosition = getCameraPosition ?? null;
+    this.getGroundHeightProvider = getGroundHeightProvider ?? null;
   }
 
   /**
@@ -51,12 +60,14 @@ export class RemotePlayerManager {
       let remotePlayer = this.players.get(playerId);
       if (!remotePlayer) {
         const username = (playerState as { username?: string }).username ?? playerId;
+        const getGroundHeight = this.getGroundHeightProvider?.() ?? null;
         remotePlayer = new RemotePlayer(
           playerId,
           username,
           this.scene,
           this.physics,
-          this.getCameraPosition
+          this.getCameraPosition,
+          getGroundHeight
         );
         this.players.set(playerId, remotePlayer);
 

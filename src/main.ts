@@ -20,7 +20,7 @@ import { loadLevel } from './levels/level-loader';
 import { CCTVBackground } from './ui/cctv-background';
 import { ScreenGlitch } from './ui/screen-glitch';
 import { NetworkManager } from './network/network-manager';
-import { LobbyScreen } from './ui/lobby-screen';
+import { MainMenuScreen } from './ui/main-menu-screen';
 import { SettingsMenu } from './ui/settings-menu';
 import { CharacterModelsScreen } from './ui/character-models-screen';
 import { setEnemyRenderConfig, ENEMY_RENDER_CONFIG } from './enemies/enemy-render-config';
@@ -145,174 +145,128 @@ async function init(): Promise<void> {
     screenGlitch.dispose();
   };
 
-  // Quick Play: single room, click to start
-  document.getElementById('btn-quick-play')!.addEventListener('click', async () => {
-    await customModelReady;
-    const game = new Game(canvas, physics, {});
-    document.getElementById('start-screen')!.style.display = 'none';
-    hideCCTVBackground();
-    game.start();
-    canvas.addEventListener('click', () => game.start());
-  });
+  const mainMenuContainer = document.getElementById('main-menu-container');
+  const mainMenuScreen = new MainMenuScreen();
+  if (mainMenuContainer) {
+    mainMenuScreen.attach(mainMenuContainer);
+  }
 
-  // Quick Play — Custom Arena: GLB + HDRI from public/maps/quickplay/
-  document.getElementById('btn-quick-play-custom')!.addEventListener('click', async () => {
-    await customModelReady;
-    const game = new Game(canvas, physics, { customQuickplay: true });
-    document.getElementById('start-screen')!.style.display = 'none';
-    hideCCTVBackground();
-    try {
-      await game.prepareCustomScene();
-      game.start();
-      canvas.addEventListener('click', () => game.start());
-    } catch (err) {
-      console.error('Custom arena load failed:', err);
-      alert(
-        'Custom Arena assets not found. Add environment.glb (required) to public/maps/quickplay/\n' +
-          'Optional: environment.hdr for HDRI lighting. See public/maps/quickplay/README.md'
-      );
-    }
-  });
+  mainMenuScreen.setCallbacks({
+    onQuickPlayLevel: async (levelId) => {
+      await customModelReady;
+      if (levelId === 'arena') {
+        const game = new Game(canvas, physics, {});
+        document.getElementById('start-screen')!.style.display = 'none';
+        hideCCTVBackground();
+        game.start();
+        canvas.addEventListener('click', () => game.start());
+      } else if (levelId === 'custom') {
+        const game = new Game(canvas, physics, { customQuickplay: true });
+        document.getElementById('start-screen')!.style.display = 'none';
+        hideCCTVBackground();
+        try {
+          await game.prepareCustomScene();
+          game.start();
+          canvas.addEventListener('click', () => game.start());
+        } catch (err) {
+          console.error('Custom arena load failed:', err);
+          alert(
+            'Custom Arena assets not found. Add environment.glb (required) to public/maps/quickplay/\n' +
+              'Optional: environment.hdr for HDRI lighting. See public/maps/quickplay/README.md'
+          );
+        }
+      } else if (levelId === 'lab') {
+        try {
+          const level = await loadLevel('/levels/experimental-lab.json');
+          const game = new Game(canvas, physics, { levelMode: true, level });
+          document.getElementById('start-screen')!.style.display = 'none';
+          hideCCTVBackground();
+          game.start();
+          canvas.addEventListener('click', () => game.start());
+        } catch (err) {
+          console.error('Experimental Lab load failed:', err);
+          alert('Could not load Experimental Lab. Make sure you run with "npm run dev".');
+        }
+      }
+    },
+    onMissionLevel: async (levelId) => {
+      const levelUrls: Record<string, string> = {
+        facility: '/levels/facility.json',
+        mountain: '/levels/mountain-outpost.json',
+      };
+      const url = levelUrls[levelId];
+      if (!url) return;
+      await customModelReady;
+      try {
+        const level = await loadLevel(url);
+        const game = new Game(canvas, physics, { levelMode: true });
+        game.showBriefing(level);
+        game.onMissionComplete = () => {
+          document.getElementById('mission-complete')!.style.display = 'flex';
+        };
+        canvas.addEventListener('click', () => {
+          document.getElementById('start-screen')!.style.display = 'none';
+          hideCCTVBackground();
+          game.start();
+        });
+      } catch (err) {
+        console.error(`Mission ${levelId} load failed:`, err);
+        alert(`Could not load mission. Make sure you run with "npm run dev" so ${url} is served.`);
+      }
+    },
+    onMultiplayerJoin: async (username, mapId) => {
+      try {
+        await customModelReady;
+        if (ENEMY_RENDER_CONFIG.customPlayerModelPath) await customPlayerModelReady;
+        const networkManager = new NetworkManager(username);
+        await networkManager.connect(mapId ?? undefined);
 
-  // Quick Play — Experimental Lab: level with glass tanks and glowing fluids
-  document.getElementById('btn-quick-play-lab')!.addEventListener('click', async () => {
-    await customModelReady;
-    try {
-      const level = await loadLevel('/levels/experimental-lab.json');
-      const game = new Game(canvas, physics, { levelMode: true, level });
+        console.log('[Main] Connected to server as:', networkManager.playerId);
+
+        hideCCTVBackground();
+        document.getElementById('start-screen')!.style.display = 'none';
+
+        const game = new Game(canvas, physics, {
+          networkMode: 'client',
+          networkManager,
+          mapId: mapId ?? 'crossfire',
+        });
+        if (mapId === 'custom') {
+          await game.prepareCustomScene();
+        }
+        game.start();
+        canvas.addEventListener('click', () => game.start());
+      } catch (err) {
+        console.error('[Main] Multiplayer connection failed:', err);
+        mainMenuScreen.setStatus('Connection failed. Is the server running? (npm run server)');
+        mainMenuScreen.setJoinEnabled(true);
+      }
+    },
+    onCustomModels: () => {
       document.getElementById('start-screen')!.style.display = 'none';
-      hideCCTVBackground();
-      game.start();
-      canvas.addEventListener('click', () => game.start());
-    } catch (err) {
-      console.error('Experimental Lab load failed:', err);
-      alert('Could not load Experimental Lab. Make sure you run with "npm run dev".');
-    }
+      characterModelsScreen.show();
+    },
+    onSettings: () => {
+      document.getElementById('start-screen')!.style.display = 'none';
+      settingsMenu.show();
+    },
   });
 
-  // Mission: load facility, briefing, then play
-  const missionBtn = document.getElementById('btn-mission');
-  if (missionBtn) {
-    missionBtn.addEventListener('click', async () => {
-      const btn = missionBtn as HTMLButtonElement;
-      const origText = btn.textContent;
-      btn.textContent = 'LOADING...';
-      btn.disabled = true;
-      try {
-        await customModelReady;
-        const level = await loadLevel('/levels/facility.json');
-        const game = new Game(canvas, physics, { levelMode: true });
-        game.showBriefing(level);
-        game.onMissionComplete = () => {
-          document.getElementById('mission-complete')!.style.display = 'flex';
-        };
-        canvas.addEventListener('click', () => {
-          document.getElementById('start-screen')!.style.display = 'none';
-          hideCCTVBackground();
-          game.start();
-        });
-      } catch (err) {
-        console.error('Mission load failed:', err);
-        btn.textContent = origText ?? 'MISSION — FACILITY';
-        btn.disabled = false;
-        alert('Could not load mission. Make sure you run with "npm run dev" so /levels/facility.json is served.');
-      }
-    });
-  }
-
-  // Mission: Mountain Outpost (outdoor snowy level)
-  const mountainBtn = document.getElementById('btn-mission-mountain');
-  if (mountainBtn) {
-    mountainBtn.addEventListener('click', async () => {
-      const btn = mountainBtn as HTMLButtonElement;
-      const origText = btn.textContent;
-      btn.textContent = 'LOADING...';
-      btn.disabled = true;
-      try {
-        await customModelReady;
-        const level = await loadLevel('/levels/mountain-outpost.json');
-        const game = new Game(canvas, physics, { levelMode: true });
-        game.showBriefing(level);
-        game.onMissionComplete = () => {
-          document.getElementById('mission-complete')!.style.display = 'flex';
-        };
-        canvas.addEventListener('click', () => {
-          document.getElementById('start-screen')!.style.display = 'none';
-          hideCCTVBackground();
-          game.start();
-        });
-      } catch (err) {
-        console.error('Mission load failed:', err);
-        btn.textContent = origText ?? 'MISSION — MOUNTAIN OUTPOST';
-        btn.disabled = false;
-        alert('Could not load mission. Make sure you run with "npm run dev" so /levels/mountain-outpost.json is served.');
-      }
-    });
-  }
-
-  // Custom Models: accessible from main menu
+  // Custom Models: back shows main menu
   const characterModelsScreen = new CharacterModelsScreen();
   characterModelsScreen.onBack = () => {
     characterModelsScreen.hide();
-    setRenderMode(getRenderMode()); // Re-sync so uploaded-model doesn't override 2D/3D choice
+    setRenderMode(getRenderMode());
     document.getElementById('start-screen')!.style.display = 'flex';
   };
-  document.getElementById('btn-models')?.addEventListener('click', () => {
-    document.getElementById('start-screen')!.style.display = 'none';
-    characterModelsScreen.show();
-  });
 
-  // Settings: accessible from main menu
+  // Settings: back shows main menu
   const settingsMenu = new SettingsMenu();
   settingsMenu.onBack = () => {
     settingsMenu.hide();
-    setRenderMode(getRenderMode()); // Re-sync so uploaded-model doesn't override 2D/3D choice
+    setRenderMode(getRenderMode());
     document.getElementById('start-screen')!.style.display = 'flex';
   };
-  document.getElementById('btn-settings')?.addEventListener('click', () => {
-    document.getElementById('start-screen')!.style.display = 'none';
-    settingsMenu.show();
-  });
-
-  // Multiplayer: show lobby first, then connect
-  const lobbyScreen = new LobbyScreen();
-  const multiplayerBtn = document.getElementById('btn-multiplayer');
-  if (multiplayerBtn) {
-    multiplayerBtn.addEventListener('click', () => {
-      document.getElementById('start-screen')!.style.display = 'none';
-      lobbyScreen.show({
-        onJoin: async (username, mapId) => {
-          try {
-            await customModelReady;
-            if (ENEMY_RENDER_CONFIG.customPlayerModelPath) await customPlayerModelReady;
-            const networkManager = new NetworkManager(username);
-            await networkManager.connect();
-
-            console.log('[Main] Connected to server as:', networkManager.playerId);
-
-            lobbyScreen.hide();
-            hideCCTVBackground();
-
-            const game = new Game(canvas, physics, {
-              networkMode: 'client',
-              networkManager,
-              mapId: mapId ?? 'crossfire',
-            });
-            game.start();
-            canvas.addEventListener('click', () => game.start());
-          } catch (err) {
-            console.error('[Main] Multiplayer connection failed:', err);
-            lobbyScreen.setStatus('Connection failed. Is the server running? (npm run server)');
-            lobbyScreen.setJoinEnabled(true);
-          }
-        },
-        onBack: () => {
-          lobbyScreen.hide();
-          document.getElementById('start-screen')!.style.display = 'flex';
-        },
-      });
-    });
-  }
 }
 
 init().catch((err) => {

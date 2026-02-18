@@ -12,7 +12,7 @@ import type {
   DestructibleDestroyedEvent,
   GameOverEvent,
 } from '../src/network/network-events.js';
-import { getMultiplayerArenaSpawnPoints } from '../src/levels/multiplayer-arena.js';
+import { getSpawnPointsForMap, type MultiplayerMapId } from '../src/levels/multiplayer-arena.js';
 
 /**
  * GameRoom manages a single multiplayer session/match.
@@ -49,11 +49,8 @@ export class GameRoom {
   // Enemy damage rate limit: ignore if same player sent < 150ms ago
   private lastEnemyDamageTime: Map<string, number> = new Map();
 
-  /**
-   * Spawn points for players (random selection).
-   * TODO: Load from level data.
-   */
-  private readonly spawnPoints = getMultiplayerArenaSpawnPoints();
+  /** Map selected by first joiner. Used for spawn point selection. */
+  private currentMapId: MultiplayerMapId = 'crossfire';
 
   /**
    * Callback for broadcasting game state to all clients.
@@ -68,9 +65,16 @@ export class GameRoom {
 
   /**
    * Add a player to the room.
+   * @param mapId Map selected in lobby. First joiner sets room map; used for spawn points.
    */
-  addPlayer(id: string, username: string): void {
+  addPlayer(id: string, username: string, mapId?: MultiplayerMapId): void {
+    if (this.players.size === 0 && mapId) {
+      this.currentMapId = mapId;
+      console.log(`[GameRoom] Map set to: ${mapId}`);
+    }
     const playerState = createPlayerState(id, username);
+    const spawnPoint = this.getRandomSpawnPoint();
+    playerState.position = { ...spawnPoint };
     this.players.set(id, playerState);
     console.log(`[GameRoom] Player ${username} (${id}) joined. Total players: ${this.players.size}`);
   }
@@ -351,11 +355,12 @@ export class GameRoom {
   }
 
   /**
-   * Get a random spawn point.
+   * Get a random spawn point for the current map.
    */
   private getRandomSpawnPoint(): { x: number; y: number; z: number } {
-    const index = Math.floor(Math.random() * this.spawnPoints.length);
-    return { ...this.spawnPoints[index] };
+    const spawnPoints = getSpawnPointsForMap(this.currentMapId);
+    const index = Math.floor(Math.random() * spawnPoints.length);
+    return { ...spawnPoints[index] };
   }
 
   /**
@@ -448,6 +453,7 @@ export class GameRoom {
       if (this.onBroadcast && this.players.size > 0) {
         const snapshot = {
           timestamp: Date.now(),
+          mapId: this.currentMapId,
           players: this.getAllPlayerStates(),
           destroyedDestructibles: this.destroyedDestructibles, // Sync for new joiners
         };
