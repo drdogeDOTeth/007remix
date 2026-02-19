@@ -49,8 +49,8 @@ export const NetworkConfig = {
    * Network update rates (Hz).
    */
   UPDATE_RATES: {
-    PLAYER_STATE: 20, // Send player state 20 times per second (active)
-    PLAYER_STATE_IDLE: 5, // Send player state 5 times per second when idle (bandwidth optimization)
-    INTERPOLATION_DELAY: 100, // ms - how far behind to interpolate remote players
+    PLAYER_STATE: 30, // Send player state 30 times per second (active)
+    PLAYER_STATE_IDLE: 10, // Send player state 10 times per second when idle
+    INTERPOLATION_DELAY: 50, // ms - how far behind to interpolate remote players
   },
 };

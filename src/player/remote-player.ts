@@ -33,7 +33,6 @@ export class RemotePlayer {
   private rigidBody: RAPIER.RigidBody;
   private interpolationBuffer: InterpolationBuffer;
   private currentState: PlayerStateUpdate | null = null;
-  private lastUpdateTime = 0;
   private _isDead = false;
   private physics: PhysicsWorld;
 
@@ -47,7 +46,6 @@ export class RemotePlayer {
   private currentWeaponType: WeaponType = 'pistol';
   private weaponViewModel: WeaponViewModel | null = null;
   private flashlight: THREE.SpotLight | null = null;
-  private flashlightOn = false;
 
   // Smoothed position for even smoother rendering
   private smoothedPosition = new THREE.Vector3();
@@ -153,7 +151,7 @@ export class RemotePlayer {
     const colliderDesc = RAPIER.ColliderDesc.capsule(0.9, 0.3); // Standing capsule
     this.collider = physics.world.createCollider(colliderDesc, this.rigidBody);
     this.collider.setActiveEvents(RAPIER.ActiveEvents.COLLISION_EVENTS);
-    this.interpolationBuffer = new InterpolationBuffer(100); // 100ms delay
+    this.interpolationBuffer = new InterpolationBuffer(50); // 50ms delay — 1 snapshot interval at 20Hz
   }
 
   /**
@@ -173,7 +171,6 @@ export class RemotePlayer {
     }
     this.interpolationBuffer.addSnapshot(state.timestamp, state);
     this.currentState = state;
-    this.lastUpdateTime = performance.now();
   }
 
   /**
@@ -241,17 +238,20 @@ export class RemotePlayer {
         this.hasInitialPosition = true;
       }
 
-      // Apply exponential smoothing for movement (0.3 = smooth); rotation uses 0.65 for responsive aiming
-      const posSmooth = 0.3;
-      this.smoothedPosition.x += (interpolatedState.position.x - this.smoothedPosition.x) * posSmooth;
-      this.smoothedPosition.y += (interpolatedState.position.y - this.smoothedPosition.y) * posSmooth;
-      this.smoothedPosition.z += (interpolatedState.position.z - this.smoothedPosition.z) * posSmooth;
+      // Drive position directly from interpolation buffer — no extra smoothing needed,
+      // the buffer already interpolates between snapshots for smooth movement.
+      this.smoothedPosition.set(
+        interpolatedState.position.x,
+        interpolatedState.position.y,
+        interpolatedState.position.z,
+      );
 
-      const rotSmooth = 0.65; // Snappier rotation so aiming direction updates faster
+      // Rotation: dt-based exponential smoothing (frame-rate independent, fast response)
+      const rotAlpha = 1 - Math.exp(-dt * 20); // ~20 rad/s convergence speed
       let rotDiff = interpolatedState.rotation - this.smoothedRotation;
       if (rotDiff > Math.PI) rotDiff -= Math.PI * 2;
       if (rotDiff < -Math.PI) rotDiff += Math.PI * 2;
-      this.smoothedRotation += rotDiff * rotSmooth;
+      this.smoothedRotation += rotDiff * rotAlpha;
 
       // Clear rotation override when expired
       if (performance.now() >= this.rotationOverrideUntil) {
@@ -399,7 +399,6 @@ export class RemotePlayer {
    * Set flashlight state (on/off). No-op in sprite mode.
    */
   setFlashlight(isOn: boolean): void {
-    this.flashlightOn = isOn;
     if (this.flashlight) this.flashlight.intensity = isOn ? 40 : 0;
   }
 

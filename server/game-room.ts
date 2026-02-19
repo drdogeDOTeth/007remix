@@ -20,7 +20,7 @@ import { getSpawnPointsForMap, type MultiplayerMapId } from '../src/levels/multi
  */
 export class GameRoom {
   private players: Map<string, ServerPlayerState> = new Map();
-  private readonly updateRate = 20; // Hz
+  private readonly updateRate = 30; // Hz
   private updateInterval: NodeJS.Timeout | null = null;
   private respawnTimers: Map<string, NodeJS.Timeout> = new Map(); // Player ID -> respawn timer
 
@@ -110,6 +110,7 @@ export class GameRoom {
     this.destroyedDestructibles = [];
     this.destroyedPropIds.clear();
     this.gameOver = false;
+    this.currentMapId = 'crossfire'; // Reset so next joiner's mapId takes effect
     console.log('[GameRoom] Room empty — level state reset for next session');
   }
 
