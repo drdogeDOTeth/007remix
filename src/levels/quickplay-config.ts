@@ -108,7 +108,7 @@ export async function loadQuickplayConfig(
   };
 
   try {
-    const res = await fetch(`${baseUrl}config.json`);
+    const res = await fetch(`${baseUrl}config.json`, { cache: 'no-cache' });
     if (!res.ok || res.headers.get('content-type')?.includes('text/html')) {
       return defaults;
     }

@@ -3,7 +3,6 @@ import { createSubdividedBox } from '../core/geometry-utils';
 import {
   healthTexture,
   armorTexture,
-  ammoTexture,
   keyTexture,
 } from './pickup-textures';
 
@@ -197,29 +196,104 @@ function buildArmorMesh(): THREE.Group {
   return g;
 }
 
-function buildAmmoMesh(type: PickupType): THREE.Group {
+export function buildAmmoMesh(type: PickupType): THREE.Group {
   const g = new THREE.Group();
-  const tex = ammoTexture();
 
-  // Color tint per ammo type
-  const tints: Record<string, number> = {
-    'ammo-pistol': 0xddaa33,
-    'ammo-rifle': 0xddaa33,
-    'ammo-shotgun': 0xdd6633,
-    'ammo-sniper': 0x33ddaa,
-  };
-  const tint = tints[type] ?? 0xddaa33;
+  if (type === 'ammo-pistol') {
+    // Five 9mm rounds in a fan — compact brass pistol cartridges
+    // Each round: caseH=0.10, tipH=0.04 → total 0.14, centered at Y=0
+    const caseH = 0.10, caseR = 0.016, tipH = 0.04;
+    const bulletMat = new THREE.MeshStandardMaterial({ color: 0xd4a840, roughness: 0.35, metalness: 0.8 });
+    const tipMat    = new THREE.MeshStandardMaterial({ color: 0xb87333, roughness: 0.45, metalness: 0.65 });
+    const rimMat    = new THREE.MeshStandardMaterial({ color: 0x9a7020, roughness: 0.5,  metalness: 0.7 });
+    const offsets = [-0.075, -0.037, 0, 0.037, 0.075];
+    for (const ox of offsets) {
+      const casing = new THREE.Mesh(new THREE.CylinderGeometry(caseR, caseR * 1.05, caseH, 8), bulletMat);
+      casing.position.set(ox, 0, 0);
+      g.add(casing);
+      const tip = new THREE.Mesh(new THREE.ConeGeometry(caseR, tipH, 8), tipMat);
+      tip.position.set(ox, caseH * 0.5 + tipH * 0.5, 0);
+      g.add(tip);
+      // Extractor rim at base
+      const rim = new THREE.Mesh(new THREE.CylinderGeometry(caseR * 1.18, caseR * 1.18, 0.006, 8), rimMat);
+      rim.position.set(ox, -caseH * 0.5 - 0.003, 0);
+      g.add(rim);
+    }
 
-  const mat = new THREE.MeshBasicMaterial({
-    map: tex,
-    color: tint,
-    transparent: true,
-    opacity: 0.95,
-  });
+  } else if (type === 'ammo-rifle') {
+    // Three 7.62mm NATO rounds — tall bottleneck cartridges
+    const caseH = 0.15, caseR = 0.014, neckR = 0.010, tipH = 0.055;
+    const casingMat = new THREE.MeshStandardMaterial({ color: 0xc0aa50, roughness: 0.4, metalness: 0.75 });
+    const tipMat    = new THREE.MeshStandardMaterial({ color: 0x888860, roughness: 0.4, metalness: 0.7 });
+    const rimMat    = new THREE.MeshStandardMaterial({ color: 0x806a20, roughness: 0.5, metalness: 0.65 });
+    for (const ox of [-0.06, 0, 0.06]) {
+      // Body (tapered: wider base, narrower neck)
+      const body = new THREE.Mesh(new THREE.CylinderGeometry(neckR, caseR, caseH, 8), casingMat);
+      body.position.set(ox, 0, 0);
+      g.add(body);
+      // Ogive tip
+      const tip = new THREE.Mesh(new THREE.ConeGeometry(neckR, tipH, 8), tipMat);
+      tip.position.set(ox, caseH * 0.5 + tipH * 0.5, 0);
+      g.add(tip);
+      // Rim
+      const rim = new THREE.Mesh(new THREE.CylinderGeometry(caseR * 1.15, caseR * 1.15, 0.006, 8), rimMat);
+      rim.position.set(ox, -caseH * 0.5 - 0.003, 0);
+      g.add(rim);
+    }
 
-  // Small ammo crate shape
-  const box = new THREE.Mesh(createSubdividedBox(0.2, 0.14, 0.16), mat);
-  g.add(box);
+  } else if (type === 'ammo-shotgun') {
+    // Three 12-gauge shells — fat upright plastic hulls with brass bases
+    const hullH = 0.13, hullR = 0.030;
+    const hullMat  = new THREE.MeshStandardMaterial({ color: 0xcc4422, roughness: 0.75, metalness: 0.03 });
+    const brassMat = new THREE.MeshStandardMaterial({ color: 0xc8922a, roughness: 0.35, metalness: 0.8 });
+    const crimpMat = new THREE.MeshStandardMaterial({ color: 0xaa3318, roughness: 0.8,  metalness: 0.02 });
+    const primMat  = new THREE.MeshStandardMaterial({ color: 0xe8b050, roughness: 0.3,  metalness: 0.85 });
+    for (const ox of [-0.08, 0, 0.08]) {
+      // Plastic hull
+      const hull = new THREE.Mesh(new THREE.CylinderGeometry(hullR, hullR, hullH, 10), hullMat);
+      hull.position.set(ox, 0, 0);
+      g.add(hull);
+      // Brass head (base cap)
+      const base = new THREE.Mesh(new THREE.CylinderGeometry(hullR * 1.08, hullR * 1.08, 0.022, 10), brassMat);
+      base.position.set(ox, -hullH * 0.5 - 0.011, 0);
+      g.add(base);
+      // Primer dot inset into brass
+      const primer = new THREE.Mesh(new THREE.CylinderGeometry(0.006, 0.006, 0.004, 8), primMat);
+      primer.position.set(ox, -hullH * 0.5 - 0.02, 0);
+      g.add(primer);
+      // Folded crimp top (tapered cap)
+      const crimp = new THREE.Mesh(new THREE.CylinderGeometry(0.008, hullR, 0.018, 10), crimpMat);
+      crimp.position.set(ox, hullH * 0.5 + 0.009, 0);
+      g.add(crimp);
+    }
+
+  } else {
+    // ammo-sniper: two .338 Lapua Magnum rounds — chunky magnum proportions, cold steel
+    // Wider radius so they read clearly, same height as rifle rounds
+    const caseH = 0.14, caseR = 0.022, neckR = 0.016, tipH = 0.055;
+    const casingMat = new THREE.MeshStandardMaterial({ color: 0xc8c8e0, roughness: 0.25, metalness: 0.85 });
+    const tipMat    = new THREE.MeshStandardMaterial({ color: 0xcc1111, roughness: 0.3,  metalness: 0.3 });
+    const rimMat    = new THREE.MeshStandardMaterial({ color: 0x8888aa, roughness: 0.4,  metalness: 0.75 });
+    for (const ox of [-0.065, 0.065]) {
+      // Tapered body (bottleneck: wider base → narrower neck)
+      const body = new THREE.Mesh(new THREE.CylinderGeometry(neckR, caseR, caseH, 8), casingMat);
+      body.position.set(ox, 0, 0);
+      g.add(body);
+      // Secant ogive tip
+      const tip = new THREE.Mesh(new THREE.ConeGeometry(neckR, tipH, 8), tipMat);
+      tip.position.set(ox, caseH * 0.5 + tipH * 0.5, 0);
+      g.add(tip);
+      // Cannelure groove ring
+      const groove = new THREE.Mesh(new THREE.CylinderGeometry(neckR * 1.08, neckR * 1.08, 0.008, 8), rimMat);
+      groove.position.set(ox, caseH * 0.15, 0);
+      g.add(groove);
+      // Rebated rim at base
+      const rim = new THREE.Mesh(new THREE.CylinderGeometry(caseR * 1.12, caseR * 1.12, 0.008, 8), rimMat);
+      rim.position.set(ox, -caseH * 0.5 - 0.004, 0);
+      g.add(rim);
+    }
+  }
+
   return g;
 }
 

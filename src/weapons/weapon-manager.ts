@@ -127,6 +127,11 @@ export class WeaponManager {
     return this.viewModel.buildWeaponMeshForPreview(type, skin);
   }
 
+  /** Show or hide the weapon view model (e.g. while in map editor mode). */
+  setViewModelVisible(visible: boolean): void {
+    this.viewModel.group.visible = visible;
+  }
+
   /** List of owned weapons with name and current skin (for inventory UI). */
   getOwnedWeapons(): { type: WeaponType; name: string; skin: WeaponSkin }[] {
     const out: { type: WeaponType; name: string; skin: WeaponSkin }[] = [];

@@ -13,7 +13,7 @@ import { ProjectileSystem } from './weapons/projectile-system';
 import { GrenadeSystem } from './weapons/grenade-system';
 import { BloodSplatterSystem } from './weapons/blood-splatter';
 import { EnemyManager } from './enemies/enemy-manager';
-import { PickupSystem } from './levels/pickup-system';
+import { PickupSystem, buildAmmoMesh } from './levels/pickup-system';
 import { DoorSystem } from './levels/door-system';
 import { TriggerSystem } from './levels/trigger-system';
 import { ObjectiveSystem } from './levels/objective-system';
@@ -221,6 +221,9 @@ export class Game {
   private editorPickups: Array<{ type: string; x: number; z?: number; y?: number; amount?: number }> = [];
   private editorProps: Array<{ type: string; x: number; z?: number; y?: number; size?: [number, number, number]; yOffset?: number; scale?: number }> = [];
   private editorLabProps: Array<{ type: 'tank' | 'tube'; x: number; z: number; seed?: number; scale?: number; hueHint?: number }> = [];
+  /** Editor 3D preview: hand mesh attached to camera, ghost mesh in world. */
+  private editorHandGroup: THREE.Group | null = null;
+  private editorGhostGroup: THREE.Group | null = null;
 
   /** Called when all objectives are done and player reaches extraction (mission:complete). */
   onMissionComplete: (() => void) | null = null;
@@ -1184,9 +1187,9 @@ export class Game {
       }
     }
 
-    // Inventory toggle (Tab in single-player, I in multiplayer)
+    // Inventory toggle (Tab in single-player, I in multiplayer) — not in editor mode (Tab used for mode switch)
     const inventoryKey = this.networkMode === 'client' ? 'i' : 'tab';
-    if (this.input.wasKeyJustPressed(inventoryKey)) {
+    if (!this.editorMode && this.input.wasKeyJustPressed(inventoryKey)) {
       if (this.inventoryScreen.isOpen) {
         this.inventoryScreen.hide();
         if (this.started) {
@@ -1418,8 +1421,22 @@ export class Game {
       this.tacticalOverlay.visible = !this.tacticalOverlay.visible;
     }
 
-    // Map editor: click to place, Delete/Backspace to remove at crosshair (only when pointer locked)
+    // Map editor: Tab mode switch, scroll cycle, click/delete, ghost update
     if (this.editorMode && this.mapEditorUI && this.input.pointerLocked) {
+      // Tab: toggle between pickup / prop mode
+      if (this.input.wasKeyJustPressed('Tab')) {
+        const newMode = this.mapEditorUI.currentMode === 'pickup' ? 'prop' : 'pickup';
+        this.mapEditorUI.setMode(newMode);
+        this.rebuildEditorHandAndGhost();
+      }
+      // Scroll wheel: cycle items within current mode
+      const scroll = this.input.scrollDelta;
+      if (scroll !== 0) {
+        const nextIdx = this.mapEditorUI.currentIndex + (scroll > 0 ? 1 : -1);
+        this.mapEditorUI.selectIndex(nextIdx);
+        this.rebuildEditorHandAndGhost();
+      }
+      // Delete / place
       if (this.input.wasKeyJustPressed('Delete') || this.input.wasKeyJustPressed('Backspace')) {
         this.deleteEditorItemAtCursor();
       }
@@ -1432,6 +1449,8 @@ export class Game {
           if (hit) this.placeEditorItemAt(hit);
         }
       }
+      // Update ghost mesh position every frame
+      this.updateEditorGhost();
     }
 
     // Set spawn point (F8 key) — use current position for single-player respawn
@@ -2323,6 +2342,161 @@ export class Game {
       onItemSelected: () => {},
       onDeleteSelected: () => {},
     });
+    // Hide weapon hand; show editor hand mesh instead
+    this.weaponManager.setViewModelVisible(false);
+    this.rebuildEditorHandAndGhost();
+  }
+
+  // ── Editor hand mesh + ghost preview ────────────────────────────────────
+
+  /** Build a small 3D mesh representing the given editor item for the in-hand preview. */
+  private buildEditorHandMesh(category: 'pickup' | 'prop', type: string): THREE.Group {
+    const group = new THREE.Group();
+    group.renderOrder = 998;
+
+    if (category === 'prop') {
+      if (type === 'barrel') {
+        const mat = new THREE.MeshStandardMaterial({ map: barrelTexture(), roughness: 0.5, metalness: 0.3 });
+        const mesh = new THREE.Mesh(new THREE.CylinderGeometry(0.4, 0.4, 1.2, 8), mat);
+        mesh.renderOrder = 998;
+        group.add(mesh);
+      } else if (type === 'crate_metal') {
+        const mat = new THREE.MeshStandardMaterial({ map: metalCrateTexture(), roughness: 0.3, metalness: 0.7 });
+        const mesh = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), mat);
+        mesh.renderOrder = 998;
+        group.add(mesh);
+      } else if (type === 'tank') {
+        // Simple cylinder as tank stand-in
+        const mat = new THREE.MeshStandardMaterial({ color: 0x557799, roughness: 0.4, metalness: 0.6 });
+        const mesh = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.3, 1.0, 12), mat);
+        mesh.renderOrder = 998;
+        group.add(mesh);
+      } else if (type === 'tube') {
+        const mat = new THREE.MeshStandardMaterial({ color: 0x558855, roughness: 0.4, metalness: 0.5, transparent: true, opacity: 0.8 });
+        const mesh = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.2, 1.2, 10), mat);
+        mesh.renderOrder = 998;
+        group.add(mesh);
+      } else {
+        // Default: wood crate
+        const mat = new THREE.MeshStandardMaterial({ map: woodCrateTexture(), roughness: 0.7, metalness: 0.1 });
+        const mesh = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), mat);
+        mesh.renderOrder = 998;
+        group.add(mesh);
+      }
+      group.scale.setScalar(0.22);
+    } else {
+      // Pickup category
+      if (type.startsWith('weapon-') && this.pickupSystem.weaponModelBuilder) {
+        const weaponType = type.replace('weapon-', '');
+        const mesh = this.pickupSystem.weaponModelBuilder(weaponType);
+        group.add(mesh);
+        group.scale.setScalar(0.85);
+      } else if (type.startsWith('ammo-')) {
+        // Reuse the actual ammo round geometry, scaled up for hand visibility
+        const ammoMesh = buildAmmoMesh(type as any);
+        group.add(ammoMesh);
+        group.scale.setScalar(1.8);
+      } else {
+        // Health / armor — colored box placeholders (the actual meshes are billboard-style pickups)
+        const colors: Record<string, number> = {
+          health: 0xdd3333,
+          armor: 0x4488dd,
+        };
+        const color = colors[type] ?? 0xaaaaaa;
+        const mat = new THREE.MeshStandardMaterial({ color, roughness: 0.5, metalness: 0.2 });
+        const mesh = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.18, 0.18), mat);
+        group.add(mesh);
+      }
+    }
+
+    // Position in bottom-right of view, GoldenEye weapon style
+    group.position.set(0.28, -0.25, -0.45);
+    group.rotation.set(0.1, -0.3, 0.05);
+
+    // Traverse all children and set renderOrder so hand renders on top of world geometry
+    group.traverse((obj) => {
+      if ((obj as THREE.Mesh).isMesh) {
+        (obj as THREE.Mesh).renderOrder = 998;
+      }
+    });
+
+    return group;
+  }
+
+  /** Build a semi-transparent ghost mesh for the given editor item (world-space placement preview). */
+  private buildEditorGhostMesh(category: 'pickup' | 'prop', type: string): THREE.Group {
+    const ghostMat = new THREE.MeshBasicMaterial({
+      color: 0x88ffaa,
+      transparent: true,
+      opacity: 0.38,
+      depthWrite: false,
+    });
+    const group = new THREE.Group();
+
+    if (category === 'prop') {
+      let geo: THREE.BufferGeometry;
+      if (type === 'barrel') {
+        geo = new THREE.CylinderGeometry(0.4, 0.4, 1.2, 8);
+      } else if (type === 'tank') {
+        geo = new THREE.CylinderGeometry(0.3, 0.3, 1.0, 12);
+      } else if (type === 'tube') {
+        geo = new THREE.CylinderGeometry(0.2, 0.2, 1.2, 10);
+      } else {
+        geo = new THREE.BoxGeometry(1, 1, 1);
+      }
+      group.add(new THREE.Mesh(geo, ghostMat));
+    } else {
+      // All pickups get a small cube ghost
+      group.add(new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.4, 0.4), ghostMat));
+    }
+
+    group.visible = false; // shown only when raycast hits
+    this.scene.add(group);
+    return group;
+  }
+
+  /** Remove and rebuild editor hand + ghost meshes for the currently selected item. */
+  private rebuildEditorHandAndGhost(): void {
+    // Remove old hand mesh from camera
+    if (this.editorHandGroup) {
+      this.fpsCamera.camera.remove(this.editorHandGroup);
+      this.editorHandGroup = null;
+    }
+    // Remove old ghost mesh from scene
+    if (this.editorGhostGroup) {
+      this.scene.remove(this.editorGhostGroup);
+      this.editorGhostGroup = null;
+    }
+    if (!this.mapEditorUI) return;
+    const sel = this.mapEditorUI.getSelectedItem();
+    if (!sel.type) return;
+
+    this.editorHandGroup = this.buildEditorHandMesh(sel.category, sel.type);
+    this.fpsCamera.camera.add(this.editorHandGroup);
+
+    this.editorGhostGroup = this.buildEditorGhostMesh(sel.category, sel.type);
+  }
+
+  /** Called every editor frame to move ghost mesh to raycast hit point. */
+  private updateEditorGhost(): void {
+    const ghost = this.editorGhostGroup;
+    if (!ghost) return;
+    const hit = this.getEditorRaycastHit();
+    if (!hit) { ghost.visible = false; return; }
+
+    const sel = this.mapEditorUI?.getSelectedItem();
+    const type = sel?.type ?? '';
+    const isBarrel = type === 'barrel';
+    const isCrate = !isBarrel && sel?.category === 'prop' && type !== 'tank' && type !== 'tube';
+
+    // Offset along surface normal (same logic as placement)
+    const offset = isBarrel
+      ? (Math.abs(hit.normal.y) > 0.5 ? 0.6 : 0.4)
+      : isCrate ? 0.5
+      : 0.2; // pickups / lab props: small lift
+
+    ghost.position.copy(hit.point).addScaledVector(hit.normal, offset);
+    ghost.visible = true;
   }
 
   private getEditorRaycastHit(): { point: THREE.Vector3; normal: THREE.Vector3 } | null {
@@ -2409,7 +2583,7 @@ export class Game {
             x: px - c.x,
             z: pz - c.z,
             size: [1, 1, 1],
-            yOffset: halfCrate,
+            yOffset: offset,
             y: py,
           });
         } else {
@@ -2471,7 +2645,12 @@ export class Game {
 
   private removeEditorPickupNear(pos: THREE.Vector3, maxDist: number): void {
     const isCustom = this.editorMapId === 'custom' && this.customSpawnCenter;
-    const idx = this.editorPickups.findIndex((p) => {
+    // Use nearest-match (same algorithm as pickupSystem.removeNear) so we always
+    // remove the same entry that was visually deleted, even when items are close.
+    let bestIdx = -1;
+    let bestDist = maxDist;
+    for (let i = 0; i < this.editorPickups.length; i++) {
+      const p = this.editorPickups[i];
       let wx: number, wz: number, wy: number;
       if (isCustom && this.customSpawnCenter) {
         wx = this.customSpawnCenter.x + p.x;
@@ -2482,14 +2661,20 @@ export class Game {
         wz = (p as { z: number }).z;
         wy = p.y ?? 0;
       }
-      return new THREE.Vector3(wx, wy, wz).distanceTo(pos) < maxDist;
-    });
-    if (idx >= 0) this.editorPickups.splice(idx, 1);
+      const d = new THREE.Vector3(wx, wy, wz).distanceTo(pos);
+      if (d < bestDist) { bestDist = d; bestIdx = i; }
+    }
+    if (bestIdx >= 0) this.editorPickups.splice(bestIdx, 1);
   }
 
   private removeEditorPropNear(pos: THREE.Vector3, maxDist: number): void {
     const isCustom = this.editorMapId === 'custom' && this.customSpawnCenter;
-    const idx = this.editorProps.findIndex((p) => {
+    // Use nearest-match (same algorithm as destructibleSystem.removePropNear) so we
+    // always remove the matching entry, even when props are close together.
+    let bestIdx = -1;
+    let bestDist = maxDist;
+    for (let i = 0; i < this.editorProps.length; i++) {
+      const p = this.editorProps[i];
       let wx: number, wz: number, wy: number;
       if (isCustom && this.customSpawnCenter) {
         wx = this.customSpawnCenter.x + p.x;
@@ -2500,9 +2685,10 @@ export class Game {
         wz = (p as { z: number }).z;
         wy = (p.y ?? 0) + 0.5;
       }
-      return new THREE.Vector3(wx, wy, wz).distanceTo(pos) < maxDist;
-    });
-    if (idx >= 0) this.editorProps.splice(idx, 1);
+      const d = new THREE.Vector3(wx, wy, wz).distanceTo(pos);
+      if (d < bestDist) { bestDist = d; bestIdx = i; }
+    }
+    if (bestIdx >= 0) this.editorProps.splice(bestIdx, 1);
   }
 
   private static roundForConfig(n: number, decimals = 5): number {
@@ -2583,6 +2769,16 @@ export class Game {
   }
 
   private exitEditor(): void {
+    // Clean up editor hand + ghost meshes
+    if (this.editorHandGroup) {
+      this.fpsCamera.camera.remove(this.editorHandGroup);
+      this.editorHandGroup = null;
+    }
+    if (this.editorGhostGroup) {
+      this.scene.remove(this.editorGhostGroup);
+      this.editorGhostGroup = null;
+    }
+    this.weaponManager.setViewModelVisible(true);
     this.mapEditorUI?.detach();
     this.mapEditorUI = null;
     window.location.reload();
