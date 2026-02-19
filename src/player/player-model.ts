@@ -235,6 +235,38 @@ export function buildPlayerModel(playerId: string): THREE.Group {
 const TARGET_PLAYER_HEIGHT = 1.7;
 
 /**
+ * Safe Box3.setFromObject that won't crash on GLB/VRM models with InterleavedBufferAttribute
+ * geometry (e.g. Draco-compressed models). Three.js Box3.expandByObject calls
+ * updateWorldMatrix which reads `.offset` on buffer attributes — undefined on some cloned models.
+ * Falls back to a unit-sized box if the traversal throws.
+ */
+function safeBoxFromObject(object: THREE.Object3D): THREE.Box3 {
+  try {
+    return new THREE.Box3().setFromObject(object);
+  } catch {
+    // Fallback: manually traverse and accumulate positions, skipping bad geometry
+    const box = new THREE.Box3();
+    object.traverse((child) => {
+      const mesh = child as THREE.Mesh;
+      if (!mesh.isMesh || !mesh.geometry) return;
+      try {
+        const pos = mesh.geometry.getAttribute('position');
+        if (!pos) return;
+        mesh.updateWorldMatrix(true, false);
+        const tempBox = new THREE.Box3().setFromBufferAttribute(pos as THREE.BufferAttribute);
+        tempBox.applyMatrix4(mesh.matrixWorld);
+        box.union(tempBox);
+      } catch {
+        // Skip meshes with corrupt attributes entirely
+      }
+    });
+    // If still empty (no valid geometry found), return a sensible default
+    if (box.isEmpty()) box.set(new THREE.Vector3(-0.5, 0, -0.5), new THREE.Vector3(0.5, 1.7, 0.5));
+    return box;
+  }
+}
+
+/**
  * Build a player model from a loaded GLB/VRM.
  * Used for remote players when customPlayerModelPath is set.
  * Uses simple clone — for animated models use buildAnimatedPlayerFromCharacter.
@@ -245,7 +277,7 @@ export function buildPlayerModelFromCharacter(playerId: string, char: LoadedChar
 
   fixMaterialsForPlayer(scene);
 
-  const box = new THREE.Box3().setFromObject(scene);
+  const box = safeBoxFromObject(scene);
   const size = box.getSize(new THREE.Vector3());
   const center = box.getCenter(new THREE.Vector3());
   const scale = TARGET_PLAYER_HEIGHT / Math.max(size.y, 0.01);
@@ -285,7 +317,7 @@ export function buildAnimatedPlayerFromCharacter(
 
   fixMaterialsForPlayer(scene);
 
-  const box = new THREE.Box3().setFromObject(scene);
+  const box = safeBoxFromObject(scene);
   const size = box.getSize(new THREE.Vector3());
   const center = box.getCenter(new THREE.Vector3());
   const scale = TARGET_PLAYER_HEIGHT / Math.max(size.y, 0.01);

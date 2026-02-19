@@ -22,6 +22,29 @@ const TARGET_HEIGHT = 1.7;
 /** How far to sink the model (meters) during death — pose JSON has no position data */
 const DEATH_SINK = 0.9;
 
+/** Safe Box3.setFromObject — won't crash on models with InterleavedBufferAttribute geometry. */
+function safeBoxFromObject(object: THREE.Object3D): THREE.Box3 {
+  try {
+    return new THREE.Box3().setFromObject(object);
+  } catch {
+    const box = new THREE.Box3();
+    object.traverse((child) => {
+      const mesh = child as THREE.Mesh;
+      if (!mesh.isMesh || !mesh.geometry) return;
+      try {
+        const pos = mesh.geometry.getAttribute('position');
+        if (!pos) return;
+        mesh.updateWorldMatrix(true, false);
+        const tempBox = new THREE.Box3().setFromBufferAttribute(pos as THREE.BufferAttribute);
+        tempBox.applyMatrix4(mesh.matrixWorld);
+        box.union(tempBox);
+      } catch { /* skip corrupt geometry */ }
+    });
+    if (box.isEmpty()) box.set(new THREE.Vector3(-0.5, 0, -0.5), new THREE.Vector3(0.5, TARGET_HEIGHT, 0.5));
+    return box;
+  }
+}
+
 function getSceneAndAnimations(char: LoadedCharacter): { scene: THREE.Group; animations: THREE.AnimationClip[] } {
   return { scene: char.scene, animations: char.animations };
 }
@@ -183,7 +206,7 @@ export class EnemyCustomModel {
     // VRM/GLB typically faces -Z; our facing uses +Z forward — rotate 180° so model faces correct way
     this.mesh.rotation.y = Math.PI;
 
-    const box = new THREE.Box3().setFromObject(this.mesh);
+    const box = safeBoxFromObject(this.mesh);
     const size = box.getSize(new THREE.Vector3());
     const center = box.getCenter(new THREE.Vector3());
     const scale = TARGET_HEIGHT / Math.max(size.y, 0.01);
