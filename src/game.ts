@@ -596,10 +596,12 @@ export class Game {
       );
       this.nameTagManager = new NameTagManager(this.fpsCamera.camera);
 
-      // Handle game state snapshots from server (ignore if from wrong map room)
+      // Handle game state snapshots from server
+      // Note: Socket.IO rooms already ensure we only receive snapshots for our map.
+      // We log a warning if mapId mismatches but still process it to avoid silent failures.
       this.networkManager.onGameStateSnapshot = (snapshot) => {
         if (snapshot.mapId != null && this.multiplayerMapId != null && snapshot.mapId !== this.multiplayerMapId) {
-          return; // Stale/wrong room snapshot - ignore
+          console.warn(`[Game] Snapshot mapId mismatch: got '${snapshot.mapId}', expected '${this.multiplayerMapId}' — processing anyway`);
         }
         this.remotePlayerManager?.updateFromSnapshot(snapshot);
         this.updateScoreboardFromSnapshot(snapshot);

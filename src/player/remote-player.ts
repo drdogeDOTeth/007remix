@@ -116,6 +116,7 @@ export class RemotePlayer {
         this.model.scale.setScalar(1.25);
       }
       scene.add(this.model);
+      console.log(`[RemotePlayer] Added 3D model to scene for ${id}, scene children: ${scene.children.length}`);
 
       // Create blob shadow (scaled to match human-sized player)
       const shadowGeometry = new THREE.CircleGeometry(0.38, 16);

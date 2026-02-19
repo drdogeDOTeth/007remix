@@ -36,14 +36,15 @@ export function buildPlayerModel(playerId: string): THREE.Group {
   const playerColor = PLAYER_COLORS[colorIndex % PLAYER_COLORS.length];
   colorIndex++;
 
-  // Materials with flat shading for low-poly look + enhanced visual depth
+  // Materials with flat shading for low-poly look + enhanced visual depth.
+  // Emissive on all mats ensures players are always visible even in low-light environments.
   const bodyMat = new THREE.MeshStandardMaterial({
     color: playerColor,
     flatShading: true,
     roughness: 0.6,
     metalness: 0.3,
     emissive: playerColor,
-    emissiveIntensity: 0.15, // Subtle glow for team identification
+    emissiveIntensity: 0.4, // Strong enough to read in any lighting
   });
 
   const darkMat = new THREE.MeshStandardMaterial({
@@ -51,6 +52,8 @@ export function buildPlayerModel(playerId: string): THREE.Group {
     flatShading: true,
     roughness: 0.7,
     metalness: 0.1,
+    emissive: 0x111111,
+    emissiveIntensity: 0.5,
   });
 
   const skinMat = new THREE.MeshStandardMaterial({
@@ -58,15 +61,17 @@ export function buildPlayerModel(playerId: string): THREE.Group {
     flatShading: true,
     roughness: 0.9,
     metalness: 0.0,
+    emissive: 0xd4a57a,
+    emissiveIntensity: 0.3,
   });
 
   const armorMat = new THREE.MeshStandardMaterial({
     color: 0x444444,
     flatShading: true,
     roughness: 0.4,
-    metalness: 0.6, // More metallic for tactical armor look
-    emissive: 0x222222,
-    emissiveIntensity: 0.1,
+    metalness: 0.6,
+    emissive: 0x333333,
+    emissiveIntensity: 0.4,
   });
 
   // Hips (root transform point at center of character)
