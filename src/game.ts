@@ -2505,25 +2505,64 @@ export class Game {
     if (idx >= 0) this.editorProps.splice(idx, 1);
   }
 
+  private static roundForConfig(n: number, decimals = 5): number {
+    const f = 10 ** decimals;
+    return Math.round(n * f) / f;
+  }
+
   private async saveEditorConfig(mapId: string): Promise<void> {
     const apiUrl = `${NetworkConfig.SERVER_URL}/api/maps/${mapId}/config`;
     const isCustom = mapId === 'custom';
+    const r = Game.roundForConfig;
+    const c = this.customSpawnCenter;
     const payload: Record<string, unknown> = {};
     if (isCustom) {
-      payload.pickups = this.editorPickups.map((p) => ({ type: p.type, x: p.x, z: p.z, amount: p.amount ?? 0 }));
+      payload.pickups = this.editorPickups.map((p) => ({
+        type: p.type,
+        x: r(p.x),
+        z: r(p.z ?? 0),
+        amount: p.amount ?? 0,
+      }));
       payload.props = this.editorProps.map((p) => {
         const rec = p as { y?: number };
-        return { type: p.type, x: p.x, z: p.z, size: p.size, yOffset: p.yOffset, ...(rec.y != null && { y: rec.y }) };
+        const wx = c ? c.x + p.x : p.x;
+        const wz = c ? c.z + (p.z ?? 0) : (p.z ?? 0);
+        const yOff = p.yOffset ?? 0.5;
+        const y = rec.y != null ? rec.y : (this.getGroundHeight?.(wx, wz) ?? 0) + yOff;
+        return {
+          type: p.type,
+          x: r(p.x),
+          z: r(p.z ?? 0),
+          size: p.size ?? [1, 1, 1],
+          yOffset: yOff,
+          y: r(y),
+        };
       });
-      payload.labProps = this.editorLabProps;
+      payload.labProps = (this.editorLabProps ?? []).map((lab) => ({
+        type: lab.type,
+        x: r(lab.x),
+        z: r(lab.z),
+      }));
     } else {
       payload.pickups = this.editorPickups.map((p) => {
         const rec = p as { x: number; y?: number; z: number };
-        return { type: p.type, x: p.x, y: rec.y ?? 0, z: rec.z, amount: p.amount ?? 0 };
+        return {
+          type: p.type,
+          x: r(rec.x),
+          y: r(rec.y ?? 0),
+          z: r(rec.z),
+          amount: p.amount ?? 0,
+        };
       });
       payload.props = this.editorProps.map((p) => {
         const rec = p as { x: number; y?: number; z: number };
-        return { type: p.type, x: p.x, y: rec.y ?? 0, z: rec.z, scale: p.scale ?? 1 };
+        return {
+          type: p.type,
+          x: r(rec.x),
+          y: r(rec.y ?? 0),
+          z: r(rec.z),
+          scale: p.scale ?? 1,
+        };
       });
     }
     try {

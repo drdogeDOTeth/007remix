@@ -109,9 +109,10 @@ class GameServer {
     }
 
     const merged: Record<string, unknown> = { ...existing };
-    if (Array.isArray(body.pickups)) merged.pickups = body.pickups;
-    if (Array.isArray(body.props)) merged.props = body.props;
-    if (Array.isArray(body.labProps)) merged.labProps = body.labProps;
+    // Replace arrays when key is present so editor save fully overwrites (no stale/deleted items)
+    if ('pickups' in body) merged.pickups = Array.isArray(body.pickups) ? body.pickups : [];
+    if ('props' in body) merged.props = Array.isArray(body.props) ? body.props : [];
+    if ('labProps' in body) merged.labProps = Array.isArray(body.labProps) ? body.labProps : [];
 
     try {
       await writeFile(configPath, JSON.stringify(merged, null, 2), 'utf-8');

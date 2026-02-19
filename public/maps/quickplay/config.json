@@ -6,46 +6,955 @@
   "nightSkybox": "skybox_night.jpg",
   "skyboxRotationOffset": 0.1,
   "presets": {
-    "day": { "hdri": "environment.hdr", "skybox": "skybox.webp" },
-    "night": { "hdri": "environment.hdr", "skybox": "skybox_night.jpg" }
+    "day": {
+      "hdri": "environment.hdr",
+      "skybox": "skybox.webp"
+    },
+    "night": {
+      "hdri": "environment.hdr",
+      "skybox": "skybox_night.jpg"
+    }
   },
   "preset": "day",
   "pickups": [
-    { "type": "weapon-rifle", "x": -12, "z": -8, "amount": 0 },
-    { "type": "weapon-rifle", "x": 14, "z": 6, "amount": 0 },
-    { "type": "weapon-shotgun", "x": 8, "z": 10, "amount": 0 },
-    { "type": "weapon-shotgun", "x": -6, "z": -12, "amount": 0 },
-    { "type": "weapon-sniper", "x": 0, "z": -14, "amount": 0 },
-    { "type": "weapon-sniper", "x": -14, "z": 4, "amount": 0 },
-    { "type": "health", "x": -10, "z": 0, "amount": 25 },
-    { "type": "health", "x": 10, "z": -6, "amount": 25 },
-    { "type": "health", "x": 0, "z": 10, "amount": 25 },
-    { "type": "health", "x": 6, "z": -10, "amount": 25 },
-    { "type": "health", "x": -8, "z": 8, "amount": 25 },
-    { "type": "armor", "x": 0, "z": 0, "amount": 50 },
-    { "type": "armor", "x": 12, "z": -4, "amount": 50 },
-    { "type": "armor", "x": -10, "z": -6, "amount": 50 },
-    { "type": "ammo-pistol", "x": -15, "z": 2, "amount": 24 },
-    { "type": "ammo-pistol", "x": 15, "z": -2, "amount": 24 },
-    { "type": "ammo-rifle", "x": -12, "z": -10, "amount": 30 },
-    { "type": "ammo-rifle", "x": 10, "z": 8, "amount": 30 },
-    { "type": "ammo-rifle", "x": -4, "z": 6, "amount": 30 },
-    { "type": "ammo-shotgun", "x": 6, "z": 12, "amount": 12 },
-    { "type": "ammo-shotgun", "x": -8, "z": -14, "amount": 12 },
-    { "type": "ammo-sniper", "x": 2, "z": -16, "amount": 8 },
-    { "type": "ammo-sniper", "x": -14, "z": 2, "amount": 8 }
+    {
+      "type": "weapon-rifle",
+      "x": -12,
+      "z": -8,
+      "amount": 0
+    },
+    {
+      "type": "weapon-rifle",
+      "x": 14,
+      "z": 6,
+      "amount": 0
+    },
+    {
+      "type": "weapon-shotgun",
+      "x": 8,
+      "z": 10,
+      "amount": 0
+    },
+    {
+      "type": "weapon-sniper",
+      "x": 0,
+      "z": -14,
+      "amount": 0
+    },
+    {
+      "type": "weapon-sniper",
+      "x": -14,
+      "z": 4,
+      "amount": 0
+    },
+    {
+      "type": "health",
+      "x": -10,
+      "z": 0,
+      "amount": 25
+    },
+    {
+      "type": "health",
+      "x": 10,
+      "z": -6,
+      "amount": 25
+    },
+    {
+      "type": "health",
+      "x": 0,
+      "z": 10,
+      "amount": 25
+    },
+    {
+      "type": "health",
+      "x": 6,
+      "z": -10,
+      "amount": 25
+    },
+    {
+      "type": "health",
+      "x": -8,
+      "z": 8,
+      "amount": 25
+    },
+    {
+      "type": "armor",
+      "x": 0,
+      "z": 0,
+      "amount": 50
+    },
+    {
+      "type": "armor",
+      "x": 12,
+      "z": -4,
+      "amount": 50
+    },
+    {
+      "type": "armor",
+      "x": -10,
+      "z": -6,
+      "amount": 50
+    },
+    {
+      "type": "ammo-pistol",
+      "x": -15,
+      "z": 2,
+      "amount": 24
+    },
+    {
+      "type": "ammo-pistol",
+      "x": 15,
+      "z": -2,
+      "amount": 24
+    },
+    {
+      "type": "ammo-rifle",
+      "x": -12,
+      "z": -10,
+      "amount": 30
+    },
+    {
+      "type": "ammo-rifle",
+      "x": 10,
+      "z": 8,
+      "amount": 30
+    },
+    {
+      "type": "ammo-rifle",
+      "x": -4,
+      "z": 6,
+      "amount": 30
+    },
+    {
+      "type": "ammo-shotgun",
+      "x": 6,
+      "z": 12,
+      "amount": 12
+    },
+    {
+      "type": "ammo-sniper",
+      "x": 2,
+      "z": -16,
+      "amount": 8
+    },
+    {
+      "type": "ammo-sniper",
+      "x": -14,
+      "z": 2,
+      "amount": 8
+    },
+    {
+      "type": "weapon-rifle",
+      "x": 78.11112,
+      "z": -7.83183,
+      "amount": 0
+    },
+    {
+      "type": "ammo-sniper",
+      "x": 82.15804,
+      "z": 0.88208,
+      "amount": 8
+    },
+    {
+      "type": "health",
+      "x": 78.6325,
+      "z": -2.07348,
+      "amount": 25
+    },
+    {
+      "type": "armor",
+      "x": 78.66395,
+      "z": -1.58598,
+      "amount": 50
+    },
+    {
+      "type": "ammo-shotgun",
+      "x": 2.88627,
+      "z": -65.96417,
+      "amount": 12
+    },
+    {
+      "type": "ammo-shotgun",
+      "x": 2.92671,
+      "z": -66.02982,
+      "amount": 12
+    },
+    {
+      "type": "health",
+      "x": -25.75453,
+      "z": -102.76174,
+      "amount": 25
+    },
+    {
+      "type": "armor",
+      "x": -26.62029,
+      "z": -102.64616,
+      "amount": 50
+    },
+    {
+      "type": "ammo-rifle",
+      "x": -27.11089,
+      "z": -106.46163,
+      "amount": 30
+    },
+    {
+      "type": "ammo-sniper",
+      "x": -27.05934,
+      "z": -106.4014,
+      "amount": 8
+    },
+    {
+      "type": "health",
+      "x": -15.33432,
+      "z": -95.51069,
+      "amount": 25
+    },
+    {
+      "type": "health",
+      "x": -1.91517,
+      "z": -93.73403,
+      "amount": 25
+    },
+    {
+      "type": "health",
+      "x": 6.52004,
+      "z": -97.78244,
+      "amount": 25
+    },
+    {
+      "type": "health",
+      "x": 5.85919,
+      "z": -97.21523,
+      "amount": 25
+    },
+    {
+      "type": "health",
+      "x": 10.77274,
+      "z": -98.69884,
+      "amount": 25
+    },
+    {
+      "type": "health",
+      "x": 17.66866,
+      "z": -97.96736,
+      "amount": 25
+    },
+    {
+      "type": "health",
+      "x": 19.8107,
+      "z": -97.73852,
+      "amount": 25
+    },
+    {
+      "type": "ammo-shotgun",
+      "x": 40.43677,
+      "z": -100.5478,
+      "amount": 12
+    },
+    {
+      "type": "weapon-sniper",
+      "x": 82.07254,
+      "z": -0.93475,
+      "amount": 0
+    },
+    {
+      "type": "ammo-sniper",
+      "x": 82.19608,
+      "z": 0.38706,
+      "amount": 8
+    },
+    {
+      "type": "armor",
+      "x": 78.456,
+      "z": -2.02302,
+      "amount": 50
+    },
+    {
+      "type": "health",
+      "x": 78.61493,
+      "z": -1.35858,
+      "amount": 25
+    },
+    {
+      "type": "weapon-shotgun",
+      "x": 3.94413,
+      "z": -65.4247,
+      "amount": 0
+    }
   ],
   "props": [
-    { "type": "crate", "x": 4, "z": 3, "size": [1.2, 1.2, 1.2], "yOffset": 0.6 },
-    { "type": "crate", "x": 4.8, "z": 4.2, "size": [1, 1, 1], "yOffset": 0.5 },
-    { "type": "crate", "x": 3.5, "z": 3.3, "size": [0.8, 0.8, 0.8], "yOffset": 1.6 },
-    { "type": "crate_metal", "x": -6, "z": -5, "size": [1.5, 1, 1.5], "yOffset": 0.5 },
-    { "type": "crate_metal", "x": -5.5, "z": -3.5, "size": [1, 0.8, 1], "yOffset": 0.4 },
-    { "type": "crate", "x": -3, "z": 7, "size": [2, 1.5, 0.8], "yOffset": 0.75 },
-    { "type": "crate_metal", "x": 7, "z": -7, "size": [0.6, 2, 0.6], "yOffset": 1 },
-    { "type": "crate_metal", "x": -7, "z": -7, "size": [0.6, 2, 0.6], "yOffset": 1 },
-    { "type": "barrel", "x": 6, "z": -4, "yOffset": 0.6 },
-    { "type": "barrel", "x": 6.8, "z": -3.5, "yOffset": 0.6 },
-    { "type": "barrel", "x": -2, "z": -8, "yOffset": 0.6 }
-  ]
+    {
+      "type": "crate",
+      "x": 4,
+      "z": 3,
+      "size": [
+        1.2,
+        1.2,
+        1.2
+      ],
+      "yOffset": 0.6,
+      "y": 11.88699
+    },
+    {
+      "type": "crate",
+      "x": 4.8,
+      "z": 4.2,
+      "size": [
+        1,
+        1,
+        1
+      ],
+      "yOffset": 0.5,
+      "y": 11.76954
+    },
+    {
+      "type": "crate",
+      "x": 3.5,
+      "z": 3.3,
+      "size": [
+        0.8,
+        0.8,
+        0.8
+      ],
+      "yOffset": 1.6,
+      "y": 12.85827
+    },
+    {
+      "type": "crate_metal",
+      "x": -6,
+      "z": -5,
+      "size": [
+        1.5,
+        1,
+        1.5
+      ],
+      "yOffset": 0.5,
+      "y": 11.72653
+    },
+    {
+      "type": "crate_metal",
+      "x": -5.5,
+      "z": -3.5,
+      "size": [
+        1,
+        0.8,
+        1
+      ],
+      "yOffset": 0.4,
+      "y": 11.54859
+    },
+    {
+      "type": "crate",
+      "x": -3,
+      "z": 7,
+      "size": [
+        2,
+        1.5,
+        0.8
+      ],
+      "yOffset": 0.75,
+      "y": 11.92145
+    },
+    {
+      "type": "crate_metal",
+      "x": 7,
+      "z": -7,
+      "size": [
+        0.6,
+        2,
+        0.6
+      ],
+      "yOffset": 1,
+      "y": 12.16324
+    },
+    {
+      "type": "crate_metal",
+      "x": -7,
+      "z": -7,
+      "size": [
+        0.6,
+        2,
+        0.6
+      ],
+      "yOffset": 1,
+      "y": 12.45012
+    },
+    {
+      "type": "barrel",
+      "x": 6,
+      "z": -4,
+      "size": [
+        1,
+        1,
+        1
+      ],
+      "yOffset": 0.6,
+      "y": 11.67843
+    },
+    {
+      "type": "barrel",
+      "x": 6.8,
+      "z": -3.5,
+      "size": [
+        1,
+        1,
+        1
+      ],
+      "yOffset": 0.6,
+      "y": 11.68528
+    },
+    {
+      "type": "barrel",
+      "x": -2,
+      "z": -8,
+      "size": [
+        1,
+        1,
+        1
+      ],
+      "yOffset": 0.6,
+      "y": 11.77655
+    },
+    {
+      "type": "barrel",
+      "x": 26.90535,
+      "z": 38.78389,
+      "size": [
+        1,
+        1,
+        1
+      ],
+      "yOffset": 0.5,
+      "y": 14.4184
+    },
+    {
+      "type": "barrel",
+      "x": 26.76841,
+      "z": 39.66878,
+      "size": [
+        1,
+        1,
+        1
+      ],
+      "yOffset": 0.5,
+      "y": 14.35247
+    },
+    {
+      "type": "barrel",
+      "x": 26.95345,
+      "z": 39.36552,
+      "size": [
+        1,
+        1,
+        1
+      ],
+      "yOffset": 0.5,
+      "y": 15.55247
+    },
+    {
+      "type": "crate_metal",
+      "x": 27.58654,
+      "z": 40.66705,
+      "size": [
+        1,
+        1,
+        1
+      ],
+      "yOffset": 0.5,
+      "y": 14.18621
+    },
+    {
+      "type": "crate_metal",
+      "x": 27.39415,
+      "z": 41.68363,
+      "size": [
+        1,
+        1,
+        1
+      ],
+      "yOffset": 0.5,
+      "y": 14.12511
+    },
+    {
+      "type": "crate",
+      "x": 83.29719,
+      "z": 1.51115,
+      "size": [
+        1,
+        1,
+        1
+      ],
+      "yOffset": 0.5,
+      "y": 17.22307
+    },
+    {
+      "type": "crate",
+      "x": 79.58736,
+      "z": -2.11263,
+      "size": [
+        1,
+        1,
+        1
+      ],
+      "yOffset": 0.5,
+      "y": 15.22731
+    },
+    {
+      "type": "crate",
+      "x": -29.6548,
+      "z": -105.37458,
+      "size": [
+        1,
+        1,
+        1
+      ],
+      "yOffset": 0.5,
+      "y": 23.77724
+    },
+    {
+      "type": "crate",
+      "x": -28.73975,
+      "z": -106.74354,
+      "size": [
+        1,
+        1,
+        1
+      ],
+      "yOffset": 0.5,
+      "y": 23.79358
+    },
+    {
+      "type": "crate",
+      "x": -29.16026,
+      "z": -105.84549,
+      "size": [
+        1,
+        1,
+        1
+      ],
+      "yOffset": 0.5,
+      "y": 24.77724
+    },
+    {
+      "type": "crate",
+      "x": -27.43815,
+      "z": -107.66211,
+      "size": [
+        1,
+        1,
+        1
+      ],
+      "yOffset": 0.5,
+      "y": 23.83719
+    },
+    {
+      "type": "crate",
+      "x": -28.26842,
+      "z": -107.23287,
+      "size": [
+        1,
+        1,
+        1
+      ],
+      "yOffset": 0.5,
+      "y": 24.79358
+    },
+    {
+      "type": "crate",
+      "x": -28.71448,
+      "z": -106.31301,
+      "size": [
+        1,
+        1,
+        1
+      ],
+      "yOffset": 0.5,
+      "y": 25.77724
+    },
+    {
+      "type": "crate",
+      "x": 56.88509,
+      "z": -98.52279,
+      "size": [
+        1,
+        1,
+        1
+      ],
+      "yOffset": 0.5,
+      "y": 25.24344
+    },
+    {
+      "type": "crate",
+      "x": 56.99319,
+      "z": -98.40244,
+      "size": [
+        1,
+        1,
+        1
+      ],
+      "yOffset": 0.5,
+      "y": 25.24362
+    },
+    {
+      "type": "crate_metal",
+      "x": -37.74403,
+      "z": -70.41355,
+      "size": [
+        1,
+        1,
+        1
+      ],
+      "yOffset": 0.5,
+      "y": 15.64
+    },
+    {
+      "type": "barrel",
+      "x": -37.75899,
+      "z": -69.03209,
+      "size": [
+        1,
+        1,
+        1
+      ],
+      "yOffset": 0.5,
+      "y": 14.70559
+    },
+    {
+      "type": "crate_metal",
+      "x": 77.86976,
+      "z": -9.4121,
+      "size": [
+        1,
+        1,
+        1
+      ],
+      "yOffset": 0.5,
+      "y": 15.22397
+    },
+    {
+      "type": "crate_metal",
+      "x": 80.83233,
+      "z": -8.31568,
+      "size": [
+        1,
+        1,
+        1
+      ],
+      "yOffset": 0.5,
+      "y": 15.22738
+    },
+    {
+      "type": "crate_metal",
+      "x": 80.54512,
+      "z": -5.89413,
+      "size": [
+        1,
+        1,
+        1
+      ],
+      "yOffset": 0.5,
+      "y": 15.22094
+    },
+    {
+      "type": "crate_metal",
+      "x": 80.68442,
+      "z": -5.98593,
+      "size": [
+        1,
+        1,
+        1
+      ],
+      "yOffset": 0.5,
+      "y": 15.2264
+    },
+    {
+      "type": "crate_metal",
+      "x": 80.75722,
+      "z": -5.99203,
+      "size": [
+        1,
+        1,
+        1
+      ],
+      "yOffset": 0.5,
+      "y": 15.22843
+    },
+    {
+      "type": "crate_metal",
+      "x": 80.86573,
+      "z": -6.07461,
+      "size": [
+        1,
+        1,
+        1
+      ],
+      "yOffset": 0.5,
+      "y": 15.23024
+    },
+    {
+      "type": "crate",
+      "x": 83.83282,
+      "z": -0.17185,
+      "size": [
+        1,
+        1,
+        1
+      ],
+      "yOffset": 0.5,
+      "y": 15.22348
+    },
+    {
+      "type": "crate",
+      "x": 83.83525,
+      "z": -1.14769,
+      "size": [
+        1,
+        1,
+        1
+      ],
+      "yOffset": 0.5,
+      "y": 15.22223
+    },
+    {
+      "type": "crate",
+      "x": 82.96562,
+      "z": -2.03452,
+      "size": [
+        1,
+        1,
+        1
+      ],
+      "yOffset": 0.5,
+      "y": 15.21983
+    },
+    {
+      "type": "crate",
+      "x": 82.86121,
+      "z": -2.13402,
+      "size": [
+        1,
+        1,
+        1
+      ],
+      "yOffset": 0.5,
+      "y": 15.21909
+    },
+    {
+      "type": "crate",
+      "x": 82.77631,
+      "z": -2.20262,
+      "size": [
+        1,
+        1,
+        1
+      ],
+      "yOffset": 0.5,
+      "y": 15.21855
+    },
+    {
+      "type": "crate",
+      "x": 82.72069,
+      "z": -2.10087,
+      "size": [
+        1,
+        1,
+        1
+      ],
+      "yOffset": 0.5,
+      "y": 15.21895
+    },
+    {
+      "type": "crate",
+      "x": 82.67617,
+      "z": -2.14231,
+      "size": [
+        1,
+        1,
+        1
+      ],
+      "yOffset": 0.5,
+      "y": 15.21864
+    },
+    {
+      "type": "crate",
+      "x": 82.66724,
+      "z": -2.09785,
+      "size": [
+        1,
+        1,
+        1
+      ],
+      "yOffset": 0.5,
+      "y": 15.21885
+    },
+    {
+      "type": "crate",
+      "x": 83.57448,
+      "z": -1.12264,
+      "size": [
+        1,
+        1,
+        1
+      ],
+      "yOffset": 0.5,
+      "y": 16.22223
+    },
+    {
+      "type": "crate",
+      "x": 83.69198,
+      "z": -1.07094,
+      "size": [
+        1,
+        1,
+        1
+      ],
+      "yOffset": 0.5,
+      "y": 16.22223
+    },
+    {
+      "type": "crate",
+      "x": 83.74792,
+      "z": -1.07644,
+      "size": [
+        1,
+        1,
+        1
+      ],
+      "yOffset": 0.5,
+      "y": 16.22223
+    },
+    {
+      "type": "crate",
+      "x": 84.02394,
+      "z": -1.13126,
+      "size": [
+        1,
+        1,
+        1
+      ],
+      "yOffset": 0.5,
+      "y": 16.22223
+    },
+    {
+      "type": "crate",
+      "x": 84.26593,
+      "z": 2.46973,
+      "size": [
+        1,
+        1,
+        1
+      ],
+      "yOffset": 0.5,
+      "y": 15.21502
+    },
+    {
+      "type": "crate",
+      "x": 83.79147,
+      "z": 1.9291,
+      "size": [
+        1,
+        1,
+        1
+      ],
+      "yOffset": 0.5,
+      "y": 15.22299
+    },
+    {
+      "type": "crate",
+      "x": 82.78895,
+      "z": 2.01419,
+      "size": [
+        1,
+        1,
+        1
+      ],
+      "yOffset": 0.5,
+      "y": 15.2161
+    },
+    {
+      "type": "crate",
+      "x": 81.99289,
+      "z": 1.95079,
+      "size": [
+        1,
+        1,
+        1
+      ],
+      "yOffset": 0.5,
+      "y": 15.21161
+    },
+    {
+      "type": "crate",
+      "x": 81.53442,
+      "z": 1.86932,
+      "size": [
+        1,
+        1,
+        1
+      ],
+      "yOffset": 0.5,
+      "y": 15.2092
+    },
+    {
+      "type": "crate",
+      "x": 81.81476,
+      "z": 1.99578,
+      "size": [
+        1,
+        1,
+        1
+      ],
+      "yOffset": 0.5,
+      "y": 15.21036
+    },
+    {
+      "type": "crate",
+      "x": 81.77842,
+      "z": 2.06009,
+      "size": [
+        1,
+        1,
+        1
+      ],
+      "yOffset": 0.5,
+      "y": 15.20987
+    },
+    {
+      "type": "crate_metal",
+      "x": 5.86119,
+      "z": -67.25381,
+      "size": [
+        1,
+        1,
+        1
+      ],
+      "yOffset": 0.5,
+      "y": 14.87268
+    },
+    {
+      "type": "crate_metal",
+      "x": 6.008,
+      "z": -67.28547,
+      "size": [
+        1,
+        1,
+        1
+      ],
+      "yOffset": 0.5,
+      "y": 14.86998
+    },
+    {
+      "type": "crate_metal",
+      "x": 5.46512,
+      "z": -67.35607,
+      "size": [
+        1,
+        1,
+        1
+      ],
+      "yOffset": 0.5,
+      "y": 15.87856
+    }
+  ],
+  "labProps": []
 }
