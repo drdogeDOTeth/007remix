@@ -23,6 +23,7 @@ export interface MainMenuCallbacks {
   onQuickPlayLevel: (levelId: string) => void;
   onMissionLevel: (levelId: string) => void;
   onMultiplayerJoin: (username: string, mapId: MultiplayerMapId) => void;
+  onMapEditor: (mapId: MultiplayerMapId) => void;
   onCustomModels: () => void;
   onSettings: () => void;
 }
@@ -82,6 +83,9 @@ export class MainMenuScreen {
   private joinBtn: HTMLButtonElement;
   private statusEl: HTMLDivElement;
 
+  // Map editor: when true, show map selector for editing
+  private mapEditorView = false;
+
   constructor() {
     this.container = document.createElement('div');
     this.container.id = 'main-menu-screen';
@@ -125,6 +129,13 @@ export class MainMenuScreen {
     // Footer: Custom Models, Settings
     const footer = document.createElement('div');
     footer.style.cssText = 'display: flex; gap: 16px; margin-top: 24px;';
+
+    const editorBtn = document.createElement('button');
+    editorBtn.type = 'button';
+    editorBtn.textContent = 'MAP EDITOR';
+    editorBtn.style.cssText = TAB_BUTTON_STYLE;
+    editorBtn.addEventListener('click', () => this.showMapEditorSelector());
+    footer.appendChild(editorBtn);
 
     const modelsBtn = document.createElement('button');
     modelsBtn.type = 'button';
@@ -218,8 +229,51 @@ export class MainMenuScreen {
     }
   }
 
+  private showMapEditorSelector(): void {
+    this.mapEditorView = true;
+    this.contentArea.innerHTML = '';
+    const title = document.createElement('p');
+    title.style.cssText = 'font-size: 12px; color: #6a5a4a; margin-bottom: 16px; letter-spacing: 2px;';
+    title.textContent = 'SELECT MAP TO EDIT';
+    this.contentArea.appendChild(title);
+    const hint = document.createElement('p');
+    hint.style.cssText = 'font-size: 12px; color: #8b7355; margin-bottom: 20px;';
+    hint.textContent = 'Place weapons, ammo, health, armor, crates, barrels, tanks, and tubes. Save writes to config.';
+    this.contentArea.appendChild(hint);
+    const grid = document.createElement('div');
+    grid.style.cssText = 'display: flex; flex-wrap: wrap; gap: 12px; justify-content: center;';
+    for (const map of MULTIPLAYER_MAPS) {
+      const card = document.createElement('button');
+      card.type = 'button';
+      card.style.cssText = CARD_STYLE;
+      card.innerHTML = `<strong style="color:#d4af37;">${map.name}</strong><br><span style="font-size:11px;">${map.description}</span>`;
+      card.addEventListener('click', () => {
+        this.mapEditorView = false;
+        this.callbacks?.onMapEditor(map.id);
+        this.renderContent();
+      });
+      card.addEventListener('mouseenter', () => { card.style.borderColor = '#d4af37'; card.style.color = '#d4af37'; });
+      card.addEventListener('mouseleave', () => { card.style.borderColor = '#5a4a3a'; card.style.color = '#8b7355'; });
+      grid.appendChild(card);
+    }
+    const backBtn = document.createElement('button');
+    backBtn.type = 'button';
+    backBtn.textContent = 'BACK';
+    backBtn.style.cssText = TAB_BUTTON_STYLE + ' margin-top: 20px;';
+    backBtn.addEventListener('click', () => {
+      this.mapEditorView = false;
+      this.renderContent();
+    });
+    this.contentArea.appendChild(grid);
+    this.contentArea.appendChild(backBtn);
+  }
+
   private renderContent(): void {
     this.contentArea.innerHTML = '';
+    if (this.mapEditorView) {
+      this.showMapEditorSelector();
+      return;
+    }
 
     if (this.selectedTab === 'quickplay') {
       this.renderQuickPlayContent();

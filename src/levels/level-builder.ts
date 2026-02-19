@@ -644,8 +644,8 @@ function buildProp(
   }
 }
 
-/** Glass tanks and tubes with procedurally generated glowing fluid. */
-function buildLabProps(
+/** Glass tanks and tubes with procedurally generated glowing fluid. Exported for Custom Arena quickplay. */
+export function buildLabProps(
   labProps: LabPropDef[],
   scene: THREE.Scene,
   physics: PhysicsWorld,

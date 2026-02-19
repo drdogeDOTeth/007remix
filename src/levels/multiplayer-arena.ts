@@ -314,6 +314,7 @@ const MAP_META: Record<Exclude<MultiplayerMapId, 'custom'>, { name: string; them
 export function createMultiplayerArena(
   mapId: Exclude<MultiplayerMapId, 'custom'> = 'crossfire',
   config: Partial<ArenaLayoutConfig> = {},
+  overrides?: { pickups?: PickupSpawnDef[]; props?: PropDef[] },
 ): LevelSchema {
   const finalConfig: ArenaLayoutConfig = {
     ...DEFAULT_CONFIG,
@@ -329,11 +330,42 @@ export function createMultiplayerArena(
     doors: createDoors(),
     playerSpawn: getMultiplayerArenaDefaultSpawnPoint(),
     enemies: [],
-    pickups: createPickups(),
+    pickups: overrides?.pickups ?? createPickups(),
     objectives: [],
     triggers: [],
-    props: createLaneCoverProps(finalConfig.seed),
+    props: overrides?.props ?? createLaneCoverProps(finalConfig.seed),
   };
+}
+
+/** Fetch config.json for procedural map and return LevelSchema with config pickups/props when present. */
+export async function createMultiplayerArenaWithConfig(
+  mapId: Exclude<MultiplayerMapId, 'custom'>,
+  /** When true, use empty arrays when no config (for editor mode). */
+  editorEmptyFallback = false,
+): Promise<LevelSchema> {
+  const base = createMultiplayerArena(mapId);
+  try {
+    const baseUrl = `/maps/${mapId}/`;
+    const res = await fetch(`${baseUrl}config.json`);
+    if (!res.ok || res.headers.get('content-type')?.includes('text/html')) {
+      if (editorEmptyFallback) {
+        base.pickups = [];
+        base.props = [];
+      }
+      return base;
+    }
+    const cfg = (await res.json()) as { pickups?: PickupSpawnDef[]; props?: PropDef[] };
+    if (Array.isArray(cfg.pickups)) base.pickups = cfg.pickups;
+    if (Array.isArray(cfg.props)) base.props = cfg.props;
+    if (editorEmptyFallback && !Array.isArray(cfg.pickups)) base.pickups = [];
+    if (editorEmptyFallback && !Array.isArray(cfg.props)) base.props = [];
+  } catch {
+    if (editorEmptyFallback) {
+      base.pickups = [];
+      base.props = [];
+    }
+  }
+  return base;
 }
 
 /** @deprecated Use createMultiplayerArena('crossfire', config) instead. */

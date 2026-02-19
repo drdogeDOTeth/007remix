@@ -181,17 +181,66 @@ this.enemyManager.spawnEnemy({
 
 **Coordinate system**: +X = North, +Z = East, +Y = Up. `facingAngle` in radians (0 = -Z, π/2 = -X).
 
-### Pickup Placement
+### Pickup & Prop Placement (config.json)
 
-Pickups are spawned in `Game.spawnTestPickups()` with the same `ox`, `oz`, `getY` helpers. Types: `health`, `armor`, `ammo-pistol`, `ammo-rifle`, `ammo-shotgun`, `ammo-sniper`, `weapon-rifle`, `weapon-shotgun`, `weapon-sniper`.
+You can define specific ammo/weapon areas and crate/barrel locations in `config.json`. All positions use **x and z relative to the terrain bbox center**; **y is derived from raycast** so items sit on the ground.
 
-### Customizing Enemies/Pickups
+#### Pickups
 
-Currently placement is defined in `src/game.ts` (`spawnTestEnemies`, `spawnTestPickups`). To support per-map config:
+Add a `pickups` array. Each entry: `{ "type": "...", "x": 0, "z": 0, "amount": 25 }`.
 
-1. Add a `spawns.json` or `spawns` section in `config.json`.
-2. Load and parse it in `buildCustomQuickplayScene()` or `prepareCustomScene()`.
-3. Replace hardcoded spawn arrays with config-driven spawns.
+| type | amount | Notes |
+|------|--------|-------|
+| `health` | 25 | Health pack |
+| `armor` | 50 | Armor |
+| `ammo-pistol` | 24 | Pistol ammo |
+| `ammo-rifle` | 30 | Rifle ammo |
+| `ammo-shotgun` | 12 | Shotgun shells |
+| `ammo-sniper` | 8 | Sniper rounds |
+| `weapon-rifle` | 0 | Weapon pickup |
+| `weapon-shotgun` | 0 | Weapon pickup |
+| `weapon-sniper` | 0 | Weapon pickup |
+
+#### Props (crates, barrels)
+
+Add a `props` array. Each entry: `{ "type": "crate"|"crate_metal"|"barrel", "x": 0, "z": 0, "size": [1,1,1], "yOffset": 0.5 }`.
+
+| type | size | yOffset | Notes |
+|------|------|---------|-------|
+| `crate` | `[w,h,d]` | 0.5 | Wood crate; default [1,1,1] |
+| `crate_metal` | `[w,h,d]` | 0.5 | Metal crate |
+| `barrel` | — | 0.6 | Barrel (cylinder) |
+
+- **size**: `[width, height, depth]` for crates. Omitted for barrels.
+- **yOffset**: Added to raycast ground Y so the prop sits above terrain (default 0.5 crates, 0.6 barrels).
+- **scale**: Optional; scales barrel or crate uniformly.
+
+#### Example config.json (with placement)
+
+```json
+{
+  "environment": "environment.glb",
+  "hdri": "environment.hdr",
+  "skybox": "skybox.webp",
+  "daySkybox": "skybox.webp",
+  "nightSkybox": "skybox_night.jpg",
+  "skyboxRotationOffset": 0.1,
+  "pickups": [
+    { "type": "weapon-rifle", "x": -12, "z": -8, "amount": 0 },
+    { "type": "weapon-shotgun", "x": 8, "z": 10, "amount": 0 },
+    { "type": "health", "x": 0, "z": 10, "amount": 25 },
+    { "type": "armor", "x": 0, "z": 0, "amount": 50 },
+    { "type": "ammo-rifle", "x": -12, "z": -10, "amount": 30 }
+  ],
+  "props": [
+    { "type": "crate", "x": 4, "z": 3, "size": [1.2, 1.2, 1.2], "yOffset": 0.6 },
+    { "type": "crate_metal", "x": -6, "z": -5, "size": [1.5, 1, 1.5], "yOffset": 0.5 },
+    { "type": "barrel", "x": 6, "z": -4, "yOffset": 0.6 }
+  ]
+}
+```
+
+Omit `pickups` or `props` to use the built-in default layout.
 
 ---
 
@@ -215,7 +264,7 @@ Currently placement is defined in `src/game.ts` (`spawnTestEnemies`, `spawnTestP
 
 3. **Edit `config.json`** for that map.
 
-4. **Optional spawn config**: Extend config or add `spawns.json` and wire it into spawn logic.
+4. **Pickup/prop layout**: Add `pickups` and `props` arrays to `config.json` (see Pickup & Prop Placement above).
 
 ---
 
@@ -249,5 +298,6 @@ Currently placement is defined in `src/game.ts` (`spawnTestEnemies`, `spawnTestP
 
 ## Changelog
 
+* **Config-driven placement**: `pickups` and `props` arrays in config.json for fine-tuned map building. X/Z relative to layout center; Y from raycast.
 * **Initial**: Skybox, HDRI, GLB terrain, day/night cycle, sky dome scale, raycast ground, enemy/item placement.
 * **Keep updated**: When adding or changing outdoor features, update the relevant sections above and append a changelog entry here.

@@ -30,6 +30,8 @@ export class InputManager {
   private mouseY = 0;
   private _mouseDown = false;
   private _rightMouseDown = false;
+  private _mouseJustPressed = false;
+  private _lastMouseDownTarget: EventTarget | null = null;
   private _pointerLocked = false;
   private _scrollDelta = 0;
   private keyJustPressed = new Set<string>();
@@ -118,6 +120,15 @@ export class InputManager {
     const m = this.mobileInput?.();
     if (m != null && m.fire) return true;
     return this.getGamepadTriggerValue('rt') > 0.2;
+  }
+
+  get wasMouseJustPressed(): boolean {
+    return this._mouseJustPressed;
+  }
+
+  /** Target of the most recent left mousedown (for filtering UI vs world clicks). Cleared on resetMouse(). */
+  get lastMouseDownTarget(): EventTarget | null {
+    return this._lastMouseDownTarget;
   }
 
   get rightMouseDown(): boolean {
@@ -268,6 +279,8 @@ export class InputManager {
     this.mouseX = 0;
     this.mouseY = 0;
     this._scrollDelta = 0;
+    this._mouseJustPressed = false;
+    this._lastMouseDownTarget = null;
     this.keyJustPressed.clear();
   }
 
@@ -290,7 +303,11 @@ export class InputManager {
   };
 
   private onMouseDown = (e: MouseEvent): void => {
-    if (e.button === 0) this._mouseDown = true;
+    if (e.button === 0) {
+      this._mouseDown = true;
+      this._mouseJustPressed = true;
+      this._lastMouseDownTarget = e.target;
+    }
     if (e.button === 2) this._rightMouseDown = true;
   };
 

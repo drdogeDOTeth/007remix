@@ -9,5 +9,43 @@
     "day": { "hdri": "environment.hdr", "skybox": "skybox.webp" },
     "night": { "hdri": "environment.hdr", "skybox": "skybox_night.jpg" }
   },
-  "preset": "day"
+  "preset": "day",
+  "pickups": [
+    { "type": "weapon-rifle", "x": -12, "z": -8, "amount": 0 },
+    { "type": "weapon-rifle", "x": 14, "z": 6, "amount": 0 },
+    { "type": "weapon-shotgun", "x": 8, "z": 10, "amount": 0 },
+    { "type": "weapon-shotgun", "x": -6, "z": -12, "amount": 0 },
+    { "type": "weapon-sniper", "x": 0, "z": -14, "amount": 0 },
+    { "type": "weapon-sniper", "x": -14, "z": 4, "amount": 0 },
+    { "type": "health", "x": -10, "z": 0, "amount": 25 },
+    { "type": "health", "x": 10, "z": -6, "amount": 25 },
+    { "type": "health", "x": 0, "z": 10, "amount": 25 },
+    { "type": "health", "x": 6, "z": -10, "amount": 25 },
+    { "type": "health", "x": -8, "z": 8, "amount": 25 },
+    { "type": "armor", "x": 0, "z": 0, "amount": 50 },
+    { "type": "armor", "x": 12, "z": -4, "amount": 50 },
+    { "type": "armor", "x": -10, "z": -6, "amount": 50 },
+    { "type": "ammo-pistol", "x": -15, "z": 2, "amount": 24 },
+    { "type": "ammo-pistol", "x": 15, "z": -2, "amount": 24 },
+    { "type": "ammo-rifle", "x": -12, "z": -10, "amount": 30 },
+    { "type": "ammo-rifle", "x": 10, "z": 8, "amount": 30 },
+    { "type": "ammo-rifle", "x": -4, "z": 6, "amount": 30 },
+    { "type": "ammo-shotgun", "x": 6, "z": 12, "amount": 12 },
+    { "type": "ammo-shotgun", "x": -8, "z": -14, "amount": 12 },
+    { "type": "ammo-sniper", "x": 2, "z": -16, "amount": 8 },
+    { "type": "ammo-sniper", "x": -14, "z": 2, "amount": 8 }
+  ],
+  "props": [
+    { "type": "crate", "x": 4, "z": 3, "size": [1.2, 1.2, 1.2], "yOffset": 0.6 },
+    { "type": "crate", "x": 4.8, "z": 4.2, "size": [1, 1, 1], "yOffset": 0.5 },
+    { "type": "crate", "x": 3.5, "z": 3.3, "size": [0.8, 0.8, 0.8], "yOffset": 1.6 },
+    { "type": "crate_metal", "x": -6, "z": -5, "size": [1.5, 1, 1.5], "yOffset": 0.5 },
+    { "type": "crate_metal", "x": -5.5, "z": -3.5, "size": [1, 0.8, 1], "yOffset": 0.4 },
+    { "type": "crate", "x": -3, "z": 7, "size": [2, 1.5, 0.8], "yOffset": 0.75 },
+    { "type": "crate_metal", "x": 7, "z": -7, "size": [0.6, 2, 0.6], "yOffset": 1 },
+    { "type": "crate_metal", "x": -7, "z": -7, "size": [0.6, 2, 0.6], "yOffset": 1 },
+    { "type": "barrel", "x": 6, "z": -4, "yOffset": 0.6 },
+    { "type": "barrel", "x": 6.8, "z": -3.5, "yOffset": 0.6 },
+    { "type": "barrel", "x": -2, "z": -8, "yOffset": 0.6 }
+  ]
 }

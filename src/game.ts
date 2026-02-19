@@ -17,11 +17,11 @@ import { PickupSystem } from './levels/pickup-system';
 import { DoorSystem } from './levels/door-system';
 import { TriggerSystem } from './levels/trigger-system';
 import { ObjectiveSystem } from './levels/objective-system';
-import { buildLevel } from './levels/level-builder';
+import { buildLevel, buildLabProps } from './levels/level-builder';
 import type { LevelSchema } from './levels/level-schema';
 import { createMultiplayerArena } from './levels/multiplayer-arena';
 import { loadEnvironmentGLB } from './levels/custom-environment-loader';
-import { loadQuickplayConfig } from './levels/quickplay-config';
+import { loadQuickplayConfig, type QuickplayLabPropDef, type QuickplayPickupDef, type QuickplayPropDef } from './levels/quickplay-config';
 import { loadHDRI, loadSkyboxImage, applyEnvironment } from './levels/environment-loader';
 import { NavMesh } from './navmesh/navmesh';
 import { DestructibleSystem } from './levels/destructible-system';
@@ -45,6 +45,7 @@ import { ObjectivesDisplay } from './ui/objectives-display';
 import { InventoryScreen } from './ui/inventory-screen';
 import { PauseMenu } from './ui/pause-menu';
 import { MissionCompleteScreen } from './ui/mission-complete-screen';
+import { MapEditorUI } from './ui/map-editor-ui';
 import { MobileControls } from './ui/mobile-controls';
 import { renderWeaponPreviewToCanvas } from './weapons/weapon-preview-renderer';
 import {
@@ -83,6 +84,10 @@ export interface GameOptions {
   level?: LevelSchema;
   /** Custom quickplay: load GLB + HDRI from public/maps/quickplay/, populate with props. */
   customQuickplay?: boolean;
+  /** Map editor mode: no enemies, no combat, load from config (or empty). */
+  editorMode?: boolean;
+  /** Map to edit when editorMode is true. */
+  editorMapId?: 'crossfire' | 'wasteland' | 'custom';
 }
 
 export class Game {
@@ -147,6 +152,8 @@ export class Game {
   private customTerrainRaycaster: { raycaster: THREE.Raycaster; meshes: THREE.Mesh[]; down: THREE.Vector3; origin: THREE.Vector3 } | null = null;
   /** Bbox center for prop layout across full terrain (custom quickplay). */
   private customSpawnCenter: { x: number; z: number } | null = null;
+  /** Optional placement from config.json (pickups, props). Overrides defaults when set. */
+  private customQuickplayPlacement: { pickups?: QuickplayPickupDef[]; props?: QuickplayPropDef[]; labProps?: QuickplayLabPropDef[] } | null = null;
   /** Day/night cycle (custom quickplay). */
   private dayNightTime = 0.3;
   private dayNightSun: THREE.DirectionalLight | null = null;
@@ -204,8 +211,26 @@ export class Game {
   private processedDestructibleIds = new Set<string>();
   private readonly MAX_PROCESSED_DESTRUCTIBLES = 256;
 
+  /** Map editor mode: no enemies, no combat, placement UI. */
+  private editorMode: boolean;
+  /** Map being edited when editorMode is true. */
+  private editorMapId: 'crossfire' | 'wasteland' | 'custom' | null = null;
+  /** Map editor UI overlay. */
+  private mapEditorUI: MapEditorUI | null = null;
+  /** Editor placement state (source of truth for save). */
+  private editorPickups: Array<{ type: string; x: number; z?: number; y?: number; amount?: number }> = [];
+  private editorProps: Array<{ type: string; x: number; z?: number; y?: number; size?: [number, number, number]; yOffset?: number; scale?: number }> = [];
+  private editorLabProps: Array<{ type: 'tank' | 'tube'; x: number; z: number; seed?: number; scale?: number; hueHint?: number }> = [];
+
   /** Called when all objectives are done and player reaches extraction (mission:complete). */
   onMissionComplete: (() => void) | null = null;
+
+  get isEditorMode(): boolean {
+    return this.editorMode;
+  }
+  get currentEditorMapId(): 'crossfire' | 'wasteland' | 'custom' | null {
+    return this.editorMapId;
+  }
 
   private readonly canvas: HTMLCanvasElement;
 
@@ -217,6 +242,8 @@ export class Game {
     this.canvas = canvas;
     this.levelMode = options.levelMode ?? false;
     this.customQuickplay = options.customQuickplay ?? false;
+    this.editorMode = options.editorMode ?? false;
+    this.editorMapId = options.editorMapId ?? null;
     this.networkMode = options.networkMode ?? 'local';
     this.networkManager = options.networkManager ?? null;
     this.multiplayerMapId = options.mapId ?? null;
@@ -259,6 +286,7 @@ export class Game {
       () => this.player.getCollider(),
       () => this.player.isCrouching,
     );
+    if (this.editorMode) this.weaponManager.combatEnabled = false;
 
     // Enemy manager (getter ensures we use current collider after crouch/respawn)
     this.enemyManager = new EnemyManager(
@@ -528,9 +556,19 @@ export class Game {
         // Custom Arena: use prepareCustomScene() before start(), same as single-player
         this.customQuickplay = true;
         // No loadLevel — scene built in prepareCustomScene()
+      } else if (options.level) {
+        // Procedural map with pre-fetched config (from createMultiplayerArenaWithConfig)
+        this.loadLevel(options.level);
       } else {
         this.loadLevel(createMultiplayerArena(options.mapId ?? 'crossfire'));
       }
+    } else if (options.editorMode && options.editorMapId === 'custom') {
+      // Map editor: Custom Arena, scene built in prepareCustomScene()
+      this.customQuickplay = true;
+    } else if (options.editorMode && options.level) {
+      // Map editor: procedural map with pre-fetched config (empty or from file)
+      this.loadLevel(options.level);
+      this.initEditorStateFromLevel(options.level);
     } else if (options.customQuickplay) {
       // Custom quickplay: scene built async in prepareCustomScene() before start().
     } else {
@@ -1259,7 +1297,7 @@ export class Game {
     }
 
     // Grenades — after physics so throw origin matches current camera/eye position
-    if (this.input.wasKeyJustPressed('g') && this.gasGrenadeCount > 0) {
+    if (!this.editorMode && this.input.wasKeyJustPressed('g') && this.gasGrenadeCount > 0) {
       this._throwOrigin.copy(this.fpsCamera.camera.position);
       this.fpsCamera.getLookDirection(this._throwDir);
       this.grenadeSystem.throw(this._throwOrigin, this._throwDir, 'gas');
@@ -1276,7 +1314,7 @@ export class Game {
         });
       }
     }
-    if (this.input.wasKeyJustPressed('f') && this.fragGrenadeCount > 0) {
+    if (!this.editorMode && this.input.wasKeyJustPressed('f') && this.fragGrenadeCount > 0) {
       this._throwOrigin.copy(this.fpsCamera.camera.position);
       this.fpsCamera.getLookDirection(this._throwDir);
       this.grenadeSystem.throw(this._throwOrigin, this._throwDir, 'frag');
@@ -1378,6 +1416,22 @@ export class Game {
     // Tactical overlay (N key — night vision + gas mask)
     if (this.input.wasKeyJustPressed('n')) {
       this.tacticalOverlay.visible = !this.tacticalOverlay.visible;
+    }
+
+    // Map editor: click to place, Delete/Backspace to remove at crosshair (only when pointer locked)
+    if (this.editorMode && this.mapEditorUI && this.input.pointerLocked) {
+      if (this.input.wasKeyJustPressed('Delete') || this.input.wasKeyJustPressed('Backspace')) {
+        this.deleteEditorItemAtCursor();
+      }
+      if (this.input.wasMouseJustPressed) {
+        // Only place when clicking the world (canvas), not when clicking the editor panel
+        const target = this.input.lastMouseDownTarget as Node | null;
+        const clickOnPanel = target && this.mapEditorUI.getElement().contains(target);
+        if (!clickOnPanel) {
+          const hit = this.getEditorRaycastHit();
+          if (hit) this.placeEditorItemAt(hit);
+        }
+      }
     }
 
     // Set spawn point (F8 key) — use current position for single-player respawn
@@ -1612,6 +1666,60 @@ export class Game {
     this.pickupSystem.spawn('ammo-sniper', ox(-5), getY(ox(-5), oz(2)), oz(2), 5);
   }
 
+  /**
+   * Spawn pickups for Custom Arena (single-player and multiplayer).
+   * Uses raycast ground height so items sit on terrain.
+   * Uses config.pickups when set; otherwise defaults. Falls back to spawnTestPickups when no custom layout.
+   */
+  private spawnCustomArenaPickups(): void {
+    const c = this.customSpawnCenter;
+    if (!c) {
+      this.spawnTestPickups();
+      return;
+    }
+    const yOff = this.customGroundLevel ?? 0;
+    const ox = (x: number) => c.x + x;
+    const oz = (z: number) => c.z + z;
+    const getY = (x: number, z: number) =>
+      this.getGroundHeight ? this.getGroundHeight(x, z) : yOff;
+
+    const pickups = this.customQuickplayPlacement?.pickups;
+    if (Array.isArray(pickups) && pickups.length > 0) {
+      for (const p of pickups) {
+        const x = ox(p.x);
+        const z = oz(p.z);
+        const y = getY(x, z);
+        this.pickupSystem.spawn(p.type as any, x, y, z, p.amount ?? 0);
+      }
+      return;
+    }
+
+    // Default layout — spread across the map
+    this.pickupSystem.spawn('weapon-rifle', ox(-12), getY(ox(-12), oz(-8)), oz(-8), 0);
+    this.pickupSystem.spawn('weapon-rifle', ox(14), getY(ox(14), oz(6)), oz(6), 0);
+    this.pickupSystem.spawn('weapon-shotgun', ox(8), getY(ox(8), oz(10)), oz(10), 0);
+    this.pickupSystem.spawn('weapon-shotgun', ox(-6), getY(ox(-6), oz(-12)), oz(-12), 0);
+    this.pickupSystem.spawn('weapon-sniper', ox(0), getY(ox(0), oz(-14)), oz(-14), 0);
+    this.pickupSystem.spawn('weapon-sniper', ox(-14), getY(ox(-14), oz(4)), oz(4), 0);
+    this.pickupSystem.spawn('health', ox(-10), getY(ox(-10), oz(0)), oz(0), 25);
+    this.pickupSystem.spawn('health', ox(10), getY(ox(10), oz(-6)), oz(-6), 25);
+    this.pickupSystem.spawn('health', ox(0), getY(ox(0), oz(10)), oz(10), 25);
+    this.pickupSystem.spawn('health', ox(6), getY(ox(6), oz(-10)), oz(-10), 25);
+    this.pickupSystem.spawn('health', ox(-8), getY(ox(-8), oz(8)), oz(8), 25);
+    this.pickupSystem.spawn('armor', ox(0), getY(ox(0), oz(0)), oz(0), 50);
+    this.pickupSystem.spawn('armor', ox(12), getY(ox(12), oz(-4)), oz(-4), 50);
+    this.pickupSystem.spawn('armor', ox(-10), getY(ox(-10), oz(-6)), oz(-6), 50);
+    this.pickupSystem.spawn('ammo-pistol', ox(-15), getY(ox(-15), oz(2)), oz(2), 24);
+    this.pickupSystem.spawn('ammo-pistol', ox(15), getY(ox(15), oz(-2)), oz(-2), 24);
+    this.pickupSystem.spawn('ammo-rifle', ox(-12), getY(ox(-12), oz(-10)), oz(-10), 30);
+    this.pickupSystem.spawn('ammo-rifle', ox(10), getY(ox(10), oz(8)), oz(8), 30);
+    this.pickupSystem.spawn('ammo-rifle', ox(-4), getY(ox(-4), oz(6)), oz(6), 30);
+    this.pickupSystem.spawn('ammo-shotgun', ox(6), getY(ox(6), oz(12)), oz(12), 12);
+    this.pickupSystem.spawn('ammo-shotgun', ox(-8), getY(ox(-8), oz(-14)), oz(-14), 12);
+    this.pickupSystem.spawn('ammo-sniper', ox(2), getY(ox(2), oz(-16)), oz(-16), 8);
+    this.pickupSystem.spawn('ammo-sniper', ox(-14), getY(ox(-14), oz(2)), oz(2), 8);
+  }
+
   // ──────────── Test Scene ────────────
 
   private buildTestScene(): void {
@@ -1788,22 +1896,33 @@ export class Game {
     this.customGroundLevel = null;
     this.customSpawnCenter = null;
     this.customTerrainRaycaster = null;
+    this.customQuickplayPlacement = null;
     try {
       await this.buildCustomQuickplayScene();
     } catch (err) {
       console.warn('[Game] Custom quickplay load failed, falling back to procedural arena:', err);
       this.buildTestScene();
     }
-    this.spawnTestEnemies();
-    this.spawnTestPickups();
-    this.customGroundLevel = null;
-    this.customSpawnCenter = null;
-    this.customTerrainRaycaster = null;
+    if (this.networkMode !== 'client' && !this.editorMode) {
+      this.spawnTestEnemies();
+    }
+    this.spawnCustomArenaPickups();
+    // In non-editor mode, clear terrain refs to avoid holding geometry. In editor mode keep them for placement raycasting.
+    if (!this.editorMode) {
+      this.customGroundLevel = null;
+      this.customSpawnCenter = null;
+      this.customTerrainRaycaster = null;
+    }
   }
 
   private async buildCustomQuickplayScene(): Promise<void> {
     const baseUrl = '/maps/quickplay/';
     const config = await loadQuickplayConfig(baseUrl);
+    this.customQuickplayPlacement = {
+      pickups: this.editorMode ? (config.pickups ?? []) : config.pickups,
+      props: this.editorMode ? (config.props ?? []) : config.props,
+      labProps: this.editorMode ? (config.labProps ?? []) : config.labProps,
+    };
     const glbUrl = `${baseUrl}${config.environment}`;
     const hdriUrl = `${baseUrl}${config.hdri}`;
     const skyboxUrl = `${baseUrl}${config.skybox}`;
@@ -2041,45 +2160,72 @@ export class Game {
     // Layout center = bbox center so props span the full terrain
     const layoutCenterX = centerX;
     const layoutCenterZ = centerZ;
-    const crateData: { w: number; h: number; d: number; x: number; y: number; z: number; mat: THREE.Material; type: 'crate' | 'crate_metal' }[] = [
-      { w: 1.2, h: 1.2, d: 1.2, x: layoutCenterX + 4, y: 0.6, z: layoutCenterZ + 3, mat: crateMat, type: 'crate' },
-      { w: 1, h: 1, d: 1, x: layoutCenterX + 4.8, y: 0.5, z: layoutCenterZ + 4.2, mat: crateMat, type: 'crate' },
-      { w: 0.8, h: 0.8, d: 0.8, x: layoutCenterX + 3.5, y: 1.6, z: layoutCenterZ + 3.3, mat: crateMat, type: 'crate' },
-      { w: 1.5, h: 1, d: 1.5, x: layoutCenterX - 6, y: 0.5, z: layoutCenterZ - 5, mat: metalCrateMat, type: 'crate_metal' },
-      { w: 1, h: 0.8, d: 1, x: layoutCenterX - 5.5, y: 0.4, z: layoutCenterZ - 3.5, mat: metalCrateMat, type: 'crate_metal' },
-      { w: 2, h: 1.5, d: 0.8, x: layoutCenterX - 3, y: 0.75, z: layoutCenterZ + 7, mat: crateMat, type: 'crate' },
-      { w: 0.6, h: 2, d: 0.6, x: layoutCenterX + 7, y: 1, z: layoutCenterZ - 7, mat: metalCrateMat, type: 'crate_metal' },
-      { w: 0.6, h: 2, d: 0.6, x: layoutCenterX - 7, y: 1, z: layoutCenterZ - 7, mat: metalCrateMat, type: 'crate_metal' },
+
+    const propDefs = (this.editorMode ? config.props ?? [] : config.props) ?? [
+      { type: 'crate' as const, x: 4, z: 3, size: [1.2, 1.2, 1.2], yOffset: 0.6 },
+      { type: 'crate' as const, x: 4.8, z: 4.2, size: [1, 1, 1], yOffset: 0.5 },
+      { type: 'crate' as const, x: 3.5, z: 3.3, size: [0.8, 0.8, 0.8], yOffset: 1.6 },
+      { type: 'crate_metal' as const, x: -6, z: -5, size: [1.5, 1, 1.5], yOffset: 0.5 },
+      { type: 'crate_metal' as const, x: -5.5, z: -3.5, size: [1, 0.8, 1], yOffset: 0.4 },
+      { type: 'crate' as const, x: -3, z: 7, size: [2, 1.5, 0.8], yOffset: 0.75 },
+      { type: 'crate_metal' as const, x: 7, z: -7, size: [0.6, 2, 0.6], yOffset: 1 },
+      { type: 'crate_metal' as const, x: -7, z: -7, size: [0.6, 2, 0.6], yOffset: 1 },
+      { type: 'barrel' as const, x: 6, z: -4, yOffset: 0.6 },
+      { type: 'barrel' as const, x: 6.8, z: -3.5, yOffset: 0.6 },
+      { type: 'barrel' as const, x: -2, z: -8, yOffset: 0.6 },
     ];
 
-    for (const c of crateData) {
-      const py = this.getGroundHeight!(c.x, c.z) + c.y;
-      const crate = new THREE.Mesh(new THREE.BoxGeometry(c.w, c.h, c.d), c.mat);
-      crate.position.set(c.x, py, c.z);
-      crate.castShadow = true;
-      crate.receiveShadow = true;
-      this.scene.add(crate);
-      const collider = this.physics.createStaticCuboid(c.w / 2, c.h / 2, c.d / 2, c.x, py, c.z);
-      this.destructibleSystem.register(crate, collider, c.type, undefined, Math.max(c.w, c.h, c.d));
+    for (const p of propDefs) {
+      const px = layoutCenterX + p.x;
+      const pz = layoutCenterZ + p.z;
+      const yOff = p.yOffset ?? (p.type === 'barrel' ? 0.6 : 0.5);
+      const py = (p as { y?: number }).y ?? this.getGroundHeight!(px, pz) + yOff;
+
+      if (p.type === 'barrel') {
+        const scale = p.scale ?? 1;
+        const barrel = new THREE.Mesh(
+          new THREE.CylinderGeometry(0.4 * scale, 0.4 * scale, 1.2 * scale, 8),
+          barrelMat.clone(),
+        );
+        barrel.position.set(px, py, pz);
+        barrel.castShadow = true;
+        barrel.receiveShadow = true;
+        this.scene.add(barrel);
+        const r = 0.4 * scale;
+        const h = 0.6 * scale;
+        const collider = this.physics.createStaticCuboid(r, h, r, px, py, pz);
+        this.destructibleSystem.register(barrel, collider, 'barrel', undefined, 0.8 * scale);
+      } else {
+        const [w, h, d] = p.size ?? [1, 1, 1];
+        const mat = p.type === 'crate_metal' ? metalCrateMat : crateMat;
+        const crate = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat);
+        crate.position.set(px, py, pz);
+        crate.castShadow = true;
+        crate.receiveShadow = true;
+        this.scene.add(crate);
+        const collider = this.physics.createStaticCuboid(w / 2, h / 2, d / 2, px, py, pz);
+        this.destructibleSystem.register(crate, collider, p.type, undefined, Math.max(w, h, d));
+      }
     }
 
-    const barrelPositions: [number, number, number][] = [
-      [layoutCenterX + 6, 0.6, layoutCenterZ - 4],
-      [layoutCenterX + 6.8, 0.6, layoutCenterZ - 3.5],
-      [layoutCenterX - 2, 0.6, layoutCenterZ - 8],
-    ];
-    for (const [bx, by, bz] of barrelPositions) {
-      const by2 = this.getGroundHeight!(bx, bz) + by;
-      const barrel = new THREE.Mesh(
-        new THREE.CylinderGeometry(0.4, 0.4, 1.2, 8),
-        barrelMat.clone(),
-      );
-      barrel.position.set(bx, by2, bz);
-      barrel.castShadow = true;
-      barrel.receiveShadow = true;
-      this.scene.add(barrel);
-      const collider = this.physics.createStaticCuboid(0.4, 0.6, 0.4, bx, by2, bz);
-      this.destructibleSystem.register(barrel, collider, 'barrel', undefined, 0.8);
+    // Lab props (tanks, tubes with glowing fluid)
+    const labPropDefs = config.labProps;
+    if (labPropDefs?.length && this.getGroundHeight) {
+      const labPropsForBuilder = labPropDefs.map((p) => {
+        const wx = layoutCenterX + p.x;
+        const wz = layoutCenterZ + p.z;
+        const wy = this.getGroundHeight!(wx, wz) + 0.02;
+        return {
+          type: p.type,
+          x: wx,
+          y: wy,
+          z: wz,
+          seed: p.seed,
+          scale: p.scale,
+          hueHint: p.hueHint,
+        };
+      });
+      buildLabProps(labPropsForBuilder, this.scene, this.physics);
     }
 
     const DEFAULT_CUSTOM_SPAWN = {
@@ -2112,10 +2258,294 @@ export class Game {
     this.customGroundLevel = groundLevel;
     this.customSpawnCenter = { x: layoutCenterX, z: layoutCenterZ };
 
+    if (this.editorMode && this.customQuickplayPlacement) {
+      this.editorPickups = (this.customQuickplayPlacement.pickups ?? []).map((p) => ({
+        type: p.type,
+        x: p.x,
+        z: p.z,
+        amount: p.amount,
+      }));
+      this.editorProps = (this.customQuickplayPlacement.props ?? []).map((p) => {
+        const rec = p as { y?: number };
+        return {
+          type: p.type,
+          x: p.x,
+          z: p.z,
+          size: p.size,
+          yOffset: p.yOffset,
+          scale: p.scale,
+          ...(rec.y != null && { y: rec.y }),
+        };
+      });
+      this.editorLabProps = (this.customQuickplayPlacement.labProps ?? []).map((p) => ({
+        type: p.type,
+        x: p.x,
+        z: p.z,
+        seed: p.seed,
+        scale: p.scale,
+        hueHint: p.hueHint,
+      }));
+    }
+
     if (this.getGroundHeight) {
       this.enemyManager.setGroundHeight(
         (x, z, exclude) => this.getGroundHeight!(x, z, exclude),
       );
     }
+  }
+
+  private initEditorStateFromLevel(level: LevelSchema): void {
+    this.editorPickups = (level.pickups ?? []).map((p) => ({
+      type: p.type,
+      x: p.x,
+      y: p.y,
+      z: p.z,
+      amount: p.amount,
+    }));
+    this.editorProps = (level.props ?? []).map((p) => ({
+      type: p.type,
+      x: p.x,
+      y: p.y,
+      z: p.z,
+      scale: p.scale,
+    }));
+  }
+
+  /** Attach map editor UI and wire up placement/save. Call after start() when in editor mode. */
+  attachMapEditorUI(mapId: 'crossfire' | 'wasteland' | 'custom'): void {
+    const ui = new MapEditorUI();
+    ui.setMapId(mapId);
+    ui.attach(document.body);
+    this.mapEditorUI = ui;
+    ui.setCallbacks({
+      onSave: () => this.saveEditorConfig(mapId),
+      onExit: () => this.exitEditor(),
+      onItemSelected: () => {},
+      onDeleteSelected: () => {},
+    });
+  }
+
+  private getEditorRaycastHit(): { point: THREE.Vector3; normal: THREE.Vector3 } | null {
+    const raycaster = new THREE.Raycaster();
+    const mouse = new THREE.Vector2(0, 0);
+    raycaster.setFromCamera(mouse, this.fpsCamera.camera);
+    const isCustom = this.editorMapId === 'custom';
+    const up = new THREE.Vector3(0, 1, 0);
+
+    // Raycast against terrain + props so we can place on any face (stack/side-by-side)
+    const targets: THREE.Object3D[] = [];
+    if (isCustom && this.customTerrainRaycaster) {
+      targets.push(...this.customTerrainRaycaster.meshes);
+    }
+    targets.push(...this.destructibleSystem.getPropMeshes());
+
+    if (targets.length > 0) {
+      const hits = raycaster.intersectObjects(targets, true);
+      if (hits.length > 0) {
+        const h = hits[0];
+        const normal = h.face
+          ? new THREE.Vector3().copy(h.face.normal).transformDirection(h.object.matrixWorld).normalize()
+          : up.clone();
+        return { point: h.point.clone(), normal };
+      }
+    }
+
+    // Fallback: infinite floor plane (procedural maps or no geometry under crosshair)
+    const floor = new THREE.Plane(up.clone(), 0);
+    const hitPoint = new THREE.Vector3();
+    if (raycaster.ray.intersectPlane(floor, hitPoint)) {
+      return { point: hitPoint, normal: up.clone() };
+    }
+    return null;
+  }
+
+  private placeEditorItemAt(hit: { point: THREE.Vector3; normal: THREE.Vector3 }): void {
+    const ui = this.mapEditorUI;
+    if (!ui) return;
+    const sel = ui.getSelectedItem();
+    const isCustom = this.editorMapId === 'custom';
+    const c = this.customSpawnCenter;
+    const pt = hit.point;
+
+    if (sel.category === 'pickup') {
+      const amount = sel.amount ?? 25;
+      if (isCustom && c) {
+        const x = pt.x - c.x;
+        const z = pt.z - c.z;
+        this.editorPickups.push({ type: sel.type, x, z, amount });
+        const y = this.getGroundHeight ? this.getGroundHeight(pt.x, pt.z) : pt.y;
+        this.pickupSystem.spawn(sel.type as any, pt.x, y, pt.z, amount);
+      } else {
+        this.editorPickups.push({ type: sel.type, x: pt.x, y: pt.y, z: pt.z, amount });
+        this.pickupSystem.spawn(sel.type as any, pt.x, pt.y, pt.z, amount);
+      }
+    } else if (sel.category === 'prop') {
+      if ((sel.type === 'tank' || sel.type === 'tube') && isCustom && c) {
+        this.editorLabProps.push({
+          type: sel.type as 'tank' | 'tube',
+          x: pt.x - c.x,
+          z: pt.z - c.z,
+        });
+        const wy = this.getGroundHeight ? this.getGroundHeight(pt.x, pt.z) + 0.02 : pt.y;
+        buildLabProps([{ type: sel.type as 'tank' | 'tube', x: pt.x, y: wy, z: pt.z }], this.scene, this.physics);
+      } else if (sel.type !== 'tank' && sel.type !== 'tube') {
+        // Offset along face normal so the new prop sits flush (no merge) on any side
+        const halfCrate = 0.5;
+        const barrelRadius = 0.4;
+        const barrelHalfHeight = 0.6;
+        const offset =
+          sel.type === 'barrel'
+            ? Math.abs(hit.normal.y) > 0.5
+              ? barrelHalfHeight
+              : barrelRadius
+            : halfCrate;
+        const center = hit.point.clone().addScaledVector(hit.normal, offset);
+        const px = center.x;
+        const py = center.y;
+        const pz = center.z;
+        if (isCustom && c) {
+          this.editorProps.push({
+            type: sel.type,
+            x: px - c.x,
+            z: pz - c.z,
+            size: [1, 1, 1],
+            yOffset: halfCrate,
+            y: py,
+          });
+        } else {
+          this.editorProps.push({ type: sel.type, x: px, y: py, z: pz });
+        }
+        const crateMat = new THREE.MeshStandardMaterial({
+          map: woodCrateTexture(),
+          roughness: 0.7,
+          metalness: 0.1,
+        });
+        const metalCrateMat = new THREE.MeshStandardMaterial({
+          map: metalCrateTexture(),
+          roughness: 0.3,
+          metalness: 0.7,
+        });
+        const barrelMat = new THREE.MeshStandardMaterial({
+          map: barrelTexture(),
+          roughness: 0.5,
+          metalness: 0.3,
+        });
+        if (sel.type === 'barrel') {
+          const mesh = new THREE.Mesh(
+            new THREE.CylinderGeometry(0.4, 0.4, 1.2, 8),
+            barrelMat,
+          );
+          mesh.position.set(px, py, pz);
+          this.scene.add(mesh);
+          const collider = this.physics.createStaticCuboid(0.4, 0.6, 0.4, px, py, pz);
+          this.destructibleSystem.register(mesh, collider, 'barrel');
+        } else {
+          const mat = sel.type === 'crate_metal' ? metalCrateMat : crateMat;
+          const mesh = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), mat);
+          mesh.position.set(px, py, pz);
+          this.scene.add(mesh);
+          const collider = this.physics.createStaticCuboid(0.5, 0.5, 0.5, px, py, pz);
+          this.destructibleSystem.register(mesh, collider, sel.type as 'crate' | 'crate_metal');
+        }
+      }
+    }
+  }
+
+  private deleteEditorItemAtCursor(): void {
+    const hit = this.getEditorRaycastHit();
+    if (!hit) return;
+    const pos = hit.point;
+    const maxDist = 2;
+    const removedPickupIdx = this.pickupSystem.removeNear(pos, maxDist);
+    if (removedPickupIdx >= 0) {
+      this.removeEditorPickupNear(pos, maxDist);
+      this.mapEditorUI?.setStatus('Pickup removed');
+      return;
+    }
+    const prop = this.destructibleSystem.removePropNear(pos, maxDist);
+    if (prop) {
+      this.removeEditorPropNear(pos, maxDist);
+      this.mapEditorUI?.setStatus('Prop removed');
+    }
+  }
+
+  private removeEditorPickupNear(pos: THREE.Vector3, maxDist: number): void {
+    const isCustom = this.editorMapId === 'custom' && this.customSpawnCenter;
+    const idx = this.editorPickups.findIndex((p) => {
+      let wx: number, wz: number, wy: number;
+      if (isCustom && this.customSpawnCenter) {
+        wx = this.customSpawnCenter.x + p.x;
+        wz = this.customSpawnCenter.z + (p.z ?? 0);
+        wy = this.getGroundHeight?.(wx, wz) ?? 0;
+      } else {
+        wx = p.x;
+        wz = (p as { z: number }).z;
+        wy = p.y ?? 0;
+      }
+      return new THREE.Vector3(wx, wy, wz).distanceTo(pos) < maxDist;
+    });
+    if (idx >= 0) this.editorPickups.splice(idx, 1);
+  }
+
+  private removeEditorPropNear(pos: THREE.Vector3, maxDist: number): void {
+    const isCustom = this.editorMapId === 'custom' && this.customSpawnCenter;
+    const idx = this.editorProps.findIndex((p) => {
+      let wx: number, wz: number, wy: number;
+      if (isCustom && this.customSpawnCenter) {
+        wx = this.customSpawnCenter.x + p.x;
+        wz = this.customSpawnCenter.z + (p.z ?? 0);
+        wy = (p as { y?: number }).y ?? (this.getGroundHeight?.(wx, wz) ?? 0) + (p.yOffset ?? 0.5);
+      } else {
+        wx = p.x;
+        wz = (p as { z: number }).z;
+        wy = (p.y ?? 0) + 0.5;
+      }
+      return new THREE.Vector3(wx, wy, wz).distanceTo(pos) < maxDist;
+    });
+    if (idx >= 0) this.editorProps.splice(idx, 1);
+  }
+
+  private async saveEditorConfig(mapId: string): Promise<void> {
+    const apiUrl = `${NetworkConfig.SERVER_URL}/api/maps/${mapId}/config`;
+    const isCustom = mapId === 'custom';
+    const payload: Record<string, unknown> = {};
+    if (isCustom) {
+      payload.pickups = this.editorPickups.map((p) => ({ type: p.type, x: p.x, z: p.z, amount: p.amount ?? 0 }));
+      payload.props = this.editorProps.map((p) => {
+        const rec = p as { y?: number };
+        return { type: p.type, x: p.x, z: p.z, size: p.size, yOffset: p.yOffset, ...(rec.y != null && { y: rec.y }) };
+      });
+      payload.labProps = this.editorLabProps;
+    } else {
+      payload.pickups = this.editorPickups.map((p) => {
+        const rec = p as { x: number; y?: number; z: number };
+        return { type: p.type, x: p.x, y: rec.y ?? 0, z: rec.z, amount: p.amount ?? 0 };
+      });
+      payload.props = this.editorProps.map((p) => {
+        const rec = p as { x: number; y?: number; z: number };
+        return { type: p.type, x: p.x, y: rec.y ?? 0, z: rec.z, scale: p.scale ?? 1 };
+      });
+    }
+    try {
+      const res = await fetch(apiUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      const data = await res.json();
+      if (data.ok) {
+        this.mapEditorUI?.setStatus('Saved successfully');
+      } else {
+        this.mapEditorUI?.setStatus(`Save failed: ${data.error ?? 'Unknown error'}`);
+      }
+    } catch (err) {
+      this.mapEditorUI?.setStatus(`Save failed: ${(err as Error).message}. Is the server running?`);
+    }
+  }
+
+  private exitEditor(): void {
+    this.mapEditorUI?.detach();
+    this.mapEditorUI = null;
+    window.location.reload();
   }
 }

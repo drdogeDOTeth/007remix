@@ -8,6 +8,37 @@ export interface QuickplayPreset {
   skybox?: string;
 }
 
+/** Pickup placement — x/z relative to layout center; y derived from raycast at runtime. */
+export interface QuickplayPickupDef {
+  type: string;
+  x: number;
+  z: number;
+  amount?: number;
+  keyId?: string;
+}
+
+/** Prop placement — x/z relative to layout center; y = ground + yOffset. */
+export interface QuickplayPropDef {
+  type: 'crate' | 'crate_metal' | 'barrel';
+  x: number;
+  z: number;
+  /** Size (w,h,d) for crates; ignored for barrels. Default [1,1,1]. */
+  size?: [number, number, number];
+  /** Vertical offset above ground (e.g. 0.5 = half above terrain). Default 0.5 for crates, 0.6 for barrels. */
+  yOffset?: number;
+  scale?: number;
+}
+
+/** Lab prop (tank, tube) — x/z relative to layout center; y derived from raycast. */
+export interface QuickplayLabPropDef {
+  type: 'tank' | 'tube';
+  x: number;
+  z: number;
+  seed?: number;
+  scale?: number;
+  hueHint?: number;
+}
+
 export interface QuickplayConfig {
   /** Environment GLB filename. Default: environment.glb */
   environment?: string;
@@ -27,6 +58,12 @@ export interface QuickplayConfig {
   presets?: Record<string, QuickplayPreset>;
   /** Active preset name. Uses presets[preset] if set. */
   preset?: string;
+  /** Pickups: x/z relative to layout center (bbox). Y derived from raycast. Omit to use defaults. */
+  pickups?: QuickplayPickupDef[];
+  /** Props (crates, barrels): x/z relative to layout center. Y = ground + yOffset. Omit to use defaults. */
+  props?: QuickplayPropDef[];
+  /** Lab props (glass tanks, tubes with glowing fluid). X/z relative to center; y from raycast. */
+  labProps?: QuickplayLabPropDef[];
 }
 
 const DEFAULT_ENVIRONMENT = 'environment.glb';
@@ -44,6 +81,12 @@ export interface QuickplayResolvedConfig {
   nightSkybox?: string;
   /** Skybox rotation offset 0–1. */
   skyboxRotationOffset: number;
+  /** Optional pickup placements (overrides defaults when set). */
+  pickups?: QuickplayPickupDef[];
+  /** Optional prop placements (overrides defaults when set). */
+  props?: QuickplayPropDef[];
+  /** Optional lab prop placements (tanks, tubes). */
+  labProps?: QuickplayLabPropDef[];
 }
 
 /**
@@ -102,6 +145,9 @@ export async function loadQuickplayConfig(
       daySkybox,
       nightSkybox,
       skyboxRotationOffset: Math.max(0, Math.min(1, raw.skyboxRotationOffset ?? 0)),
+      pickups: Array.isArray(raw.pickups) ? raw.pickups : undefined,
+      props: Array.isArray(raw.props) ? raw.props : undefined,
+      labProps: Array.isArray(raw.labProps) ? raw.labProps : undefined,
     };
   } catch {
     return defaults;

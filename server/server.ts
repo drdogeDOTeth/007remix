@@ -1,9 +1,19 @@
 import { createServer } from 'http';
 import { Server as SocketIOServer } from 'socket.io';
+import express from 'express';
+import { mkdir, readFile, writeFile } from 'fs/promises';
+import { join } from 'path';
 import { GameRoom } from './game-room.js';
 import type { MultiplayerMapId } from '../src/levels/multiplayer-arena.js';
 
 const VALID_MAP_IDS: MultiplayerMapId[] = ['crossfire', 'wasteland', 'custom'];
+
+/** Map ID to folder name (custom uses quickplay folder). */
+const MAP_ID_TO_FOLDER: Record<string, string> = {
+  custom: 'quickplay',
+  crossfire: 'crossfire',
+  wasteland: 'wasteland',
+};
 
 /** Socket.IO room name prefix to avoid collisions */
 const ROOM_PREFIX = 'map:';
@@ -16,26 +26,101 @@ const PORT = process.env.PORT || 3001;
 /**
  * Main game server using Socket.IO.
  * Supports map-specific rooms so players only see others in the same level.
+ * Includes dev API for map config (POST /api/maps/:mapId/config).
  */
 class GameServer {
-  private httpServer;
+  private httpServer: ReturnType<typeof createServer>;
   private io: SocketIOServer;
   private gameRooms = new Map<MultiplayerMapId, GameRoom>();
   private socketToMapId = new Map<string, MultiplayerMapId>();
 
   constructor() {
-    // Create HTTP server
-    this.httpServer = createServer();
+    const app = express();
+    app.use(express.json({ limit: '1mb' }));
+
+    // CORS for API (dev)
+    app.use((_req: express.Request, res: express.Response, next: express.NextFunction) => {
+      res.setHeader('Access-Control-Allow-Origin', '*');
+      res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+      res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+      next();
+    });
+
+    app.options('/api/maps/:mapId/config', (_req: express.Request, res: express.Response) => res.sendStatus(204));
+
+    app.post('/api/maps/:mapId/config', (req: express.Request, res: express.Response) =>
+      this.handleSaveMapConfig(req, res),
+    );
+
+    this.httpServer = createServer(app);
 
     // Create Socket.IO server with CORS for development
     this.io = new SocketIOServer(this.httpServer, {
       cors: {
-        origin: '*', // Allow all origins in development (restrict in production)
+        origin: '*',
         methods: ['GET', 'POST'],
       },
     });
 
     this.setupSocketHandlers();
+  }
+
+  private async handleSaveMapConfig(
+    req: express.Request,
+    res: express.Response,
+  ): Promise<void> {
+    const mapId = req.params.mapId as string;
+    if (!VALID_MAP_IDS.includes(mapId as MultiplayerMapId)) {
+      res.status(400).json({ ok: false, error: `Invalid mapId: ${mapId}` });
+      return;
+    }
+
+    const folder = MAP_ID_TO_FOLDER[mapId];
+    const mapsDir = join(process.cwd(), 'public', 'maps');
+    const mapDir = join(mapsDir, folder);
+    const configPath = join(mapDir, 'config.json');
+
+    let body: { pickups?: unknown[]; props?: unknown[]; labProps?: unknown[] };
+    try {
+      body = req.body;
+      if (!body || typeof body !== 'object') {
+        res.status(400).json({ ok: false, error: 'Invalid JSON body' });
+        return;
+      }
+    } catch {
+      res.status(400).json({ ok: false, error: 'Invalid JSON' });
+      return;
+    }
+
+    try {
+      await mkdir(mapDir, { recursive: true });
+    } catch (err) {
+      console.error('[Server] Failed to create map dir:', err);
+      res.status(500).json({ ok: false, error: 'Failed to create directory' });
+      return;
+    }
+
+    let existing: Record<string, unknown> = {};
+    try {
+      const raw = await readFile(configPath, 'utf-8');
+      existing = JSON.parse(raw) as Record<string, unknown>;
+    } catch {
+      // File missing or invalid — start fresh
+    }
+
+    const merged: Record<string, unknown> = { ...existing };
+    if (Array.isArray(body.pickups)) merged.pickups = body.pickups;
+    if (Array.isArray(body.props)) merged.props = body.props;
+    if (Array.isArray(body.labProps)) merged.labProps = body.labProps;
+
+    try {
+      await writeFile(configPath, JSON.stringify(merged, null, 2), 'utf-8');
+      console.log(`[Server] Wrote config to ${configPath}`);
+      res.json({ ok: true });
+    } catch (err) {
+      console.error('[Server] Failed to write config:', err);
+      res.status(500).json({ ok: false, error: 'Failed to write config' });
+    }
   }
 
   private roomName(mapId: MultiplayerMapId): string {

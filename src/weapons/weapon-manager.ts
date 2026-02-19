@@ -34,6 +34,9 @@ export class WeaponManager {
   /** Optional: used to disable sprint bob when crouching */
   private getIsCrouching: (() => boolean) | null = null;
 
+  /** When false, weapon fire is disabled (e.g. map editor mode). */
+  combatEnabled = true;
+
   /** Per-weapon skin selection */
   private weaponSkins: Record<WeaponType, WeaponSkin> = {
     pistol: 'default',
@@ -190,7 +193,7 @@ export class WeaponManager {
       ? mouseDown
       : mouseDown && !this.wasMouseDown;
 
-    if (shouldFire && input.canShoot) {
+    if (this.combatEnabled && shouldFire && input.canShoot) {
       if (weapon.canFire(now)) {
         weapon.fire(now);
         this.doFire();

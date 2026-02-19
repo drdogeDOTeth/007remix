@@ -1,0 +1,33 @@
+{
+  "pickups": [
+    { "type": "weapon-rifle", "x": -18, "y": 0, "z": -6, "amount": 1 },
+    { "type": "weapon-shotgun", "x": 18, "y": 0, "z": 6, "amount": 1 },
+    { "type": "weapon-sniper", "x": 0, "y": 0, "z": -6, "amount": 1 },
+    { "type": "ammo-rifle", "x": -9, "y": 0, "z": -6, "amount": 30 },
+    { "type": "ammo-shotgun", "x": 9, "y": 0, "z": 6, "amount": 12 },
+    { "type": "ammo-sniper", "x": 0, "y": 0, "z": 6, "amount": 8 },
+    { "type": "health", "x": -9, "y": 0, "z": 0, "amount": 25 },
+    { "type": "health", "x": 9, "y": 0, "z": 0, "amount": 25 },
+    { "type": "armor", "x": 0, "y": 0, "z": 0, "amount": 50 },
+    { "type": "ammo-pistol", "x": -30, "y": 0, "z": 0, "amount": 24 },
+    { "type": "ammo-pistol", "x": 30, "y": 0, "z": 0, "amount": 24 }
+  ],
+  "props": [
+    { "type": "crate_metal", "x": -31.5, "y": 0, "z": -2.2, "scale": 1.05 },
+    { "type": "crate", "x": -31.5, "y": 0, "z": 2.2, "scale": 1 },
+    { "type": "crate_metal", "x": 31.5, "y": 0, "z": -2.2, "scale": 1.05 },
+    { "type": "crate", "x": 31.5, "y": 0, "z": 2.2, "scale": 1 },
+    { "type": "crate", "x": -15, "y": 0, "z": -6, "scale": 1 },
+    { "type": "crate", "x": -9, "y": 0, "z": -6, "scale": 1 },
+    { "type": "barrel", "x": -3, "y": 0, "z": -6, "scale": 1 },
+    { "type": "crate_metal", "x": 3, "y": 0, "z": -6, "scale": 1 },
+    { "type": "crate", "x": 9, "y": 0, "z": -6, "scale": 1 },
+    { "type": "crate", "x": 15, "y": 0, "z": -6, "scale": 1 },
+    { "type": "crate", "x": -15, "y": 0, "z": 6, "scale": 1 },
+    { "type": "crate_metal", "x": -9, "y": 0, "z": 6, "scale": 1 },
+    { "type": "crate", "x": -3, "y": 0, "z": 6, "scale": 1 },
+    { "type": "barrel", "x": 3, "y": 0, "z": 6, "scale": 1 },
+    { "type": "crate", "x": 9, "y": 0, "z": 6, "scale": 1 },
+    { "type": "crate_metal", "x": 15, "y": 0, "z": 6, "scale": 1 }
+  ]
+}

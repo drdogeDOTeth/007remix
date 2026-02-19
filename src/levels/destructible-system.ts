@@ -161,6 +161,29 @@ export class DestructibleSystem {
     return prop;
   }
 
+  /** Get all prop meshes for editor placement raycasting (enables stacking on crates/barrels). */
+  getPropMeshes(): THREE.Object3D[] {
+    return this.props.filter((p) => p.health > 0).map((p) => p.mesh);
+  }
+
+  /** Remove prop nearest to position within maxDist. Returns the removed prop or null. */
+  removePropNear(position: { x: number; y: number; z: number }, maxDist: number): DestructibleProp | null {
+    let best: DestructibleProp | null = null;
+    let bestDist = maxDist;
+    for (const p of this.props) {
+      const d = p.position.distanceTo(
+        new THREE.Vector3(position.x, position.y, position.z),
+      );
+      if (d < bestDist) {
+        bestDist = d;
+        best = p;
+      }
+    }
+    if (!best) return null;
+    this.removeSilent(best);
+    return best;
+  }
+
   /** Clear all props, debris, and barrel flashes (for level switch). */
   clear(): void {
     for (const prop of this.props.slice()) {
@@ -230,9 +253,9 @@ export class DestructibleSystem {
 
   /**
    * Remove a prop silently (no explosions, debris, sounds, loot).
-   * Used when syncing destroyed state for new joiners.
+   * Used when syncing destroyed state for new joiners. Public for map editor.
    */
-  private removeSilent(prop: DestructibleProp): void {
+  removeSilent(prop: DestructibleProp): void {
     prop.mesh.parent?.remove(prop.mesh);
     prop.mesh.traverse((child) => {
       if (child instanceof THREE.Mesh) {

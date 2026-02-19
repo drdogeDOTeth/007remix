@@ -28,6 +28,7 @@
     "three": "^0.172.0"
   },
   "devDependencies": {
+    "@types/express": "^5.0.6",
     "@types/node": "^20.19.33",
     "@types/three": "^0.172.0",
     "puppeteer": "^24.37.2",

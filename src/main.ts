@@ -17,6 +17,8 @@ Object.defineProperties = function<T>(obj: T, props: PropertyDescriptorMap & Thi
 import { PhysicsWorld } from './core/physics-world';
 import { Game } from './game';
 import { loadLevel } from './levels/level-loader';
+import { createMultiplayerArenaWithConfig } from './levels/multiplayer-arena';
+import type { LevelSchema } from './levels/level-schema';
 import { CCTVBackground } from './ui/cctv-background';
 import { ScreenGlitch } from './ui/screen-glitch';
 import { NetworkManager } from './network/network-manager';
@@ -226,12 +228,19 @@ async function init(): Promise<void> {
         hideCCTVBackground();
         document.getElementById('start-screen')!.style.display = 'none';
 
+        const resolvedMapId = mapId ?? 'crossfire';
+        let level: LevelSchema | undefined;
+        if (resolvedMapId === 'crossfire' || resolvedMapId === 'wasteland') {
+          level = await createMultiplayerArenaWithConfig(resolvedMapId);
+        }
+
         const game = new Game(canvas, physics, {
           networkMode: 'client',
           networkManager,
-          mapId: mapId ?? 'crossfire',
+          mapId: resolvedMapId,
+          level,
         });
-        if (mapId === 'custom') {
+        if (resolvedMapId === 'custom') {
           await game.prepareCustomScene();
         }
         game.start();
@@ -240,6 +249,33 @@ async function init(): Promise<void> {
         console.error('[Main] Multiplayer connection failed:', err);
         mainMenuScreen.setStatus('Connection failed. Is the server running? (npm run server)');
         mainMenuScreen.setJoinEnabled(true);
+      }
+    },
+    onMapEditor: async (mapId) => {
+      document.getElementById('start-screen')!.style.display = 'none';
+      hideCCTVBackground();
+      await customModelReady;
+      try {
+        let level: LevelSchema | undefined;
+        if (mapId === 'crossfire' || mapId === 'wasteland') {
+          level = await createMultiplayerArenaWithConfig(mapId, true);
+        }
+        const game = new Game(canvas, physics, {
+          editorMode: true,
+          editorMapId: mapId,
+          customQuickplay: mapId === 'custom',
+          level,
+        });
+        if (mapId === 'custom') {
+          await game.prepareCustomScene();
+        }
+        game.start();
+        game.attachMapEditorUI(mapId);
+        canvas.addEventListener('click', () => game.start());
+      } catch (err) {
+        console.error('[Main] Map editor load failed:', err);
+        alert(`Could not load map for editing. Make sure assets exist for ${mapId}.`);
+        document.getElementById('start-screen')!.style.display = 'flex';
       }
     },
     onCustomModels: () => {

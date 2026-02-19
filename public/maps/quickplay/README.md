@@ -14,6 +14,6 @@ Place your assets here for the **QUICK PLAY — CUSTOM ARENA** mode (outdoor map
 | daySkybox    | —               | Day panorama (for day/night cycle)            |
 | nightSkybox  | —               | Night panorama (for day/night cycle)         |
 
-- **config.json**: Define asset names, presets, `skyboxRotationOffset`, `skyDomeScale`. Omit to use defaults.
+- **config.json**: Define asset names, presets, `skyboxRotationOffset`, `skyDomeScale`. Optional `pickups` and `props` arrays for fine-tuned weapon/ammo/crate/barrel placement (see [OUTDOOR_LEVELS_SETUP.md](../../docs/OUTDOOR_LEVELS_SETUP.md)).
 - **Collision**: Trimesh from GLB. Name a mesh `collision` or `collider` for dedicated physics mesh.
 - **Player spawn**: Press **F8** to save your current position.

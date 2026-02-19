@@ -72,6 +72,28 @@ export class PickupSystem {
     this.pickups = [];
   }
 
+  /** Remove pickup nearest to position within maxDist. Returns index removed or -1. */
+  removeNear(position: { x: number; y: number; z: number }, maxDist: number): number {
+    let bestIdx = -1;
+    let bestDist = maxDist;
+    for (let i = 0; i < this.pickups.length; i++) {
+      const p = this.pickups[i];
+      if (p.collected) continue;
+      const d = p.position.distanceTo(
+        new THREE.Vector3(position.x, position.y, position.z),
+      );
+      if (d < bestDist) {
+        bestDist = d;
+        bestIdx = i;
+      }
+    }
+    if (bestIdx < 0) return -1;
+    const p = this.pickups[bestIdx];
+    this.scene.remove(p.mesh);
+    this.pickups.splice(bestIdx, 1);
+    return bestIdx;
+  }
+
   spawn(type: PickupType, x: number, y: number, z: number, amount: number): void {
     const baseY = y + PICKUP_FLOOR_OFFSET;
     const group = new THREE.Group();
