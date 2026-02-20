@@ -43,9 +43,9 @@ export class Renderer {
     // Subtle bloom: only very bright pixels (additive blended tracers/exhaust)
     this.bloomPass = new UnrealBloomPass(
       new THREE.Vector2(w, h),
-      0.28,   // strength  — lower = less overall glow
-      0.4,    // radius    — tighter spread
-      0.80,   // threshold — higher = only the very brightest pixels bloom
+      0.15,   // strength  — very subtle, just a soft halo on tracers/muzzle flash
+      0.35,   // radius    — tight spread, stays close to source
+      0.85,   // threshold — only the very brightest additive pixels bloom
     );
     this.composer.addPass(this.bloomPass);
 
