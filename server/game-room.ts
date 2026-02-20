@@ -68,9 +68,14 @@ export class GameRoom {
    * @param mapId Map selected in lobby. First joiner sets room map; used for spawn points.
    */
   addPlayer(id: string, username: string, mapId?: MultiplayerMapId): void {
-    if (this.players.size === 0 && mapId) {
+    // Always update mapId from the incoming player — the server routes each mapId to its own
+    // GameRoom instance, so every player in this room should have the same mapId.
+    // Overwriting it on every join ensures stale state from resetLevelState() doesn't persist.
+    if (mapId) {
+      if (this.currentMapId !== mapId) {
+        console.log(`[GameRoom] MapId updated: ${this.currentMapId} → ${mapId}`);
+      }
       this.currentMapId = mapId;
-      console.log(`[GameRoom] Map set to: ${mapId}`);
     }
     const playerState = createPlayerState(id, username);
     const spawnPoint = this.getRandomSpawnPoint();

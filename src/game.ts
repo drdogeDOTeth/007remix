@@ -204,6 +204,7 @@ export class Game {
   private networkManager: NetworkManager | null = null;
   /** Map we joined (for filtering snapshots from wrong rooms) */
   private multiplayerMapId: 'crossfire' | 'wasteland' | 'custom' | null = null;
+  private _lastMapIdWarnTime = 0;
   private remotePlayerManager: RemotePlayerManager | null = null;
   private lastNetworkUpdate = 0;
   private networkUpdateRate = NetworkConfig.UPDATE_RATES.PLAYER_STATE; // Hz
@@ -597,11 +598,18 @@ export class Game {
       this.nameTagManager = new NameTagManager(this.fpsCamera.camera);
 
       // Handle game state snapshots from server
-      // Note: Socket.IO rooms already ensure we only receive snapshots for our map.
-      // We log a warning if mapId mismatches but still process it to avoid silent failures.
+      // Drop snapshots from wrong map — prevents wrong-Y positions being applied to terrain-snap logic.
+      // This can happen if the live server hasn't been restarted since room-separation was deployed,
+      // or if a reconnect briefly lands the socket in the wrong room.
       this.networkManager.onGameStateSnapshot = (snapshot) => {
         if (snapshot.mapId != null && this.multiplayerMapId != null && snapshot.mapId !== this.multiplayerMapId) {
-          console.warn(`[Game] Snapshot mapId mismatch: got '${snapshot.mapId}', expected '${this.multiplayerMapId}' — processing anyway`);
+          // Rate-limit the warning to once per 5s so it doesn't spam the console
+          const now = performance.now();
+          if (!this._lastMapIdWarnTime || now - this._lastMapIdWarnTime > 5000) {
+            console.warn(`[Game] Dropping snapshot with wrong mapId: got '${snapshot.mapId}', expected '${this.multiplayerMapId}' — server may need restart`);
+            this._lastMapIdWarnTime = now;
+          }
+          return; // Hard-drop: don't apply wrong-map positions to this client
         }
         this.remotePlayerManager?.updateFromSnapshot(snapshot);
         this.updateScoreboardFromSnapshot(snapshot);
