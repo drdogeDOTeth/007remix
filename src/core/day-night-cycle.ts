@@ -168,27 +168,32 @@ export function getSunState(t: number): {
     hemiSky.setRGB(0.3 + 0.4 * p, 0.25 + 0.35 * p, 0.5 + 0.4 * p);
     hemiGround.setRGB(0.15, 0.12, 0.1);
   } else {
-    hemiSky.setRGB(0.05, 0.06, 0.15);
-    hemiGround.setRGB(0.02, 0.02, 0.05);
+    // Deep night — moonlit blue-grey, not pitch black
+    hemiSky.setRGB(0.10, 0.12, 0.22);
+    hemiGround.setRGB(0.04, 0.04, 0.08);
   }
+
+  // Night ambient: smoothly ramp up from 0 toward midnight so it's never pitch black.
+  // Uses |sunHeight| so it rises as the sun goes deeper below the horizon.
+  const nightRamp = isDay ? 0 : isDawnDusk ? 0 : Math.min(1, Math.abs(sunHeight) * 1.8);
 
   const ambientIntensity = isDay
     ? 0.15 + sunHeight * 0.1
     : isDawnDusk
-      ? 0.1
-      : 0.12;
+      ? 0.10
+      : 0.10 + nightRamp * 0.18; // 0.10 right after dusk → 0.28 at midnight
 
   const backgroundIntensity = isDay
     ? 0.7 + sunHeight * 0.3
     : isDawnDusk
       ? 0.45
-      : 0.35;
+      : 0.35 + nightRamp * 0.20; // 0.35 right after dusk → 0.55 at midnight
 
   const envIntensity = isDay
     ? 0.6 + sunHeight * 0.4
     : isDawnDusk
       ? 0.45
-      : 0.45;
+      : 0.40 + nightRamp * 0.20; // 0.40 right after dusk → 0.60 at midnight
 
   return {
     position: pos,

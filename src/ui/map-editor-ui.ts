@@ -32,6 +32,10 @@ const PICKUP_TYPES: EditorPickupDef[] = [
   { type: 'weapon-sniper', label: 'Sniper', defaultAmount: 0 },
   { type: 'weapon-minigun', label: 'Minigun', defaultAmount: 0 },
   { type: 'ammo-minigun', label: 'Ammo·MG', defaultAmount: 200 },
+  { type: 'weapon-rpg', label: 'RPG-7', defaultAmount: 0 },
+  { type: 'ammo-rpg', label: 'Ammo·RPG', defaultAmount: 1 },
+  { type: 'weapon-grenade-launcher', label: 'Grenade·GL', defaultAmount: 0 },
+  { type: 'ammo-grenade-launcher', label: 'Ammo·GL', defaultAmount: 6 },
 ];
 
 const PROP_TYPES: EditorPropDef[] = [

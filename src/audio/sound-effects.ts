@@ -28,7 +28,7 @@ export function setSFXVolume(vol: number): void {
   if (sfxGain) sfxGain.gain.value = Math.max(0, Math.min(1, vol));
 }
 
-export type WeaponSoundType = 'pistol' | 'rifle' | 'shotgun' | 'sniper' | 'minigun';
+export type WeaponSoundType = 'pistol' | 'rifle' | 'shotgun' | 'sniper' | 'minigun' | 'rpg' | 'grenade-launcher';
 
 // ─── Shared helpers ───
 
@@ -556,6 +556,138 @@ export function stopMinigunSpinWhine(): void {
   }, 800);
 }
 
+/**
+ * RPG-7 launch: deep pressure-wave thud + rocket motor whoosh tail.
+ * Distinct from a gunshot — heavy initial concussion, then a rising motor hiss.
+ */
+export function playGunshotRPG(): void {
+  const ctx = getAudioCtx();
+  const now = ctx.currentTime;
+
+  // Layer 1: Initial concussive blast — very low frequency thud
+  const blastOsc = ctx.createOscillator();
+  blastOsc.type = 'sine';
+  blastOsc.frequency.setValueAtTime(48, now);
+  blastOsc.frequency.exponentialRampToValueAtTime(18, now + 0.18);
+
+  const blastGain = ctx.createGain();
+  blastGain.gain.setValueAtTime(0, now);
+  blastGain.gain.linearRampToValueAtTime(1.1, now + 0.01);
+  blastGain.gain.exponentialRampToValueAtTime(0.001, now + 0.22);
+
+  blastOsc.connect(blastGain);
+  blastGain.connect(getSFXDest());
+  blastOsc.start(now);
+  blastOsc.stop(now + 0.25);
+
+  // Layer 2: Pressure crack — wide band noise burst
+  const bufLen = ctx.sampleRate * 0.05;
+  const crackBuf = ctx.createBuffer(1, bufLen, ctx.sampleRate);
+  const crackData = crackBuf.getChannelData(0);
+  for (let i = 0; i < bufLen; i++) crackData[i] = Math.random() * 2 - 1;
+  const crackSrc = ctx.createBufferSource();
+  crackSrc.buffer = crackBuf;
+
+  const crackLp = ctx.createBiquadFilter();
+  crackLp.type = 'lowpass';
+  crackLp.frequency.setValueAtTime(1800, now);
+
+  const crackGain = ctx.createGain();
+  crackGain.gain.setValueAtTime(0.55, now);
+  crackGain.gain.exponentialRampToValueAtTime(0.001, now + 0.07);
+
+  crackSrc.connect(crackLp);
+  crackLp.connect(crackGain);
+  crackGain.connect(getSFXDest());
+  crackSrc.start(now);
+
+  // Layer 3: Rocket motor whoosh tail — bandpass noise that rises in pitch
+  const motorBufLen = ctx.sampleRate * 0.6;
+  const motorBuf = ctx.createBuffer(1, motorBufLen, ctx.sampleRate);
+  const motorData = motorBuf.getChannelData(0);
+  for (let i = 0; i < motorBufLen; i++) motorData[i] = Math.random() * 2 - 1;
+  const motorSrc = ctx.createBufferSource();
+  motorSrc.buffer = motorBuf;
+
+  const motorBp = ctx.createBiquadFilter();
+  motorBp.type = 'bandpass';
+  motorBp.frequency.setValueAtTime(180, now + 0.04);
+  motorBp.frequency.exponentialRampToValueAtTime(620, now + 0.55);
+  motorBp.Q.value = 2.0;
+
+  const motorGain = ctx.createGain();
+  motorGain.gain.setValueAtTime(0, now + 0.03);
+  motorGain.gain.linearRampToValueAtTime(0.28, now + 0.08);
+  motorGain.gain.exponentialRampToValueAtTime(0.001, now + 0.60);
+
+  motorSrc.connect(motorBp);
+  motorBp.connect(motorGain);
+  motorGain.connect(getSFXDest());
+  motorSrc.start(now + 0.03);
+}
+
+/**
+ * M79 Grenade Launcher: hollow "thoonk" — classic low-pitched tube pop.
+ * Single-shot break-action: percussive mid hit with short resonant tail.
+ */
+export function playGunshotGrenadeLauncher(): void {
+  const ctx = getAudioCtx();
+  const now = ctx.currentTime;
+
+  // Layer 1: Hollow tube resonance — the characteristic "thoonk" chamber pop
+  const tubeOsc = ctx.createOscillator();
+  tubeOsc.type = 'sine';
+  tubeOsc.frequency.setValueAtTime(95, now);
+  tubeOsc.frequency.exponentialRampToValueAtTime(42, now + 0.14);
+
+  const tubeGain = ctx.createGain();
+  tubeGain.gain.setValueAtTime(0, now);
+  tubeGain.gain.linearRampToValueAtTime(0.85, now + 0.005);
+  tubeGain.gain.exponentialRampToValueAtTime(0.001, now + 0.18);
+
+  tubeOsc.connect(tubeGain);
+  tubeGain.connect(getSFXDest());
+  tubeOsc.start(now);
+  tubeOsc.stop(now + 0.20);
+
+  // Layer 2: Percussive attack transient — sharp mid-freq pop
+  const attackBufLen = ctx.sampleRate * 0.03;
+  const attackBuf = ctx.createBuffer(1, attackBufLen, ctx.sampleRate);
+  const attackData = attackBuf.getChannelData(0);
+  for (let i = 0; i < attackBufLen; i++) attackData[i] = Math.random() * 2 - 1;
+  const attackSrc = ctx.createBufferSource();
+  attackSrc.buffer = attackBuf;
+
+  const attackBp = ctx.createBiquadFilter();
+  attackBp.type = 'bandpass';
+  attackBp.frequency.setValueAtTime(380, now);
+  attackBp.Q.value = 1.5;
+
+  const attackGain = ctx.createGain();
+  attackGain.gain.setValueAtTime(0.50, now);
+  attackGain.gain.exponentialRampToValueAtTime(0.001, now + 0.04);
+
+  attackSrc.connect(attackBp);
+  attackBp.connect(attackGain);
+  attackGain.connect(getSFXDest());
+  attackSrc.start(now);
+
+  // Layer 3: Short body resonance — barrel chamber ring
+  const ringOsc = ctx.createOscillator();
+  ringOsc.type = 'sine';
+  ringOsc.frequency.setValueAtTime(140, now + 0.005);
+  ringOsc.frequency.exponentialRampToValueAtTime(88, now + 0.12);
+
+  const ringGain = ctx.createGain();
+  ringGain.gain.setValueAtTime(0.30, now + 0.005);
+  ringGain.gain.exponentialRampToValueAtTime(0.001, now + 0.14);
+
+  ringOsc.connect(ringGain);
+  ringGain.connect(getSFXDest());
+  ringOsc.start(now + 0.005);
+  ringOsc.stop(now + 0.16);
+}
+
 /** Play gunshot by weapon type (player weapons) */
 export function playGunshotWeapon(type: WeaponSoundType): void {
   switch (type) {
@@ -564,6 +696,8 @@ export function playGunshotWeapon(type: WeaponSoundType): void {
     case 'shotgun': playGunshotShotgun(); break;
     case 'sniper': playGunshotSniper(); break;
     case 'minigun': playGunshotMinigun(); break;
+    case 'rpg': playGunshotRPG(); break;
+    case 'grenade-launcher': playGunshotGrenadeLauncher(); break;
   }
 }
 
