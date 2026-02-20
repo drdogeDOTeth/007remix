@@ -20,6 +20,12 @@ type GetCameraPosition = () => THREE.Vector3;
 type GetGroundHeight = (x: number, z: number) => number;
 
 /**
+ * Provider that resolves the ground-height function lazily (per-frame).
+ * Returns null until terrain is ready (e.g. GLB still loading on live server).
+ */
+type GetGroundHeightProvider = (() => GetGroundHeight | null) | null;
+
+/**
  * RemotePlayer represents another player in the multiplayer game.
  * Handles rendering, interpolation, animation, and physics collider.
  * Supports both 3D model and 2D sprite modes (when ENEMY_RENDER_CONFIG.mode === 'sprite').
@@ -63,7 +69,8 @@ export class RemotePlayer {
   private spriteMode = false;
   private sprite: EnemySprite | null = null;
   private getCameraPosition: GetCameraPosition | null = null;
-  private getGroundHeight: GetGroundHeight | null = null;
+  /** Provider resolved per-frame so terrain is available even if GLB loads after first snapshot. */
+  private getGroundHeightProvider: GetGroundHeightProvider = null;
 
   constructor(
     id: string,
@@ -71,13 +78,13 @@ export class RemotePlayer {
     scene: THREE.Scene,
     physics: PhysicsWorld,
     getCameraPosition: GetCameraPosition | null = null,
-    getGroundHeight: GetGroundHeight | null = null
+    getGroundHeightProvider: GetGroundHeightProvider = null
   ) {
     this.id = id;
     this.username = username;
     this.physics = physics;
     this.getCameraPosition = getCameraPosition;
-    this.getGroundHeight = getGroundHeight;
+    this.getGroundHeightProvider = getGroundHeightProvider;
 
     const cfg = ENEMY_RENDER_CONFIG;
 
@@ -268,9 +275,12 @@ export class RemotePlayer {
       const yOffset = this.spriteMode ? 1.0 : (this.customAnimator ? 1.0 : 1.2);
       let modelY = pos.y - yOffset;
 
-      if (this.getGroundHeight) {
+      // Resolve terrain provider per-frame — handles the case where GLB wasn't loaded yet
+      // when the RemotePlayer was first constructed (common on high-latency live servers).
+      const getGroundHeight = this.getGroundHeightProvider?.();
+      if (getGroundHeight) {
         // Terrain maps (custom arena): clamp model feet to terrain surface (up and down).
-        const terrainY = this.getGroundHeight(pos.x, pos.z);
+        const terrainY = getGroundHeight(pos.x, pos.z);
         if (Math.abs(terrainY - modelY) < 1.5) {
           modelY = terrainY;
         }
@@ -436,8 +446,9 @@ export class RemotePlayer {
   snapToPosition(x: number, y: number, z: number): void {
     this.rigidBody.setTranslation({ x, y, z }, true);
     const yOffset = this.spriteMode ? 1.0 : (this.customAnimator ? 1.0 : 1.2);
-    const modelY = this.getGroundHeight
-      ? this.getGroundHeight(x, z)
+    const getGroundHeight = this.getGroundHeightProvider?.();
+    const modelY = getGroundHeight
+      ? getGroundHeight(x, z)
       : Math.max(0, y - yOffset);
     this.model.position.set(x, modelY, z);
     this.shadowMesh.position.set(x, modelY + 0.01, z);

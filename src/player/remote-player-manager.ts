@@ -10,7 +10,10 @@ export type GetCameraPosition = () => THREE.Vector3;
 /** Callback to get ground height at (x,z) for terrain snapping (Custom Arena). */
 export type GetGroundHeight = (x: number, z: number) => number;
 
-/** Getter for ground height (resolved lazily - e.g. after prepareCustomScene). */
+/**
+ * Getter for ground height (resolved lazily per-frame, not just at spawn time).
+ * This ensures terrain is available even if players join before GLB finishes loading.
+ */
 export type GetGroundHeightProvider = () => GetGroundHeight | null;
 
 /**
@@ -60,14 +63,15 @@ export class RemotePlayerManager {
       let remotePlayer = this.players.get(playerId);
       if (!remotePlayer) {
         const username = (playerState as { username?: string }).username ?? playerId;
-        const getGroundHeight = this.getGroundHeightProvider?.() ?? null;
+        // Pass the provider itself so RemotePlayer resolves terrain each frame.
+        // This avoids the race where GLB hasn't loaded yet when the first snapshot arrives.
         remotePlayer = new RemotePlayer(
           playerId,
           username,
           this.scene,
           this.physics,
           this.getCameraPosition,
-          getGroundHeight
+          this.getGroundHeightProvider
         );
         this.players.set(playerId, remotePlayer);
 
