@@ -56,6 +56,44 @@ interface ActiveExplosion {
   duration: number;
 }
 
+export type WeaponProjectileType = 'rpg' | 'grenade-launcher';
+
+const PROJECTILE_SPEED: Record<WeaponProjectileType, number> = {
+  rpg: 45,
+  'grenade-launcher': 28,
+};
+// How much gravity affects each projectile (1 = full, <1 = less drop)
+const PROJECTILE_GRAV_SCALE: Record<WeaponProjectileType, number> = {
+  rpg: 0.15,           // rocket fights gravity — nearly flat trajectory
+  'grenade-launcher': 1.0, // full gravity arc
+};
+const PROJECTILE_EXPLOSION_RADIUS: Record<WeaponProjectileType, number> = {
+  rpg: 5,
+  'grenade-launcher': 4,
+};
+const PROJECTILE_EXPLOSION_DAMAGE: Record<WeaponProjectileType, number> = {
+  rpg: 120,
+  'grenade-launcher': 75,
+};
+
+interface ExhaustParticle {
+  mesh: THREE.Mesh;
+  life: number;
+  maxLife: number;
+}
+
+interface ActiveProjectile {
+  mesh: THREE.Group;
+  exhaustLight: THREE.PointLight;
+  exhaustParticles: ExhaustParticle[];
+  position: THREE.Vector3;
+  velocity: THREE.Vector3;
+  type: WeaponProjectileType;
+  gravScale: number;
+  explosionRadius: number;
+  explosionDamage: number;
+}
+
 export class GrenadeSystem {
   private scene: THREE.Scene;
   private physics: PhysicsWorld;
@@ -68,8 +106,11 @@ export class GrenadeSystem {
   onExplosion: ((position: THREE.Vector3, radius: number, damage: number) => void) | null = null;
   /** Called when a grenade lands (for multiplayer sync). (position, type) */
   onGrenadeLanded: ((position: THREE.Vector3, type: GrenadeType) => void) | null = null;
+  /** Called when an RPG/GL projectile explodes. (position, radius, damage) */
+  onProjectileImpact: ((position: THREE.Vector3, radius: number, damage: number) => void) | null = null;
   private readonly _playerPos = new THREE.Vector3();
   private thrown: ThrownGrenade[] = [];
+  private projectiles: ActiveProjectile[] = [];
   private clouds: GasCloud[] = [];
   private explosions: ActiveExplosion[] = [];
   private explosionTexture: THREE.Texture | null = null;
@@ -116,6 +157,118 @@ export class GrenadeSystem {
       position: origin.clone(),
       velocity: vel,
       type,
+    });
+  }
+
+  /**
+   * Fire an RPG rocket or grenade launcher shell as a physics projectile.
+   * Uses the same manual Euler integration as thrown grenades but with
+   * per-weapon speed, gravity scale, and wall collision detection.
+   */
+  fireProjectile(origin: THREE.Vector3, direction: THREE.Vector3, type: WeaponProjectileType): void {
+    const mesh = new THREE.Group();
+    let exhaustLight: THREE.PointLight;
+
+    if (type === 'rpg') {
+      // Rocket body — larger/more visible
+      const body = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.045, 0.045, 0.38, 10),
+        new THREE.MeshStandardMaterial({ color: 0x444433, roughness: 0.5, metalness: 0.6 }),
+      );
+      body.rotation.x = Math.PI / 2;
+      mesh.add(body);
+
+      // Warhead nose cone (forward = -Z)
+      const nose = new THREE.Mesh(
+        new THREE.ConeGeometry(0.045, 0.12, 10),
+        new THREE.MeshStandardMaterial({ color: 0x556b2f, roughness: 0.5, metalness: 0.4 }),
+      );
+      nose.rotation.x = -Math.PI / 2;
+      nose.position.z = -0.25;
+      mesh.add(nose);
+
+      // Stabilizer fins (4, at rear)
+      for (let i = 0; i < 4; i++) {
+        const fin = new THREE.Mesh(
+          new THREE.BoxGeometry(0.004, 0.10, 0.12),
+          new THREE.MeshStandardMaterial({ color: 0x333322, roughness: 0.6, metalness: 0.5 }),
+        );
+        const angle = (i / 4) * Math.PI * 2;
+        fin.position.set(Math.cos(angle) * 0.06, Math.sin(angle) * 0.06, 0.22);
+        fin.rotation.z = angle;
+        mesh.add(fin);
+      }
+
+      // Exhaust glow cone (bright, at rear = +Z)
+      const exhaustCone = new THREE.Mesh(
+        new THREE.ConeGeometry(0.038, 0.14, 10),
+        new THREE.MeshBasicMaterial({ color: 0xff8800, transparent: true, opacity: 0.9 }),
+      );
+      exhaustCone.rotation.x = Math.PI / 2; // point toward +Z (rear)
+      exhaustCone.position.z = 0.26;
+      exhaustCone.name = 'exhaustCone';
+      mesh.add(exhaustCone);
+
+      // Inner brighter core
+      const exhaustCore = new THREE.Mesh(
+        new THREE.ConeGeometry(0.018, 0.08, 8),
+        new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.85 }),
+      );
+      exhaustCore.rotation.x = Math.PI / 2;
+      exhaustCore.position.z = 0.24;
+      mesh.add(exhaustCore);
+
+      // Dynamic light at exhaust position
+      exhaustLight = new THREE.PointLight(0xff6600, 6, 8);
+      exhaustLight.position.set(0, 0, 0.22);
+      mesh.add(exhaustLight);
+
+    } else {
+      // Grenade shell: short fat cylinder
+      const body = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.040, 0.035, 0.100, 12),
+        new THREE.MeshStandardMaterial({ color: 0x3a4a2a, roughness: 0.6, metalness: 0.4 }),
+      );
+      body.rotation.x = Math.PI / 2;
+      mesh.add(body);
+
+      const nose = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.022, 0.040, 0.040, 12),
+        new THREE.MeshStandardMaterial({ color: 0x2a3a1a, roughness: 0.5, metalness: 0.5 }),
+      );
+      nose.rotation.x = Math.PI / 2;
+      nose.position.z = -0.070;
+      mesh.add(nose);
+
+      // Brass driving band
+      const band = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.042, 0.042, 0.012, 12),
+        new THREE.MeshStandardMaterial({ color: 0xc8a030, roughness: 0.3, metalness: 0.9 }),
+      );
+      band.rotation.x = Math.PI / 2;
+      band.position.z = 0.030;
+      mesh.add(band);
+
+      // Dummy light (no exhaust on GL shell)
+      exhaustLight = new THREE.PointLight(0xff6600, 0, 0);
+      mesh.add(exhaustLight);
+    }
+
+    // Orient the mesh: -Z = forward (nose direction)
+    mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, -1), direction.clone().normalize());
+    mesh.position.copy(origin);
+    this.scene.add(mesh);
+
+    this.projectiles.push({
+      mesh,
+      exhaustLight,
+      exhaustParticles: [],
+      position: origin.clone(),
+      velocity: direction.clone().normalize().multiplyScalar(PROJECTILE_SPEED[type]),
+      type,
+      gravScale: PROJECTILE_GRAV_SCALE[type],
+      explosionRadius: PROJECTILE_EXPLOSION_RADIUS[type],
+      explosionDamage: PROJECTILE_EXPLOSION_DAMAGE[type],
     });
   }
 
@@ -259,6 +412,111 @@ export class GrenadeSystem {
   }
 
   update(dt: number, camera?: THREE.Camera): void {
+    // Update weapon projectiles (RPG rockets, grenade launcher shells)
+    for (let i = this.projectiles.length - 1; i >= 0; i--) {
+      const p = this.projectiles[i];
+
+      // Euler integration with per-type gravity scale
+      p.velocity.y += GRAVITY * p.gravScale * dt;
+      p.position.addScaledVector(p.velocity, dt);
+      p.mesh.position.copy(p.position);
+
+      // Orient mesh nose along current velocity direction
+      const spd = p.velocity.length();
+      if (spd > 0.01) {
+        const fwd = p.velocity.clone().divideScalar(spd);
+        p.mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, -1), fwd);
+      }
+
+      // RPG exhaust light flicker + spawn smoke trail particles
+      if (p.type === 'rpg') {
+        p.exhaustLight.intensity = 5.5 + Math.random() * 1.5;
+
+        // Spawn a smoke/fire puff at the exhaust position every ~30ms
+        const exhaustWorldPos = new THREE.Vector3(0, 0, 0.24).applyQuaternion(p.mesh.quaternion).add(p.position);
+        if (Math.random() < dt * 30) {
+          const puffScale = 0.12 + Math.random() * 0.10;
+          const puffMesh = new THREE.Mesh(
+            new THREE.SphereGeometry(puffScale, 5, 5),
+            new THREE.MeshBasicMaterial({
+              color: Math.random() < 0.5 ? 0xff6600 : 0xffaa22,
+              transparent: true,
+              opacity: 0.75,
+              depthWrite: false,
+              blending: THREE.AdditiveBlending,
+            }),
+          );
+          puffMesh.position.copy(exhaustWorldPos);
+          this.scene.add(puffMesh);
+          p.exhaustParticles.push({ mesh: puffMesh, life: 0, maxLife: 0.18 + Math.random() * 0.10 });
+        }
+      }
+
+      // Fade and retire exhaust particles
+      for (let j = p.exhaustParticles.length - 1; j >= 0; j--) {
+        const ep = p.exhaustParticles[j];
+        ep.life += dt;
+        const frac = ep.life / ep.maxLife;
+        const mat = ep.mesh.material as THREE.MeshBasicMaterial;
+        mat.opacity = (1 - frac) * 0.75;
+        ep.mesh.scale.setScalar(1 + frac * 1.5);
+        if (ep.life >= ep.maxLife) {
+          this.scene.remove(ep.mesh);
+          (ep.mesh.material as THREE.MeshBasicMaterial).dispose();
+          ep.mesh.geometry.dispose();
+          p.exhaustParticles.splice(j, 1);
+        }
+      }
+
+      let impacted = false;
+      let impactPos = p.position.clone();
+
+      // Ground check (downward ray, same approach as grenades)
+      const groundY = this.getGroundY(p.position.x, p.position.y, p.position.z);
+      if (p.position.y <= groundY + 0.12) {
+        impactPos.set(p.position.x, groundY + 0.1, p.position.z);
+        impacted = true;
+      }
+
+      // Wall check: short forward ray in current velocity direction
+      if (!impacted && spd > 0.1) {
+        const dir = p.velocity.clone().divideScalar(spd);
+        const wallHit = this.physics.castRay(
+          p.position.x, p.position.y, p.position.z,
+          dir.x, dir.y, dir.z,
+          spd * dt * 1.5, // look ahead 1.5 frames
+          this.playerCollider ?? undefined,
+        );
+        if (wallHit) {
+          impactPos.set(wallHit.point.x, wallHit.point.y, wallHit.point.z);
+          impacted = true;
+        }
+      }
+
+      if (impacted) {
+        // Clean up exhaust particles
+        for (const ep of p.exhaustParticles) {
+          this.scene.remove(ep.mesh);
+          (ep.mesh.material as THREE.MeshBasicMaterial).dispose();
+          ep.mesh.geometry.dispose();
+        }
+        this.scene.remove(p.mesh);
+        this.projectiles.splice(i, 1);
+
+        // Explosion visuals (reuse existing frag explosion sprite)
+        this.spawnExplosion(impactPos);
+
+        // Damage enemies in radius
+        if (this.enemyManager) {
+          this.enemyManager.damageEnemiesInRadius(impactPos, p.explosionRadius, p.explosionDamage);
+        }
+
+        // Notify callback (destructibles, player damage, network sync)
+        this.onProjectileImpact?.(impactPos, p.explosionRadius, p.explosionDamage);
+        this.onExplosion?.(impactPos, p.explosionRadius, p.explosionDamage);
+      }
+    }
+
     // Update thrown grenades
     for (let i = this.thrown.length - 1; i >= 0; i--) {
       const g = this.thrown[i];

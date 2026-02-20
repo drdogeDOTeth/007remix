@@ -33,7 +33,7 @@ export interface PlayerStateUpdate {
   rotation: number; // yaw angle in radians
   health: number;
   armor: number;
-  currentWeapon: 'pistol' | 'rifle' | 'shotgun' | 'sniper' | 'minigun';
+  currentWeapon: 'pistol' | 'rifle' | 'shotgun' | 'sniper' | 'minigun' | 'rpg' | 'grenade-launcher';
   crouching: boolean;
   isMoving: boolean;
   timestamp: number; // performance.now()
@@ -44,7 +44,7 @@ export interface PlayerStateUpdate {
 /**
  * Weapon type for kill feed and death events.
  */
-export type WeaponType = 'pistol' | 'rifle' | 'shotgun' | 'sniper' | 'minigun';
+export type WeaponType = 'pistol' | 'rifle' | 'shotgun' | 'sniper' | 'minigun' | 'rpg' | 'grenade-launcher';
 
 /**
  * Destructible prop destroyed record (for sync).
@@ -73,7 +73,7 @@ export interface GameStateSnapshot {
 export interface WeaponFireEvent {
   playerId: string;
   timestamp: number; // Client timestamp for lag compensation
-  weaponType: 'pistol' | 'rifle' | 'shotgun' | 'sniper' | 'minigun';
+  weaponType: 'pistol' | 'rifle' | 'shotgun' | 'sniper' | 'minigun' | 'rpg' | 'grenade-launcher';
   origin: { x: number; y: number; z: number }; // Camera position
   direction: { x: number; y: number; z: number }; // Look direction
   hitPlayerId?: string; // Client's prediction of hit (optional)

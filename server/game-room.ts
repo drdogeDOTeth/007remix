@@ -407,6 +407,8 @@ export class GameRoom {
       shotgun: 12,  // per pellet
       sniper: 80,   // Sniper Rifle
       minigun: 18,  // M134 Minigun (compensated by 20 rps)
+      rpg: 120,             // RPG-7 direct hit
+      'grenade-launcher': 75, // M79 direct hit
     };
     return damages[weaponType] ?? 25;
   }
@@ -421,6 +423,8 @@ export class GameRoom {
       shotgun: 20,
       sniper: 150,
       minigun: 45,
+      rpg: 200,
+      'grenade-launcher': 250,
     };
     return ranges[weaponType] ?? 50;
   }
@@ -447,6 +451,8 @@ export class GameRoom {
       shotgun: 1.2,   // 1.2 rounds/second
       sniper: 0.8,    // 0.8 rounds/second
       minigun: 20,    // 20 rounds/second (1200 rpm)
+      rpg: 0.5,               // 1 shot per 2 seconds
+      'grenade-launcher': 0.8, // ~1 shot per 1.25 seconds
     };
     const rate = fireRates[weaponType] ?? 3;
     return 1000 / rate; // Convert to ms between shots

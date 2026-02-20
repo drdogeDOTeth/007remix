@@ -11,29 +11,40 @@ import { Rifle } from './weapons/rifle';
 import { Shotgun } from './weapons/shotgun';
 import { Sniper } from './weapons/sniper';
 import { Minigun } from './weapons/minigun';
+import { RPG } from './weapons/rpg';
+import { GrenadeLauncher } from './weapons/grenade-launcher';
+import { GrenadeSystem, type WeaponProjectileType } from './grenade-system';
 import {
   playGunshotWeapon, playDryFire, playReload,
   startMinigunSpinWhine, stopMinigunSpinWhine, updateMinigunSpinWhine,
 } from '../audio/sound-effects';
 import type { WeaponSkin } from './weapon-skins';
 
-const WEAPON_TYPE_MAP: WeaponType[] = ['pistol', 'rifle', 'shotgun', 'sniper', 'minigun'];
+const WEAPON_TYPE_MAP: WeaponType[] = ['pistol', 'rifle', 'shotgun', 'sniper', 'minigun', 'rpg', 'grenade-launcher'];
+const EXPLOSIVE_WEAPONS = new Set<WeaponType>(['rpg', 'grenade-launcher']);
 const DEFAULT_FOV = 75;
-const SCOPED_FOV = 25;
+const SCOPED_FOV = 25;       // sniper — ~3× zoom
+const RPG_SCOPED_FOV = 35;   // RPG PGO-7 scope — ~2× zoom
 
 export class WeaponManager {
-  private weapons: (WeaponBase | null)[] = [null, null, null, null, null];
+  private weapons: (WeaponBase | null)[] = [null, null, null, null, null, null, null];
   private currentIndex = 0;
   private viewModel: WeaponViewModel;
   private projectileSystem: ProjectileSystem;
+  private grenadeSystem: GrenadeSystem | null = null;
   private fpsCamera: FPSCamera;
   private events: EventBus;
   private getPlayerCollider: () => RAPIER.Collider;
 
   private wasMouseDown = false;
+  private wasRightMouseDown = false;
   private reloadSoundPlayed = false;
   private _scoped = false;
   private scopeFovTransition = DEFAULT_FOV;
+
+  /** Underbarrel GL cooldown — independent from rifle fire rate. */
+  private uglLastFiredTime = 0;
+  private readonly UGL_COOLDOWN = 2.0; // seconds between UGL shots
 
   /** Optional: used to disable sprint bob when crouching */
   private getIsCrouching: (() => boolean) | null = null;
@@ -48,6 +59,8 @@ export class WeaponManager {
     shotgun: 'default',
     sniper: 'default',
     minigun: 'default',
+    rpg: 'default',
+    'grenade-launcher': 'default',
   };
 
   constructor(
@@ -75,11 +88,20 @@ export class WeaponManager {
     return this.weapons[this.currentIndex]!;
   }
 
+  get currentWeaponType(): WeaponType {
+    return WEAPON_TYPE_MAP[this.currentIndex];
+  }
+
   get scoped(): boolean {
     return this._scoped;
   }
 
-  addWeapon(type: 'pistol' | 'rifle' | 'shotgun' | 'sniper' | 'minigun'): boolean {
+  /** Provide the GrenadeSystem so RPG/GL projectiles can be launched. */
+  setGrenadeSystem(gs: GrenadeSystem): void {
+    this.grenadeSystem = gs;
+  }
+
+  addWeapon(type: 'pistol' | 'rifle' | 'shotgun' | 'sniper' | 'minigun' | 'rpg' | 'grenade-launcher'): boolean {
     const slotIndex = WEAPON_TYPE_MAP.indexOf(type);
     if (slotIndex === -1) return false;
 
@@ -94,11 +116,13 @@ export class WeaponManager {
       case 'shotgun': this.weapons[slotIndex] = new Shotgun(); break;
       case 'sniper': this.weapons[slotIndex] = new Sniper(); break;
       case 'minigun': this.weapons[slotIndex] = new Minigun(); break;
+      case 'rpg': this.weapons[slotIndex] = new RPG(); break;
+      case 'grenade-launcher': this.weapons[slotIndex] = new GrenadeLauncher(); break;
     }
     return true;
   }
 
-  addAmmo(type: 'pistol' | 'rifle' | 'shotgun' | 'sniper' | 'minigun', amount: number): void {
+  addAmmo(type: 'pistol' | 'rifle' | 'shotgun' | 'sniper' | 'minigun' | 'rpg' | 'grenade-launcher', amount: number): void {
     const slotIndex = WEAPON_TYPE_MAP.indexOf(type);
     if (slotIndex !== -1 && this.weapons[slotIndex]) {
       this.weapons[slotIndex]!.addAmmo(amount);
@@ -182,13 +206,16 @@ export class WeaponManager {
       }
     }
 
-    // Scope (right-click, sniper only)
-    const canScope = WEAPON_TYPE_MAP[this.currentIndex] === 'sniper';
+    // Scope (right-click — sniper and RPG)
+    const currentType = WEAPON_TYPE_MAP[this.currentIndex];
+    const canScope = currentType === 'sniper' || currentType === 'rpg';
     this._scoped = canScope && input.rightMouseDown;
     this.viewModel.setScoped(this._scoped);
 
-    // Smooth FOV for scope
-    const targetFov = this._scoped ? SCOPED_FOV : DEFAULT_FOV;
+    // Smooth FOV for scope (RPG uses slightly wider zoom than sniper)
+    const targetFov = this._scoped
+      ? (currentType === 'rpg' ? RPG_SCOPED_FOV : SCOPED_FOV)
+      : DEFAULT_FOV;
     this.scopeFovTransition += (targetFov - this.scopeFovTransition) * dt * 12;
     this.fpsCamera.camera.fov = this.scopeFovTransition;
     this.fpsCamera.camera.updateProjectionMatrix();
@@ -223,10 +250,16 @@ export class WeaponManager {
     // Minigun requires barrels to be spinning above 60% max speed before firing
     const minigunReady = !isMinigun || (this.viewModel.minigunSpinSpeed >= 15);
 
+    const isExplosive = EXPLOSIVE_WEAPONS.has(WEAPON_TYPE_MAP[this.currentIndex]);
+
     if (this.combatEnabled && shouldFire && input.canShoot && minigunReady) {
       if (weapon.canFire(now)) {
         weapon.fire(now);
-        this.doFire();
+        if (isExplosive) {
+          this.doFireExplosive();
+        } else {
+          this.doFire();
+        }
       } else if (weapon.currentAmmo <= 0 && !weapon.reloading) {
         if (weapon.startReload(now)) {
           playReload();
@@ -239,6 +272,20 @@ export class WeaponManager {
 
     this.wasMouseDown = mouseDown;
 
+    // Underbarrel grenade launcher (rifle only, right-click, not while scoping)
+    const isRifle = WEAPON_TYPE_MAP[this.currentIndex] === 'rifle';
+    const rightDown = input.rightMouseDown;
+    const rightJustPressed = rightDown && !this.wasRightMouseDown;
+    if (this.combatEnabled && isRifle && rightJustPressed && this.grenadeSystem) {
+      if (now - this.uglLastFiredTime >= this.UGL_COOLDOWN) {
+        this.uglLastFiredTime = now;
+        this.doFireUnderbarrelGL();
+      } else {
+        playDryFire();
+      }
+    }
+    this.wasRightMouseDown = rightDown;
+
     // View model (sprint = more bob when moving with Shift and not crouching)
     this.viewModel.addSway(input.mouseMovementX, input.mouseMovementY);
     const isMoving =
@@ -249,8 +296,10 @@ export class WeaponManager {
   }
 
   private doFire(): void {
+    // Force world matrix update so getMuzzleWorldPosition is accurate even when stationary
+    this.viewModel.group.updateWorldMatrix(true, true);
     const origin = new THREE.Vector3();
-    this.fpsCamera.camera.getWorldPosition(origin);
+    this.viewModel.getMuzzleWorldPosition(origin);
     const direction = new THREE.Vector3();
     this.fpsCamera.getLookDirection(direction);
     const weapon = this.currentWeapon;
@@ -290,6 +339,54 @@ export class WeaponManager {
       position: origin,
       direction,
       hit: firstHit,
+    });
+  }
+
+  private doFireExplosive(): void {
+    const origin = new THREE.Vector3();
+    this.fpsCamera.camera.getWorldPosition(origin);
+    const direction = new THREE.Vector3();
+    this.fpsCamera.getLookDirection(direction);
+    const weapon = this.currentWeapon;
+    const weaponType = WEAPON_TYPE_MAP[this.currentIndex] as WeaponProjectileType;
+
+    playGunshotWeapon(WEAPON_TYPE_MAP[this.currentIndex]);
+
+    if (this.grenadeSystem) {
+      // Spawn 1.5m in front of camera — far enough to clear the view model and nearby geometry
+      const spawnOrigin = origin.clone().addScaledVector(direction, 1.5);
+      this.grenadeSystem.fireProjectile(spawnOrigin, direction, weaponType);
+    }
+
+    this.viewModel.triggerRecoil();
+    this.events.emit('weapon:fired', {
+      weaponName: weapon.stats.name,
+      position: origin,
+      direction,
+      hit: null,
+    });
+  }
+
+  private doFireUnderbarrelGL(): void {
+    const origin = new THREE.Vector3();
+    this.fpsCamera.camera.getWorldPosition(origin);
+    const direction = new THREE.Vector3();
+    this.fpsCamera.getLookDirection(direction);
+
+    // Play grenade launcher sound
+    playGunshotWeapon('grenade-launcher');
+
+    // Spawn GL round 1.5m forward — clears the view model safely
+    const spawnOrigin = origin.clone().addScaledVector(direction, 1.5);
+    this.grenadeSystem!.fireProjectile(spawnOrigin, direction, 'grenade-launcher');
+
+    // Light recoil kick
+    this.viewModel.triggerRecoil();
+    this.events.emit('weapon:fired', {
+      weaponName: 'UGL',
+      position: origin,
+      direction,
+      hit: null,
     });
   }
 }

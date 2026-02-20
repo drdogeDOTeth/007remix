@@ -4,116 +4,189 @@ import * as THREE from 'three';
  * Per-weapon tracer visual config.
  */
 interface TracerConfig {
-  length: number;       // metres (max visual streak length)
-  coreColor: number;
-  glowColor: number;
-  coreOpacity: number;  // peak opacity of the bright core
-  glowWidth: number;    // world-space half-width of the glow plane (metres)
-  coreWidth: number;    // world-space half-width of the core plane
-  lifetimeMs: number;
+  length: number;       // metres — length of the visible streak
+  speed: number;        // metres/second the tracer head travels
+  coreColor: number;    // RGB hex — bright inner core
+  glowColor: number;    // RGB hex — soft outer halo
+  coreOpacity: number;  // peak opacity of the core
+  glowWidth: number;    // world-space half-width of the glow (metres)
+  coreWidth: number;    // world-space half-width of the core (metres)
+  fadeMs: number;       // how long (ms) to fade after hitting target
 }
 
 const WEAPON_TRACER_CONFIG: Record<string, TracerConfig> = {
-  'PP7':         { length: 1.0, coreColor: 0xfff8d0, glowColor: 0xffe060, coreOpacity: 0.75, coreWidth: 0.003, glowWidth: 0.010, lifetimeMs:  70 },
-  'Pistol':      { length: 1.0, coreColor: 0xfff8d0, glowColor: 0xffe060, coreOpacity: 0.75, coreWidth: 0.003, glowWidth: 0.010, lifetimeMs:  70 },
-  'KF7 Soviet':  { length: 1.8, coreColor: 0xfffff0, glowColor: 0xffe880, coreOpacity: 0.85, coreWidth: 0.003, glowWidth: 0.012, lifetimeMs:  85 },
-  'Rifle':       { length: 1.8, coreColor: 0xfffff0, glowColor: 0xffe880, coreOpacity: 0.85, coreWidth: 0.003, glowWidth: 0.012, lifetimeMs:  85 },
-  'Shotgun':     { length: 0.6, coreColor: 0xfff4cc, glowColor: 0xffdd44, coreOpacity: 0.55, coreWidth: 0.002, glowWidth: 0.008, lifetimeMs:  50 },
-  'Sniper Rifle':{ length: 4.0, coreColor: 0xffffff, glowColor: 0xaaddff, coreOpacity: 1.00, coreWidth: 0.004, glowWidth: 0.016, lifetimeMs: 130 },
-  'Sniper':      { length: 4.0, coreColor: 0xffffff, glowColor: 0xaaddff, coreOpacity: 1.00, coreWidth: 0.004, glowWidth: 0.016, lifetimeMs: 130 },
-  'M134 Minigun':{ length: 1.5, coreColor: 0xff9944, glowColor: 0xff4400, coreOpacity: 0.90, coreWidth: 0.003, glowWidth: 0.011, lifetimeMs:  75 },
-  'Minigun':     { length: 1.5, coreColor: 0xff9944, glowColor: 0xff4400, coreOpacity: 0.90, coreWidth: 0.003, glowWidth: 0.011, lifetimeMs:  75 },
+  'PP7':         { length: 1.4, speed:  80, coreColor: 0xfff8d0, glowColor: 0xffe060, coreOpacity: 0.90, coreWidth: 0.006, glowWidth: 0.028, fadeMs:  60 },
+  'Pistol':      { length: 1.4, speed:  80, coreColor: 0xfff8d0, glowColor: 0xffe060, coreOpacity: 0.90, coreWidth: 0.006, glowWidth: 0.028, fadeMs:  60 },
+  'KF7 Soviet':  { length: 2.4, speed: 120, coreColor: 0xfffff0, glowColor: 0xffe880, coreOpacity: 0.95, coreWidth: 0.006, glowWidth: 0.032, fadeMs:  70 },
+  'Rifle':       { length: 2.4, speed: 120, coreColor: 0xfffff0, glowColor: 0xffe880, coreOpacity: 0.95, coreWidth: 0.006, glowWidth: 0.032, fadeMs:  70 },
+  'Shotgun':     { length: 0.9, speed:  60, coreColor: 0xfff4cc, glowColor: 0xffcc22, coreOpacity: 0.80, coreWidth: 0.006, glowWidth: 0.028, fadeMs:  50 },
+  'Sniper Rifle':{ length: 6.0, speed: 200, coreColor: 0xffffff, glowColor: 0x88ccff, coreOpacity: 1.00, coreWidth: 0.007, glowWidth: 0.040, fadeMs: 100 },
+  'Sniper':      { length: 6.0, speed: 200, coreColor: 0xffffff, glowColor: 0x88ccff, coreOpacity: 1.00, coreWidth: 0.007, glowWidth: 0.040, fadeMs: 100 },
+  'M134 Minigun':{ length: 2.0, speed: 130, coreColor: 0xffcc44, glowColor: 0xff5500, coreOpacity: 0.95, coreWidth: 0.006, glowWidth: 0.030, fadeMs:  65 },
+  'Minigun':     { length: 2.0, speed: 130, coreColor: 0xffcc44, glowColor: 0xff5500, coreOpacity: 0.95, coreWidth: 0.006, glowWidth: 0.030, fadeMs:  65 },
 };
 
 const DEFAULT_CONFIG: TracerConfig = {
-  length: 1.2, coreColor: 0xfffff0, glowColor: 0xffe880,
-  coreOpacity: 0.75, coreWidth: 0.003, glowWidth: 0.012, lifetimeMs: 80,
+  length: 1.8, speed: 100, coreColor: 0xfffff0, glowColor: 0xffe880,
+  coreOpacity: 0.90, coreWidth: 0.006, glowWidth: 0.028, fadeMs: 70,
 };
 
-const POOL_SIZE = 48; // minigun fires at 20 rps, need plenty of slots
+// ── GLSL Shader ───────────────────────────────────────────────────────────────
+// UV.x = 0 at tail, 1 at head (along the streak axis)
+// UV.y = 0 at one edge, 1 at other edge (across the width)
+//
+// Radial falloff across width: brightest at centre (UV.y = 0.5), zero at edges.
+// Slight taper at tail (UV.x = 0) for a sharp "nose" at the leading edge.
+//
+const TRACER_VERT = /* glsl */`
+  varying vec2 vUv;
+  void main() {
+    vUv = uv;
+    gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+  }
+`;
 
-// Reusable scratch vectors — never allocated per-frame
-const _side = new THREE.Vector3();
+const TRACER_FRAG = /* glsl */`
+  uniform vec3  uCoreColor;
+  uniform vec3  uGlowColor;
+  uniform float uOpacity;
+  uniform float uCoreFrac;   // coreWidth / glowWidth — fraction of half-width that is "core"
+
+  varying vec2 vUv;
+
+  void main() {
+    // vUv.y: 0 = left edge, 0.5 = centre, 1 = right edge
+    float distFromCentre = abs(vUv.y - 0.5) * 2.0; // 0 at centre, 1 at edge
+
+    // Soft glow profile: squared falloff across width
+    float glow = 1.0 - smoothstep(0.0, 1.0, distFromCentre);
+    glow = glow * glow; // sharper peak, softer edges
+
+    // Core region: very bright tight inner beam
+    float core = 1.0 - smoothstep(0.0, uCoreFrac, distFromCentre);
+    core = core * core;
+
+    // Slight fade at the tail (vUv.x = 0) for a tapered look
+    float tailFade = smoothstep(0.0, 0.12, vUv.x);
+
+    // Blend colours: glow + extra core brightness
+    vec3 col = mix(uGlowColor * glow, uCoreColor, core);
+
+    float alpha = (glow * 0.55 + core * 0.45) * tailFade * uOpacity;
+
+    gl_FragColor = vec4(col, alpha);
+  }
+`;
+
+// ── Pool size ──────────────────────────────────────────────────────────────────
+const POOL_SIZE = 48;
+
+// ── Reusable scratch vectors ───────────────────────────────────────────────────
+const _side  = new THREE.Vector3();
 const _toCam = new THREE.Vector3();
+const _head  = new THREE.Vector3();
+const _tail  = new THREE.Vector3();
+const _up    = new THREE.Vector3(0, 1, 0);
+const _right = new THREE.Vector3(1, 0, 0);
 
-interface TracerSlot {
-  // Each tracer is two quads (4 verts each) backed by BufferGeometry.
-  // We update the vertex positions directly each frame — no rotation needed.
-  coreMesh: THREE.Mesh;
-  glowMesh: THREE.Mesh;
-  corePositions: Float32Array;  // 4 verts × 3 floats
-  glowPositions: Float32Array;
-  // Tracer world-space start and end (updated at spawn)
-  start: THREE.Vector3;
-  end: THREE.Vector3;
-  dir: THREE.Vector3;           // normalised direction start→end
-  coreHalfW: number;
-  glowHalfW: number;
-  life: number;
-  maxLife: number;
-  corePeakOpacity: number;
-}
-
-/**
- * Build a simple two-triangle quad BufferGeometry (4 verts, 2 tris).
- * Vertex positions will be overwritten each frame; uvs and indices are fixed.
- */
+// ── Quad geometry (4 verts, 2 tris, with UVs) ─────────────────────────────────
+// Vertex layout:
+//   v0 (tail-left)   v3 (head-left)
+//   v1 (tail-right)  v2 (head-right)
+//
+// UV layout:
+//   v0: (0, 0)   v3: (1, 0)
+//   v1: (0, 1)   v2: (1, 1)
+//
 function makeQuadGeo(): { geo: THREE.BufferGeometry; posArr: Float32Array } {
-  const posArr = new Float32Array(4 * 3); // 4 vertices × xyz
+  const posArr = new Float32Array(4 * 3);
+  const uvArr  = new Float32Array([
+    0, 0,   // v0 tail-left
+    0, 1,   // v1 tail-right
+    1, 1,   // v2 head-right
+    1, 0,   // v3 head-left
+  ]);
+
   const geo = new THREE.BufferGeometry();
   geo.setAttribute('position', new THREE.BufferAttribute(posArr, 3));
-  // Two triangles: 0-1-2, 0-2-3
+  geo.setAttribute('uv',       new THREE.BufferAttribute(uvArr,  2));
   geo.setIndex([0, 1, 2, 0, 2, 3]);
   return { geo, posArr };
 }
 
-/**
- * Write the 4 world-space corner positions of a billboard quad into posArr.
- * The quad lies along `dir`, centred at `mid`, half-widths perpendicular to
- * both `dir` and `toCam`.
- *
- *   v0---v3
- *   |     |   ← width = halfW on each side of the streak axis
- *   v1---v2
- *
- * @param posArr  Float32Array with 12 elements (4×xyz)
- * @param start   world start of the streak
- * @param end     world end of the streak
- * @param side    unit vector perpendicular to dir AND pointing toward camera
- * @param halfW   half-width of the quad in world units
- */
 function writeQuadVerts(
   posArr: Float32Array,
-  start: THREE.Vector3,
-  end: THREE.Vector3,
+  tail: THREE.Vector3,
+  head: THREE.Vector3,
   side: THREE.Vector3,
   halfW: number,
 ): void {
-  // v0 = start + side*halfW
-  posArr[0] = start.x + side.x * halfW;
-  posArr[1] = start.y + side.y * halfW;
-  posArr[2] = start.z + side.z * halfW;
-  // v1 = start - side*halfW
-  posArr[3] = start.x - side.x * halfW;
-  posArr[4] = start.y - side.y * halfW;
-  posArr[5] = start.z - side.z * halfW;
-  // v2 = end - side*halfW
-  posArr[6] = end.x - side.x * halfW;
-  posArr[7] = end.y - side.y * halfW;
-  posArr[8] = end.z - side.z * halfW;
-  // v3 = end + side*halfW
-  posArr[9]  = end.x + side.x * halfW;
-  posArr[10] = end.y + side.y * halfW;
-  posArr[11] = end.z + side.z * halfW;
+  // v0 tail-left
+  posArr[0] = tail.x + side.x * halfW;
+  posArr[1] = tail.y + side.y * halfW;
+  posArr[2] = tail.z + side.z * halfW;
+  // v1 tail-right
+  posArr[3] = tail.x - side.x * halfW;
+  posArr[4] = tail.y - side.y * halfW;
+  posArr[5] = tail.z - side.z * halfW;
+  // v2 head-right
+  posArr[6] = head.x - side.x * halfW;
+  posArr[7] = head.y - side.y * halfW;
+  posArr[8] = head.z - side.z * halfW;
+  // v3 head-left
+  posArr[9]  = head.x + side.x * halfW;
+  posArr[10] = head.y + side.y * halfW;
+  posArr[11] = head.z + side.z * halfW;
+}
+
+// ── Shared shader uniforms factory ────────────────────────────────────────────
+function makeTracerMaterial(): THREE.ShaderMaterial {
+  return new THREE.ShaderMaterial({
+    vertexShader:   TRACER_VERT,
+    fragmentShader: TRACER_FRAG,
+    uniforms: {
+      uCoreColor: { value: new THREE.Color(0xffffff) },
+      uGlowColor: { value: new THREE.Color(0xffffff) },
+      uOpacity:   { value: 0.0 },
+      uCoreFrac:  { value: 0.25 },
+    },
+    transparent:  true,
+    depthWrite:   false,
+    blending:     THREE.AdditiveBlending,
+    side:         THREE.DoubleSide,
+  });
+}
+
+// ── Slot ──────────────────────────────────────────────────────────────────────
+interface TracerSlot {
+  mesh: THREE.Mesh;
+  positions: Float32Array;
+  mat: THREE.ShaderMaterial;
+
+  muzzle:    THREE.Vector3;
+  target:    THREE.Vector3;
+  dir:       THREE.Vector3;
+  totalDist: number;
+
+  headDist:     number;
+  speed:        number;
+  streakLength: number;
+  halfW:        number;
+  coreFrac:     number;
+
+  fadeTime:    number;
+  maxFadeTime: number;
+  peakOpacity: number;
+  active:      boolean;
 }
 
 /**
- * Renders bullet tracer streaks using pooled world-space quad meshes.
+ * Renders bullet tracer streaks as moving glowing beams.
  *
- * Each tracer is two overlapping quads (core + soft glow) whose vertices
- * are recomputed each frame so the quad always faces the camera while
- * lying precisely along the bullet's direction vector. This approach is
- * fully stable regardless of view angle, including dead-on shots.
+ * Each tracer uses a single ShaderMaterial quad with per-pixel radial glow
+ * falloff (smooth core + soft outer halo), a tapered tail, and additive
+ * blending so they light up dark areas. The head travels at cinematic speed
+ * from the muzzle to the target, then fades out.
  */
 export class TracerSystem {
   private scene: THREE.Scene;
@@ -127,61 +200,36 @@ export class TracerSystem {
 
   private _buildPool(): void {
     for (let i = 0; i < POOL_SIZE; i++) {
-      const { geo: coreGeo, posArr: corePos } = makeQuadGeo();
-      const { geo: glowGeo, posArr: glowPos } = makeQuadGeo();
+      const { geo, posArr } = makeQuadGeo();
+      const mat = makeTracerMaterial();
 
-      const coreMat = new THREE.MeshBasicMaterial({
-        color: 0xffffff,
-        transparent: true,
-        opacity: 0,
-        depthWrite: false,
-        blending: THREE.AdditiveBlending,
-        side: THREE.DoubleSide,
-      });
-      const glowMat = new THREE.MeshBasicMaterial({
-        color: 0xffffff,
-        transparent: true,
-        opacity: 0,
-        depthWrite: false,
-        blending: THREE.AdditiveBlending,
-        side: THREE.DoubleSide,
-      });
-
-      const coreMesh = new THREE.Mesh(coreGeo, coreMat);
-      coreMesh.visible = false;
-      coreMesh.renderOrder = 10;
-      coreMesh.frustumCulled = false; // verts are in world space, skip culling
-      this.scene.add(coreMesh);
-
-      const glowMesh = new THREE.Mesh(glowGeo, glowMat);
-      glowMesh.visible = false;
-      glowMesh.renderOrder = 9;
-      glowMesh.frustumCulled = false;
-      this.scene.add(glowMesh);
+      const mesh = new THREE.Mesh(geo, mat);
+      mesh.visible = false;
+      mesh.renderOrder = 10;
+      mesh.frustumCulled = false;
+      this.scene.add(mesh);
 
       this.pool.push({
-        coreMesh, glowMesh,
-        corePositions: corePos,
-        glowPositions: glowPos,
-        start: new THREE.Vector3(),
-        end: new THREE.Vector3(),
-        dir: new THREE.Vector3(0, 0, -1),
-        coreHalfW: 0.003,
-        glowHalfW: 0.010,
-        life: 0,
-        maxLife: 0,
-        corePeakOpacity: 0,
+        mesh, positions: posArr, mat,
+        muzzle:    new THREE.Vector3(),
+        target:    new THREE.Vector3(),
+        dir:       new THREE.Vector3(0, 0, -1),
+        totalDist: 1,
+        headDist:     0,
+        speed:        100,
+        streakLength: 2,
+        halfW:        0.02,
+        coreFrac:     0.25,
+        fadeTime:     0,
+        maxFadeTime:  0.07,
+        peakOpacity:  0.9,
+        active:       false,
       });
     }
   }
 
   /**
-   * Spawn a tracer for a single ray.
-   * @param spreadDir  Normalised direction (spread already applied)
-   * @param origin     Ray start (camera world position)
-   * @param hitPoint   Where the ray hit, or null if it missed
-   * @param range      Weapon max range (used when miss)
-   * @param weaponName weapon.stats.name
+   * Spawn a tracer for a single hitscan ray.
    */
   spawnTracer(
     spreadDir: THREE.Vector3,
@@ -192,86 +240,72 @@ export class TracerSystem {
   ): void {
     const cfg = WEAPON_TRACER_CONFIG[weaponName] ?? DEFAULT_CONFIG;
 
-    // Find a free pool slot
     let slot: TracerSlot | null = null;
     for (const s of this.pool) {
-      if (s.life <= 0 && !s.coreMesh.visible) {
-        slot = s;
-        break;
-      }
+      if (!s.active) { slot = s; break; }
     }
-    if (!slot) return; // pool exhausted
+    if (!slot) return;
 
-    // The tracer is a short streak at the FAR end of the bullet path —
-    // it appears at the impact point and extends cfg.length back toward the gun.
-    // This matches CoD/BF style where you see the streak arrive at the target.
-    if (hitPoint) {
-      // End at the impact point, start cfg.length back along the ray
-      slot.end.copy(hitPoint);
-      slot.start.copy(hitPoint).addScaledVector(spreadDir, -cfg.length);
-      // Don't let start go behind the camera
-      const minStart = origin.clone().addScaledVector(spreadDir, 0.40);
-      const dotCheck = slot.start.clone().sub(origin).dot(spreadDir);
-      if (dotCheck < 0.40) slot.start.copy(minStart);
-    } else {
-      // Miss — draw streak at max range, same approach
-      slot.end.copy(origin).addScaledVector(spreadDir, range);
-      slot.start.copy(slot.end).addScaledVector(spreadDir, -cfg.length);
-      const minStart = origin.clone().addScaledVector(spreadDir, 0.40);
-      const dotCheck = slot.start.clone().sub(origin).dot(spreadDir);
-      if (dotCheck < 0.40) slot.start.copy(minStart);
-    }
+    // Origin is already the barrel tip (muzzle world position from WeaponViewModel)
+    slot.muzzle.copy(origin);
+    slot.target.copy(hitPoint ?? origin.clone().addScaledVector(spreadDir, range));
+    slot.dir.copy(spreadDir);
+    slot.totalDist = Math.max(0.1, slot.muzzle.distanceTo(slot.target));
 
-    slot.dir.copy(spreadDir); // already normalised
-    slot.coreHalfW = cfg.coreWidth;
-    slot.glowHalfW = cfg.glowWidth;
-    slot.life = cfg.lifetimeMs / 1000;
-    slot.maxLife = cfg.lifetimeMs / 1000;
-    slot.corePeakOpacity = cfg.coreOpacity;
+    slot.headDist    = 0;
+    slot.speed       = cfg.speed;
+    slot.streakLength = cfg.length;
+    slot.halfW       = cfg.glowWidth;
+    slot.coreFrac    = Math.min(0.95, cfg.coreWidth / cfg.glowWidth);
+    slot.fadeTime    = cfg.fadeMs / 1000;
+    slot.maxFadeTime = cfg.fadeMs / 1000;
+    slot.peakOpacity = cfg.coreOpacity;
+    slot.active      = true;
 
-    const coreMat = slot.coreMesh.material as THREE.MeshBasicMaterial;
-    const glowMat = slot.glowMesh.material as THREE.MeshBasicMaterial;
-    coreMat.color.setHex(cfg.coreColor);
-    glowMat.color.setHex(cfg.glowColor);
-
-    slot.coreMesh.visible = true;
-    slot.glowMesh.visible = true;
+    slot.mat.uniforms.uCoreColor.value.setHex(cfg.coreColor);
+    slot.mat.uniforms.uGlowColor.value.setHex(cfg.glowColor);
+    slot.mat.uniforms.uCoreFrac.value = slot.coreFrac;
+    slot.mat.uniforms.uOpacity.value  = 0;
+    slot.mesh.visible = true;
 
     this.active.push(slot);
   }
 
-  /**
-   * Called once per frame from ProjectileSystem.update().
-   * Recomputes billboard quad vertices, updates opacity fade, retires expired tracers.
-   */
   update(dt: number, camera: THREE.Camera): void {
     for (let i = this.active.length - 1; i >= 0; i--) {
       const slot = this.active[i];
-      slot.life -= dt;
 
-      if (slot.life <= 0) {
-        slot.coreMesh.visible = false;
-        slot.glowMesh.visible = false;
-        this.active.splice(i, 1);
-        continue;
+      // ── Phase 1: travel ───────────────────────────────────────────────────
+      const travelling = slot.headDist < slot.totalDist;
+      if (travelling) {
+        slot.headDist = Math.min(slot.totalDist, slot.headDist + slot.speed * dt);
+      } else {
+        // ── Phase 2: fade ─────────────────────────────────────────────────
+        slot.fadeTime -= dt;
+        if (slot.fadeTime <= 0) {
+          slot.active = false;
+          slot.mesh.visible = false;
+          slot.mat.uniforms.uOpacity.value = 0;
+          this.active.splice(i, 1);
+          continue;
+        }
       }
 
-      // Fade: sqrt gives fast initial brightness, smooth tail
-      const frac = Math.max(0, slot.life / slot.maxLife);
-      const fade = Math.sqrt(frac);
+      // Head and tail world positions
+      _head.copy(slot.muzzle).addScaledVector(slot.dir, slot.headDist);
+      const tailDist = Math.max(0, slot.headDist - slot.streakLength);
+      _tail.copy(slot.muzzle).addScaledVector(slot.dir, tailDist);
 
-      const coreMat = slot.coreMesh.material as THREE.MeshBasicMaterial;
-      const glowMat = slot.glowMesh.material as THREE.MeshBasicMaterial;
-      coreMat.opacity = slot.corePeakOpacity * fade;
-      glowMat.opacity = slot.corePeakOpacity * 0.40 * fade;
+      // Opacity: full while travelling, sqrt-fade on exit
+      const opacity = travelling
+        ? slot.peakOpacity
+        : slot.peakOpacity * Math.sqrt(slot.fadeTime / slot.maxFadeTime);
+      slot.mat.uniforms.uOpacity.value = opacity;
 
-      // Billboard: compute the side vector perpendicular to the tracer direction
-      // AND perpendicular to the vector from tracer midpoint toward the camera.
-      // side = normalize( dir × toCam )
-      // This is stable even when shooting directly toward or away from the camera.
-      const midX = (slot.start.x + slot.end.x) * 0.5;
-      const midY = (slot.start.y + slot.end.y) * 0.5;
-      const midZ = (slot.start.z + slot.end.z) * 0.5;
+      // ── Billboard side vector ─────────────────────────────────────────────
+      const midX = (_head.x + _tail.x) * 0.5;
+      const midY = (_head.y + _tail.y) * 0.5;
+      const midZ = (_head.z + _tail.z) * 0.5;
 
       _toCam.set(
         camera.position.x - midX,
@@ -279,39 +313,31 @@ export class TracerSystem {
         camera.position.z - midZ,
       ).normalize();
 
-      // side = dir × toCam  (perpendicular to both = the "width" axis of the streak)
       _side.crossVectors(slot.dir, _toCam);
-      const sideLen = _side.length();
+      let sideLen = _side.length();
       if (sideLen < 0.001) {
-        // Edge case: shooting exactly at camera — skip this frame
-        continue;
+        _side.crossVectors(slot.dir, _up);
+        sideLen = _side.length();
       }
+      if (sideLen < 0.001) {
+        _side.crossVectors(slot.dir, _right);
+        sideLen = _side.length();
+      }
+      if (sideLen < 0.001) continue;
       _side.divideScalar(sideLen);
 
-      // Write core quad vertices
-      writeQuadVerts(slot.corePositions, slot.start, slot.end, _side, slot.coreHalfW);
-      const coreAttr = slot.coreMesh.geometry.getAttribute('position') as THREE.BufferAttribute;
-      coreAttr.needsUpdate = true;
-
-      // Write glow quad vertices (same orientation, wider)
-      writeQuadVerts(slot.glowPositions, slot.start, slot.end, _side, slot.glowHalfW);
-      const glowAttr = slot.glowMesh.geometry.getAttribute('position') as THREE.BufferAttribute;
-      glowAttr.needsUpdate = true;
-
-      // Bounding box/sphere must be updated so WebGL doesn't cull the mesh incorrectly
-      slot.coreMesh.geometry.computeBoundingSphere();
-      slot.glowMesh.geometry.computeBoundingSphere();
+      writeQuadVerts(slot.positions, _tail, _head, _side, slot.halfW);
+      const attr = slot.mesh.geometry.getAttribute('position') as THREE.BufferAttribute;
+      attr.needsUpdate = true;
+      slot.mesh.geometry.computeBoundingSphere();
     }
   }
 
   dispose(): void {
     for (const slot of this.pool) {
-      this.scene.remove(slot.coreMesh);
-      this.scene.remove(slot.glowMesh);
-      slot.coreMesh.geometry.dispose();
-      slot.glowMesh.geometry.dispose();
-      (slot.coreMesh.material as THREE.MeshBasicMaterial).dispose();
-      (slot.glowMesh.material as THREE.MeshBasicMaterial).dispose();
+      this.scene.remove(slot.mesh);
+      slot.mesh.geometry.dispose();
+      slot.mat.dispose();
     }
     this.pool.length = 0;
     this.active.length = 0;

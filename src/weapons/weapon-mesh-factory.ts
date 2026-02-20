@@ -8,7 +8,108 @@ import { getTextureSetForSkin, cloneTextureWithRepeat } from './weapon-skins';
 import type { WeaponSkin, SkinTextureRole, WeaponPartUVScale } from './weapon-skins';
 import { createPlasmaAccentMaterial } from './weapon-plasma-material';
 
-export type WeaponType = 'pistol' | 'rifle' | 'shotgun' | 'sniper' | 'minigun';
+export type WeaponType = 'pistol' | 'rifle' | 'shotgun' | 'sniper' | 'minigun' | 'rpg' | 'grenade-launcher';
+
+// ── Procedural scope lens glass texture (cached) ─────────────────────────────
+let _scopeLensTexture: THREE.CanvasTexture | null = null;
+
+function getScopeLensTexture(): THREE.CanvasTexture {
+  if (_scopeLensTexture) return _scopeLensTexture;
+
+  const SIZE = 256;
+  const canvas = document.createElement('canvas');
+  canvas.width = SIZE;
+  canvas.height = SIZE;
+  const ctx = canvas.getContext('2d')!;
+  const cx = SIZE / 2, cy = SIZE / 2, r = SIZE / 2;
+
+  // Base glass — deep blue-green tint
+  const base = ctx.createRadialGradient(cx, cy, 0, cx, cy, r);
+  base.addColorStop(0.00, 'rgba(140,185,200, 0.20)');
+  base.addColorStop(0.50, 'rgba(80,130,170,  0.35)');
+  base.addColorStop(0.85, 'rgba(40,80,130,   0.55)');
+  base.addColorStop(1.00, 'rgba(10,20,60,    0.80)');
+  ctx.fillStyle = base;
+  ctx.beginPath();
+  ctx.arc(cx, cy, r, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Anti-reflection coating bloom — magenta/green shift at edge
+  ctx.globalCompositeOperation = 'screen';
+  const coat = ctx.createRadialGradient(cx, cy, r * 0.6, cx, cy, r);
+  coat.addColorStop(0,    'rgba(0,0,0,0)');
+  coat.addColorStop(0.7,  'rgba(120,40,140,0.15)');
+  coat.addColorStop(1.0,  'rgba(40,180,80, 0.12)');
+  ctx.fillStyle = coat;
+  ctx.beginPath();
+  ctx.arc(cx, cy, r, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.globalCompositeOperation = 'source-over';
+
+  // Upper-left specular glare streak
+  ctx.globalCompositeOperation = 'screen';
+  const glare1 = ctx.createRadialGradient(cx - r * 0.3, cy - r * 0.35, 0, cx - r * 0.3, cy - r * 0.35, r * 0.42);
+  glare1.addColorStop(0,   'rgba(255,255,255,0.35)');
+  glare1.addColorStop(0.4, 'rgba(200,230,255,0.15)');
+  glare1.addColorStop(1,   'rgba(0,0,0,0)');
+  ctx.fillStyle = glare1;
+  ctx.beginPath();
+  ctx.arc(cx, cy, r, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Small secondary catchlight (lower-right)
+  const glare2 = ctx.createRadialGradient(cx + r * 0.35, cy + r * 0.28, 0, cx + r * 0.35, cy + r * 0.28, r * 0.18);
+  glare2.addColorStop(0,   'rgba(200,240,255,0.25)');
+  glare2.addColorStop(1,   'rgba(0,0,0,0)');
+  ctx.fillStyle = glare2;
+  ctx.beginPath();
+  ctx.arc(cx, cy, r, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.globalCompositeOperation = 'source-over';
+
+  // Cross-lens diffraction ring (very faint iridescent)
+  ctx.globalCompositeOperation = 'screen';
+  ctx.strokeStyle = 'rgba(180,200,255,0.06)';
+  ctx.lineWidth = 3;
+  for (let i = 1; i <= 3; i++) {
+    ctx.beginPath();
+    ctx.arc(cx, cy, r * (0.25 + i * 0.2), 0, Math.PI * 2);
+    ctx.stroke();
+  }
+  ctx.globalCompositeOperation = 'source-over';
+
+  // Outer dark bezel ring
+  const bezel = ctx.createRadialGradient(cx, cy, r * 0.88, cx, cy, r);
+  bezel.addColorStop(0, 'rgba(0,0,0,0)');
+  bezel.addColorStop(1, 'rgba(0,0,0,0.6)');
+  ctx.fillStyle = bezel;
+  ctx.beginPath();
+  ctx.arc(cx, cy, r, 0, Math.PI * 2);
+  ctx.fill();
+
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.needsUpdate = true;
+  _scopeLensTexture = tex;
+  return tex;
+}
+
+/**
+ * Creates a realistic scope lens material — tinted glass with PBR reflectivity,
+ * glare, and anti-reflection coating appearance.
+ */
+function buildScopeLensMaterial(): THREE.MeshStandardMaterial {
+  const tex = getScopeLensTexture();
+  return new THREE.MeshStandardMaterial({
+    map: tex,
+    color: 0xaaccdd,
+    roughness: 0.02,
+    metalness: 0.05,
+    transparent: true,
+    opacity: 0.82,
+    envMapIntensity: 1.5,
+    side: THREE.DoubleSide,
+  });
+}
 
 /** UV repeat values — 1×1 = no tiling, one texture per face. */
 const UV_REPEAT: Record<WeaponPartUVScale, [number, number]> = {
@@ -70,6 +171,8 @@ export function buildWeaponMesh(type: WeaponType, skin: WeaponSkin = 'default'):
     case 'shotgun': return buildShotgunMesh(skin);
     case 'sniper': return buildSniperMesh(skin);
     case 'minigun': return buildMinigunMesh(skin);
+    case 'rpg': return buildRPGMesh(skin);
+    case 'grenade-launcher': return buildGrenadeLauncherMesh(skin);
     default: return buildPistolMesh(skin);
   }
 }
@@ -190,6 +293,55 @@ function buildRifleMesh(skin: WeaponSkin): THREE.Group {
   stock.position.set(0, -0.01, 0.15); gun.add(stock);
   const grip = new THREE.Mesh(new THREE.BoxGeometry(0.038, 0.075, 0.038), shortWoodMat);
   grip.position.set(0, -0.045, 0.05); grip.rotation.x = 0.2; gun.add(grip);
+
+  // ── Underbarrel Grenade Launcher attachment ───────────────────────────────
+  const ugl = new THREE.Group();
+  ugl.name = 'underbarrelGL';
+
+  // Tube body — rides under the handguard
+  const uglTube = new THREE.Mesh(
+    createSubdividedCylinder(0.022, 0.022, 0.16, 12),
+    createMaterial(skin, 'metalMid', 0.35, 0.75, 'cylinderMetal'),
+  );
+  uglTube.rotation.x = Math.PI / 2;
+  uglTube.position.set(0, -0.038, -0.235); // below barrel, forward section
+  ugl.add(uglTube);
+
+  // Muzzle flare / slight flare at tube end
+  const uglMuzzle = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.025, 0.022, 0.010, 12),
+    createMaterial(skin, 'metalMid', 0.35, 0.75, 'shortMetal'),
+  );
+  uglMuzzle.rotation.x = Math.PI / 2;
+  uglMuzzle.position.set(0, -0.038, -0.318);
+  ugl.add(uglMuzzle);
+
+  // Trigger (short paddle below tube)
+  const uglTrigger = new THREE.Mesh(
+    new THREE.BoxGeometry(0.008, 0.018, 0.008),
+    new THREE.MeshStandardMaterial({ color: 0x181818, roughness: 0.5, metalness: 0.7 }),
+  );
+  uglTrigger.position.set(0, -0.058, -0.18);
+  ugl.add(uglTrigger);
+
+  // Trigger guard
+  const uglGuard = new THREE.Mesh(
+    new THREE.BoxGeometry(0.020, 0.006, 0.032),
+    createMaterial(skin, 'metalMid', 0.35, 0.75, 'shortMetal'),
+  );
+  uglGuard.position.set(0, -0.068, -0.18);
+  ugl.add(uglGuard);
+
+  // Rail mount (connects tube to handguard)
+  const uglMount = new THREE.Mesh(
+    new THREE.BoxGeometry(0.030, 0.010, 0.040),
+    createMaterial(skin, 'metalMid', 0.35, 0.75, 'shortMetal'),
+  );
+  uglMount.position.set(0, -0.025, -0.22);
+  ugl.add(uglMount);
+
+  gun.add(ugl);
+
   return gun;
 }
 
@@ -277,6 +429,13 @@ function buildSniperMesh(skin: WeaponSkin): THREE.Group {
   scopeRingFront.rotation.x = Math.PI / 2; scopeRingFront.position.set(0, 0.07, -0.06); gun.add(scopeRingFront);
   const scopeRingRear = new THREE.Mesh(new THREE.CylinderGeometry(0.025, 0.025, 0.015, 8), shortMetalMat);
   scopeRingRear.rotation.x = Math.PI / 2; scopeRingRear.position.set(0, 0.07, 0.02); gun.add(scopeRingRear);
+  // Glass lens discs — objective (front) and eyepiece (rear)
+  // CircleGeometry faces +Z by default; DoubleSide makes both visible from either direction.
+  const lensMat = buildScopeLensMaterial();
+  const objectiveLens = new THREE.Mesh(new THREE.CircleGeometry(0.019, 16), lensMat);
+  objectiveLens.position.set(0, 0.07, -0.079); gun.add(objectiveLens);
+  const eyepieceLens = new THREE.Mesh(new THREE.CircleGeometry(0.019, 16), lensMat.clone());
+  eyepieceLens.position.set(0, 0.07, 0.039); gun.add(eyepieceLens);
   const stock = new THREE.Mesh(createSubdividedBox(0.042, 0.058, 0.2), longWoodMat);
   stock.position.set(0, 0, 0.2); gun.add(stock);
   const cheekRest = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.04, 0.08), shortWoodMat);
@@ -490,6 +649,326 @@ function buildMinigunMesh(skin: WeaponSkin): THREE.Group {
     const slot = new THREE.Mesh(new THREE.BoxGeometry(0.02, 0.004, 0.006), accentMat);
     slot.position.set(0, 0.044, -0.12 + i * 0.028); gun.add(slot);
   }
+
+  return gun;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// RPG-7 MESH
+// Hierarchy:
+//  gun (root)
+//  ├─ tube          — main launch tube body
+//  ├─ frontCone     — warhead ogive (front)
+//  ├─ warheadTip    — pointy nose of warhead
+//  ├─ rearBell      — exhaust/venturi bell at back
+//  ├─ rearCap       — cap disc closing rear
+//  ├─ sight         — PGO-7 optical sight box (top)
+//  │   └─ sightLens — objective lens
+//  ├─ grip          — pistol grip below tube
+//  ├─ triggerGuard  — guard loop
+//  ├─ trigger       — trigger blade
+//  ├─ frontGrip     — left hand hold (front sling ring area)
+//  ├─ slingSwivel×2 — front/rear rings
+//  └─ heatShield    — vented blast shroud behind grip
+// ─────────────────────────────────────────────────────────────────────────────
+function buildRPGMesh(skin: WeaponSkin): THREE.Group {
+  const gun = new THREE.Group();
+
+  // Skin-driven materials — these all respond to weapon skin selection
+  const tubeMat  = createMaterial(skin, 'metal',    0.6,  0.7,  'longMetal');
+  const darkMat  = createMaterial(skin, 'metalMid', 0.5,  0.8,  'shortMetal');
+  const gripMat  = createMaterial(skin, 'grip',     0.9,  0.05, 'grip');
+  const sightMat = createMaterial(skin, 'scope',    0.4,  0.6,  'scope');
+  // Fixed materials — always keep OD green warhead and brass hardware regardless of skin
+  const warheadMat = new THREE.MeshStandardMaterial({ color: 0x556b2f, roughness: 0.5, metalness: 0.4 });
+  const lensMat = buildScopeLensMaterial();
+  const brassMat = new THREE.MeshStandardMaterial({ color: 0x8b6914, roughness: 0.4, metalness: 0.8 });
+
+  // Main tube — long cylinder along Z axis
+  const tube = new THREE.Mesh(createSubdividedCylinder(0.048, 0.048, 0.72, 14), tubeMat);
+  tube.rotation.x = Math.PI / 2;
+  tube.position.set(0, 0, -0.06); // centred, extends from +0.30 to -0.42 in gun space
+  gun.add(tube);
+
+  // Tube reinforcement rings
+  for (let i = 0; i < 3; i++) {
+    const ring = new THREE.Mesh(createSubdividedCylinder(0.052, 0.052, 0.018, 12), darkMat);
+    ring.rotation.x = Math.PI / 2;
+    ring.position.set(0, 0, 0.18 - i * 0.22);
+    gun.add(ring);
+  }
+
+  // Front warhead section — olive green piezo warhead
+  const warheadBody = new THREE.Mesh(createSubdividedCylinder(0.042, 0.048, 0.14, 12), warheadMat);
+  warheadBody.rotation.x = Math.PI / 2;
+  warheadBody.position.set(0, 0, 0.39); // forward of tube
+  gun.add(warheadBody);
+
+  // Warhead nose cone
+  const warheadCone = new THREE.Mesh(new THREE.ConeGeometry(0.042, 0.09, 12), warheadMat);
+  // rotation.x = +π/2 → tip points +Z; after group.rotation.y = π flip, tip faces -Z (forward in scene)
+  warheadCone.rotation.x = Math.PI / 2;
+  warheadCone.position.set(0, 0, 0.50);
+  gun.add(warheadCone);
+
+  // Warhead base ring (piezoelectric contact band)
+  const warheadBase = new THREE.Mesh(createSubdividedCylinder(0.055, 0.055, 0.016, 12), brassMat);
+  warheadBase.rotation.x = Math.PI / 2;
+  warheadBase.position.set(0, 0, 0.31);
+  gun.add(warheadBase);
+
+  // Warhead fins (4 stabilising fins)
+  for (let i = 0; i < 4; i++) {
+    const fin = new THREE.Mesh(new THREE.BoxGeometry(0.004, 0.05, 0.08), darkMat);
+    const angle = (i / 4) * Math.PI * 2;
+    fin.position.set(Math.cos(angle) * 0.058, Math.sin(angle) * 0.058, 0.32);
+    fin.rotation.z = angle;
+    gun.add(fin);
+  }
+
+  // Rear exhaust bell — flares outward
+  const rearBell = new THREE.Mesh(createSubdividedCylinder(0.048, 0.064, 0.08, 14), tubeMat);
+  rearBell.rotation.x = Math.PI / 2;
+  rearBell.position.set(0, 0, -0.46);
+  gun.add(rearBell);
+
+  // Rear cap
+  const rearCap = new THREE.Mesh(new THREE.CircleGeometry(0.064, 14), darkMat);
+  rearCap.rotation.x = Math.PI / 2;
+  rearCap.position.set(0, 0, -0.502);
+  gun.add(rearCap);
+
+  // PGO-7 optical sight — boxy scope on top rail
+  const sightBox = new THREE.Mesh(createSubdividedBox(0.046, 0.054, 0.12), sightMat);
+  sightBox.position.set(0, 0.096, 0.04);
+  gun.add(sightBox);
+
+  // Sight objective lens housing (front)
+  const sightLensFront = new THREE.Mesh(createSubdividedCylinder(0.018, 0.018, 0.012, 10), lensMat);
+  sightLensFront.rotation.x = Math.PI / 2;
+  sightLensFront.position.set(0, 0.096, -0.015);
+  gun.add(sightLensFront);
+  // Glass disc face on objective (DoubleSide — no rotation needed)
+  const sightGlassFront = new THREE.Mesh(new THREE.CircleGeometry(0.017, 16), lensMat.clone());
+  sightGlassFront.position.set(0, 0.096, -0.022);
+  gun.add(sightGlassFront);
+
+  // Sight eyepiece housing (rear)
+  const sightEyepiece = new THREE.Mesh(createSubdividedCylinder(0.014, 0.014, 0.018, 10), darkMat);
+  sightEyepiece.rotation.x = Math.PI / 2;
+  sightEyepiece.position.set(0, 0.096, 0.11);
+  gun.add(sightEyepiece);
+  // Glass disc face on eyepiece (DoubleSide — no rotation needed)
+  const sightGlassRear = new THREE.Mesh(new THREE.CircleGeometry(0.013, 16), lensMat.clone());
+  sightGlassRear.position.set(0, 0.096, 0.120);
+  gun.add(sightGlassRear);
+
+  // Sight mount bracket
+  const sightMount = new THREE.Mesh(createSubdividedBox(0.012, 0.038, 0.10), darkMat);
+  sightMount.position.set(0, 0.064, 0.04);
+  gun.add(sightMount);
+
+  // Pistol grip
+  const grip = new THREE.Mesh(createSubdividedBox(0.038, 0.095, 0.028), gripMat);
+  grip.rotation.x = 0.2; // slight forward tilt
+  grip.position.set(0, -0.086, 0.055);
+  gun.add(grip);
+
+  // Grip top plate (metal interface)
+  const gripTop = new THREE.Mesh(createSubdividedBox(0.040, 0.012, 0.040), darkMat);
+  gripTop.position.set(0, -0.030, 0.058);
+  gun.add(gripTop);
+
+  // Trigger guard — bent rod
+  const guardH = new THREE.Mesh(new THREE.BoxGeometry(0.030, 0.006, 0.042), darkMat);
+  guardH.position.set(0, -0.054, 0.072);
+  gun.add(guardH);
+  const guardFront = new THREE.Mesh(new THREE.BoxGeometry(0.006, 0.024, 0.006), darkMat);
+  guardFront.position.set(0, -0.042, 0.054);
+  gun.add(guardFront);
+  const guardRear = new THREE.Mesh(new THREE.BoxGeometry(0.006, 0.024, 0.006), darkMat);
+  guardRear.position.set(0, -0.042, 0.090);
+  gun.add(guardRear);
+
+  // Trigger blade
+  const trigger = new THREE.Mesh(new THREE.BoxGeometry(0.008, 0.022, 0.006), darkMat);
+  trigger.position.set(0, -0.044, 0.068);
+  gun.add(trigger);
+
+  // Front hand-grip (forward assist / holding grip)
+  const frontGrip = new THREE.Mesh(createSubdividedBox(0.036, 0.070, 0.025), gripMat);
+  frontGrip.rotation.x = -0.15;
+  frontGrip.position.set(0, -0.082, -0.14);
+  gun.add(frontGrip);
+
+  // Heat shield vents (behind pistol grip)
+  const heatShield = new THREE.Mesh(createSubdividedBox(0.060, 0.024, 0.060), darkMat);
+  heatShield.position.set(0, -0.024, -0.02);
+  gun.add(heatShield);
+  // Vent slots
+  for (let i = 0; i < 4; i++) {
+    const vent = new THREE.Mesh(new THREE.BoxGeometry(0.012, 0.028, 0.008), tubeMat);
+    vent.position.set(-0.018 + i * 0.012, -0.024, -0.005);
+    gun.add(vent);
+  }
+
+  // Sling swivels
+  for (let i = 0; i < 2; i++) {
+    const swivel = new THREE.Mesh(new THREE.TorusGeometry(0.014, 0.004, 6, 10), brassMat);
+    swivel.rotation.x = Math.PI / 2;
+    swivel.position.set(0.052, 0, i === 0 ? 0.22 : -0.32);
+    gun.add(swivel);
+  }
+
+  // Rotate 180° so warhead points forward (-Z in view model space = into the scene)
+  gun.rotation.y = Math.PI;
+
+  return gun;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// M79 GRENADE LAUNCHER MESH
+// Hierarchy:
+//  gun (root)
+//  ├─ receiver      — boxy action body
+//  ├─ barrel        — short fat tube
+//  ├─ muzzle        — slightly flared muzzle ring
+//  ├─ hinge         — break-open pivot
+//  ├─ stock         — wooden buttstock
+//  ├─ pistolGrip    — wooden grip below action
+//  ├─ trigger/guard
+//  ├─ leafSight     — flip-up rear leaf sight
+//  └─ frontSight    — blade at muzzle
+// ─────────────────────────────────────────────────────────────────────────────
+function buildGrenadeLauncherMesh(skin: WeaponSkin): THREE.Group {
+  const gun = new THREE.Group();
+
+  // Skin-driven materials — respond to weapon skin selection
+  const metalMat    = createMaterial(skin, 'metal',    0.45, 0.75, 'longMetal');
+  const darkMat     = createMaterial(skin, 'metalMid', 0.5,  0.8,  'shortMetal');
+  const woodMat     = createMaterial(skin, 'woodMid',  0.85, 0.02, 'longWood');
+  const lightWoodMat = createMaterial(skin, 'wood',    0.88, 0.02, 'shortWood');
+  // Fixed material — brass hardware stays brass regardless of skin
+  const brassMat = new THREE.MeshStandardMaterial({ color: 0x8b6914, roughness: 0.4, metalness: 0.8 });
+
+  // Receiver body — the boxy action block
+  const receiver = new THREE.Mesh(createSubdividedBox(0.058, 0.062, 0.125), metalMat);
+  receiver.position.set(0, 0.010, 0.04);
+  gun.add(receiver);
+
+  // Receiver detail — side ejection port
+  const ejectPort = new THREE.Mesh(new THREE.BoxGeometry(0.006, 0.024, 0.032), darkMat);
+  ejectPort.position.set(0.030, 0.012, 0.04);
+  gun.add(ejectPort);
+
+  // Barrel — short fat tube that breaks open at hinge
+  const barrel = new THREE.Mesh(createSubdividedCylinder(0.028, 0.028, 0.175, 14), metalMat);
+  barrel.rotation.x = Math.PI / 2;
+  barrel.position.set(0, 0.010, -0.12);
+  gun.add(barrel);
+
+  // Muzzle ring
+  const muzzle = new THREE.Mesh(createSubdividedCylinder(0.032, 0.030, 0.016, 14), darkMat);
+  muzzle.rotation.x = Math.PI / 2;
+  muzzle.position.set(0, 0.010, -0.215);
+  gun.add(muzzle);
+
+  // Barrel underlug (locking lug under barrel)
+  const underlug = new THREE.Mesh(createSubdividedBox(0.022, 0.014, 0.040), darkMat);
+  underlug.position.set(0, -0.010, 0.00);
+  gun.add(underlug);
+
+  // Break-open hinge pin (at rear of barrel/front of receiver)
+  const hinge = new THREE.Mesh(createSubdividedCylinder(0.010, 0.010, 0.066, 8), brassMat);
+  hinge.rotation.z = Math.PI / 2;
+  hinge.position.set(0, -0.004, -0.004);
+  gun.add(hinge);
+
+  // Latch lever (top of receiver — break-open latch)
+  const latch = new THREE.Mesh(createSubdividedBox(0.014, 0.018, 0.030), darkMat);
+  latch.position.set(0, 0.050, 0.04);
+  gun.add(latch);
+
+  // Wooden buttstock — classic M79 slab stock
+  const stockMain = new THREE.Mesh(createSubdividedBox(0.042, 0.080, 0.155), woodMat);
+  stockMain.position.set(0, -0.005, 0.175);
+  gun.add(stockMain);
+
+  // Stock toe (curved lower edge) — thin slab below
+  const stockToe = new THREE.Mesh(createSubdividedBox(0.038, 0.022, 0.080), woodMat);
+  stockToe.position.set(0, -0.052, 0.190);
+  gun.add(stockToe);
+
+  // Stock butt plate (metal end cap)
+  const buttPlate = new THREE.Mesh(new THREE.BoxGeometry(0.044, 0.088, 0.008), darkMat);
+  buttPlate.position.set(0, -0.005, 0.253);
+  gun.add(buttPlate);
+  // Butt plate screws
+  for (let i = 0; i < 2; i++) {
+    const screw = new THREE.Mesh(new THREE.CylinderGeometry(0.004, 0.004, 0.006, 6), brassMat);
+    screw.rotation.x = Math.PI / 2;
+    screw.position.set(0, -0.022 + i * 0.044, 0.256);
+    gun.add(screw);
+  }
+
+  // Stock grip inletting (where hand wraps — slight contour implied by narrower section)
+  const stockGripArea = new THREE.Mesh(createSubdividedBox(0.040, 0.072, 0.045), lightWoodMat);
+  stockGripArea.position.set(0, -0.002, 0.118);
+  gun.add(stockGripArea);
+
+  // Pistol grip — wood, angled forward
+  const pistolGrip = new THREE.Mesh(createSubdividedBox(0.036, 0.090, 0.032), woodMat);
+  pistolGrip.rotation.x = 0.18;
+  pistolGrip.position.set(0, -0.062, 0.063);
+  gun.add(pistolGrip);
+
+  // Grip cap (bottom)
+  const gripCap = new THREE.Mesh(createSubdividedBox(0.038, 0.010, 0.034), darkMat);
+  gripCap.position.set(0, -0.108, 0.065);
+  gun.add(gripCap);
+
+  // Trigger guard — large loop for gloved use
+  const guardBottom = new THREE.Mesh(new THREE.BoxGeometry(0.034, 0.006, 0.050), darkMat);
+  guardBottom.position.set(0, -0.040, 0.044);
+  gun.add(guardBottom);
+  const guardFrontWall = new THREE.Mesh(new THREE.BoxGeometry(0.006, 0.028, 0.006), darkMat);
+  guardFrontWall.position.set(0, -0.026, 0.022);
+  gun.add(guardFrontWall);
+  const guardRearWall = new THREE.Mesh(new THREE.BoxGeometry(0.006, 0.022, 0.006), darkMat);
+  guardRearWall.position.set(0, -0.028, 0.066);
+  gun.add(guardRearWall);
+
+  // Trigger blade
+  const trigger = new THREE.Mesh(new THREE.BoxGeometry(0.008, 0.026, 0.006), darkMat);
+  trigger.position.set(0, -0.028, 0.042);
+  gun.add(trigger);
+
+  // Leaf sight — rear sight mounted on receiver top
+  const sightBase = new THREE.Mesh(createSubdividedBox(0.016, 0.008, 0.018), metalMat);
+  sightBase.position.set(0, 0.044, 0.075);
+  gun.add(sightBase);
+  // Sight leaf (flat blade)
+  const sightLeaf = new THREE.Mesh(new THREE.BoxGeometry(0.010, 0.028, 0.004), metalMat);
+  sightLeaf.position.set(0, 0.062, 0.076);
+  gun.add(sightLeaf);
+  // Sight aperture notch (visual only — dark bar)
+  const sightNotch = new THREE.Mesh(new THREE.BoxGeometry(0.006, 0.005, 0.003), darkMat);
+  sightNotch.position.set(0, 0.076, 0.074);
+  gun.add(sightNotch);
+
+  // Front sight blade (at muzzle)
+  const frontSight = new THREE.Mesh(new THREE.BoxGeometry(0.004, 0.014, 0.004), metalMat);
+  frontSight.position.set(0, 0.044, -0.196);
+  gun.add(frontSight);
+  const frontSightBase = new THREE.Mesh(new THREE.BoxGeometry(0.016, 0.006, 0.010), metalMat);
+  frontSightBase.position.set(0, 0.034, -0.196);
+  gun.add(frontSightBase);
+
+  // Sling swivel on left side of stock
+  const swivel = new THREE.Mesh(new THREE.TorusGeometry(0.012, 0.004, 6, 10), darkMat);
+  swivel.rotation.y = Math.PI / 2;
+  swivel.position.set(-0.025, 0.002, 0.200);
+  gun.add(swivel);
 
   return gun;
 }

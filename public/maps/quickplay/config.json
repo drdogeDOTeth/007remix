@@ -310,6 +310,18 @@
       "x": 25.13333,
       "z": 37.00785,
       "amount": 0
+    },
+    {
+      "type": "weapon-rpg",
+      "x": 18.63203,
+      "z": 35.1701,
+      "amount": 0
+    },
+    {
+      "type": "weapon-grenade-launcher",
+      "x": 20.19596,
+      "z": 34.24574,
+      "amount": 0
     }
   ],
   "props": [
