@@ -300,26 +300,43 @@ export class WeaponManager {
     this.viewModel.group.updateWorldMatrix(true, true);
     const origin = new THREE.Vector3();
     this.viewModel.getMuzzleWorldPosition(origin);
-    const direction = new THREE.Vector3();
-    this.fpsCamera.getLookDirection(direction);
+    const cameraOrigin = new THREE.Vector3();
+    this.fpsCamera.camera.getWorldPosition(cameraOrigin);
+    const cameraDirection = new THREE.Vector3();
+    this.fpsCamera.getLookDirection(cameraDirection);
     const weapon = this.currentWeapon;
     const spreadMult = this._scoped ? 0.1 : 1;
+
+    // Resolve the exact camera/crosshair aim point, then fire from muzzle toward that point.
+    const aimHit = this.projectileSystem.castRay(
+      cameraOrigin,
+      cameraDirection,
+      weapon.stats.range,
+      this.getPlayerCollider(),
+    );
+    const aimPoint = aimHit?.point ?? cameraOrigin.clone().addScaledVector(cameraDirection, weapon.stats.range);
+    const baseDirection = aimPoint.sub(origin);
+    if (baseDirection.lengthSq() > 1e-8) {
+      baseDirection.normalize();
+    } else {
+      baseDirection.copy(cameraDirection);
+    }
 
     // Play gunshot immediately (before raycast) so it always plays regardless of hit
     playGunshotWeapon(WEAPON_TYPE_MAP[this.currentIndex]);
 
     let firstHit: { point?: THREE.Vector3; collider?: RAPIER.Collider } | null = null;
     for (let i = 0; i < weapon.stats.raysPerShot; i++) {
-      let dir = direction;
+      let dir = baseDirection;
       if (weapon.stats.raysPerShot > 1) {
-        dir = direction.clone();
+        dir = baseDirection.clone();
         const cone = weapon.stats.spreadCone;
         dir.x += (Math.random() - 0.5) * cone;
         dir.y += (Math.random() - 0.5) * cone;
         dir.z += (Math.random() - 0.5) * cone;
         dir.normalize();
       } else if (weapon.stats.spread > 0) {
-        dir = direction.clone();
+        dir = baseDirection.clone();
         dir.x += (Math.random() - 0.5) * weapon.stats.spread * spreadMult;
         dir.y += (Math.random() - 0.5) * weapon.stats.spread * spreadMult;
         dir.z += (Math.random() - 0.5) * weapon.stats.spread * spreadMult;
@@ -337,7 +354,7 @@ export class WeaponManager {
     this.events.emit('weapon:fired', {
       weaponName: weapon.stats.name,
       position: origin,
-      direction,
+      direction: cameraDirection,
       hit: firstHit,
     });
   }

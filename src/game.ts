@@ -13,7 +13,7 @@ import { ProjectileSystem } from './weapons/projectile-system';
 import { GrenadeSystem } from './weapons/grenade-system';
 import { BloodSplatterSystem } from './weapons/blood-splatter';
 import { EnemyManager } from './enemies/enemy-manager';
-import { PickupSystem, buildAmmoMesh } from './levels/pickup-system';
+import { PickupSystem, buildAmmoMesh, buildPickupPreviewMesh, type PickupType } from './levels/pickup-system';
 import { DoorSystem } from './levels/door-system';
 import { TriggerSystem } from './levels/trigger-system';
 import { ObjectiveSystem } from './levels/objective-system';
@@ -45,9 +45,9 @@ import { ObjectivesDisplay } from './ui/objectives-display';
 import { InventoryScreen } from './ui/inventory-screen';
 import { PauseMenu } from './ui/pause-menu';
 import { MissionCompleteScreen } from './ui/mission-complete-screen';
-import { MapEditorUI } from './ui/map-editor-ui';
+import { MapEditorUI, getEditorPickupDefs, getEditorPropDefs, type EditorItemCategory } from './ui/map-editor-ui';
 import { MobileControls } from './ui/mobile-controls';
-import { renderWeaponPreviewToCanvas } from './weapons/weapon-preview-renderer';
+import { renderWeaponPreviewToCanvas, renderObjectPreviewToDataUrl } from './weapons/weapon-preview-renderer';
 import {
   concreteWallTexture,
   floorTileTexture,
@@ -228,6 +228,10 @@ export class Game {
   /** Editor 3D preview: hand mesh attached to camera, ghost mesh in world. */
   private editorHandGroup: THREE.Group | null = null;
   private editorGhostGroup: THREE.Group | null = null;
+  /** Cached hotbar thumbnail data URLs, keyed by `${category}:${type}`. */
+  private editorThumbnailCache = new Map<string, string>();
+  /** Incremented to cancel in-flight thumbnail generation when editor UI is recreated/detached. */
+  private editorThumbnailBuildToken = 0;
 
   /** Called when all objectives are done and player reaches extraction (mission:complete). */
   onMissionComplete: (() => void) | null = null;
@@ -1015,6 +1019,7 @@ export class Game {
   dispose(): void {
     this.canvas.removeEventListener('click', this.onCanvasClick);
     this.events.off('weapon:fired', this.onWeaponFired);
+    this.editorThumbnailBuildToken++;
     this.input.dispose();
     this.mobileControls?.dispose();
     this.networkManager?.dispose();
@@ -2411,9 +2416,138 @@ export class Game {
       onItemSelected: () => {},
       onDeleteSelected: () => {},
     });
+    this.scheduleEditorHotbarThumbnails(ui, mapId);
     // Hide weapon hand; show editor hand mesh instead
     this.weaponManager.setViewModelVisible(false);
     this.rebuildEditorHandAndGhost();
+  }
+
+  private scheduleEditorHotbarThumbnails(
+    ui: MapEditorUI,
+    mapId: 'crossfire' | 'wasteland' | 'custom',
+  ): void {
+    const queue: Array<{ category: EditorItemCategory; type: string }> = [
+      ...getEditorPickupDefs().map((it) => ({ category: 'pickup' as const, type: it.type })),
+      ...getEditorPropDefs(mapId).map((it) => ({ category: 'prop' as const, type: it.type })),
+    ];
+    const token = ++this.editorThumbnailBuildToken;
+    let index = 0;
+
+    const runBatch = (): void => {
+      if (token !== this.editorThumbnailBuildToken || this.mapEditorUI !== ui) return;
+
+      const frameBudgetMs = 5;
+      const start = performance.now();
+
+      while (index < queue.length && performance.now() - start < frameBudgetMs) {
+        const item = queue[index++];
+        const key = `${item.category}:${item.type}`;
+        let dataUrl = this.editorThumbnailCache.get(key);
+        if (!dataUrl) {
+          dataUrl = this.renderEditorHotbarThumbnail(item.category, item.type);
+          if (dataUrl) this.editorThumbnailCache.set(key, dataUrl);
+        }
+        if (dataUrl) ui.setThumbnail(item.category, item.type, dataUrl);
+      }
+
+      if (index < queue.length) window.setTimeout(runBatch, 0);
+    };
+
+    window.setTimeout(runBatch, 0);
+  }
+
+  private renderEditorHotbarThumbnail(category: EditorItemCategory, type: string): string | null {
+    const previewGroup = this.buildEditorThumbnailMesh(category, type);
+    if (!previewGroup) return null;
+
+    // Slight angle helps silhouettes read clearly at tiny hotbar size.
+    previewGroup.rotation.set(0.2, Math.PI / 4, 0.02);
+
+    try {
+      const key = `editor-hotbar:${category}:${type}`;
+      return renderObjectPreviewToDataUrl(key, previewGroup, {
+        width: 88,
+        height: 56,
+        clearColor: 0x0b0b10,
+        clearAlpha: 0.9,
+        cameraDistanceScale: category === 'prop' ? 2.6 : 2.8,
+        cameraOffset: new THREE.Vector3(0.45, 0.24, 0.62),
+        format: 'image/webp',
+        quality: 0.8,
+      });
+    } catch {
+      return null;
+    } finally {
+      this.disposeTransientPreviewObject(previewGroup);
+    }
+  }
+
+  private buildEditorThumbnailMesh(category: EditorItemCategory, type: string): THREE.Group | null {
+    if (category === 'pickup') {
+      const weaponBuilder = this.pickupSystem.weaponModelBuilder ?? undefined;
+      const group = buildPickupPreviewMesh(type as PickupType, weaponBuilder);
+      if (type.startsWith('ammo-')) {
+        group.scale.setScalar(1.35);
+      } else if (type.startsWith('weapon-')) {
+        group.scale.setScalar(0.95);
+      } else {
+        group.scale.setScalar(1.2);
+      }
+      return group;
+    }
+
+    const group = new THREE.Group();
+    if (type === 'barrel') {
+      const mat = new THREE.MeshStandardMaterial({ map: barrelTexture(), roughness: 0.5, metalness: 0.3 });
+      group.add(new THREE.Mesh(new THREE.CylinderGeometry(0.4, 0.4, 1.2, 8), mat));
+      group.scale.setScalar(0.36);
+      return group;
+    }
+    if (type === 'crate_metal') {
+      const mat = new THREE.MeshStandardMaterial({ map: metalCrateTexture(), roughness: 0.3, metalness: 0.7 });
+      group.add(new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), mat));
+      group.scale.setScalar(0.4);
+      return group;
+    }
+    if (type === 'tank') {
+      const mat = new THREE.MeshStandardMaterial({ color: 0x557799, roughness: 0.4, metalness: 0.6 });
+      group.add(new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.3, 1.0, 12), mat));
+      group.scale.setScalar(0.45);
+      return group;
+    }
+    if (type === 'tube') {
+      const mat = new THREE.MeshStandardMaterial({ color: 0x558855, roughness: 0.4, metalness: 0.5, transparent: true, opacity: 0.8 });
+      group.add(new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.2, 1.2, 10), mat));
+      group.scale.setScalar(0.5);
+      return group;
+    }
+
+    // Default prop: wood crate.
+    const mat = new THREE.MeshStandardMaterial({ map: woodCrateTexture(), roughness: 0.7, metalness: 0.1 });
+    group.add(new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), mat));
+    group.scale.setScalar(0.4);
+    return group;
+  }
+
+  private disposeTransientPreviewObject(root: THREE.Object3D): void {
+    const geometries = new Set<THREE.BufferGeometry>();
+    const materials = new Set<THREE.Material>();
+
+    root.traverse((obj) => {
+      const mesh = obj as THREE.Mesh;
+      if (!mesh.isMesh) return;
+      if (mesh.geometry) geometries.add(mesh.geometry);
+      if (mesh.material) {
+        if (Array.isArray(mesh.material)) {
+          for (const mat of mesh.material) materials.add(mat);
+        } else {
+          materials.add(mesh.material);
+        }
+      }
+    });
+
+    for (const g of geometries) g.dispose();
+    for (const m of materials) m.dispose();
   }
 
   // ── Editor hand mesh + ghost preview ────────────────────────────────────
@@ -2848,6 +2982,7 @@ export class Game {
       this.editorGhostGroup = null;
     }
     this.weaponManager.setViewModelVisible(true);
+    this.editorThumbnailBuildToken++;
     this.mapEditorUI?.detach();
     this.mapEditorUI = null;
     window.location.reload();

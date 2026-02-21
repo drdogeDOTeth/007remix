@@ -140,6 +140,35 @@ export class ProjectileSystem {
     return { hit: false };
   }
 
+  /**
+   * Cast an arbitrary ray against physics colliders without spawning any effects.
+   * Useful for resolving an aim point from camera/crosshair before firing from muzzle.
+   */
+  castRay(
+    origin: THREE.Vector3,
+    direction: THREE.Vector3,
+    maxRange: number,
+    excludeCollider?: RAPIER.Collider,
+  ): { point: THREE.Vector3; collider: RAPIER.Collider; toi: number } | null {
+    const lenSq = direction.lengthSq();
+    if (lenSq <= 1e-8) return null;
+    const invLen = 1 / Math.sqrt(lenSq);
+
+    const hit = this.physics.castRay(
+      origin.x, origin.y, origin.z,
+      direction.x * invLen, direction.y * invLen, direction.z * invLen,
+      maxRange,
+      excludeCollider,
+    );
+    if (!hit) return null;
+
+    return {
+      point: new THREE.Vector3(hit.point.x, hit.point.y, hit.point.z),
+      collider: hit.collider,
+      toi: hit.toi,
+    };
+  }
+
   private createDecal(position: THREE.Vector3, normal: THREE.Vector3): void {
     // Remove oldest decal if at limit
     if (this.decals.length >= MAX_DECALS) {

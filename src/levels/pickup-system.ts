@@ -177,6 +177,23 @@ function buildPickupMesh(type: PickupType): THREE.Group {
   return buildAmmoMesh(type);
 }
 
+/** Build a pickup mesh for UI previews/thumbnails. */
+export function buildPickupPreviewMesh(
+  type: PickupType,
+  weaponModelBuilder?: (weaponType: string) => THREE.Group,
+): THREE.Group {
+  if (type.startsWith('weapon-') && weaponModelBuilder) {
+    const g = new THREE.Group();
+    const weaponType = type.replace('weapon-', '');
+    const weaponMesh = weaponModelBuilder(weaponType);
+    weaponMesh.scale.setScalar(1.0);
+    weaponMesh.rotation.x = -Math.PI / 14;
+    g.add(weaponMesh);
+    return g;
+  }
+  return buildPickupMesh(type);
+}
+
 function buildHealthMesh(): THREE.Group {
   const g = new THREE.Group();
   const tex = healthTexture();

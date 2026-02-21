@@ -46,6 +46,14 @@ const PROP_TYPES: EditorPropDef[] = [
   { type: 'tube', label: 'Tube', customOnly: true },
 ];
 
+export function getEditorPickupDefs(): readonly EditorPickupDef[] {
+  return PICKUP_TYPES;
+}
+
+export function getEditorPropDefs(mapId: MultiplayerMapId): EditorPropDef[] {
+  return PROP_TYPES.filter((p) => !p.customOnly || mapId === 'custom');
+}
+
 export interface MapEditorUICallbacks {
   onSave: () => void;
   onExit: () => void;
@@ -72,6 +80,7 @@ export class MapEditorUI {
 
   // Hotbar slot elements, rebuilt on mode switch
   private hotbarSlots: HTMLDivElement[] = [];
+  private thumbnailUrls = new Map<string, string>();
 
   get currentMode(): EditorItemCategory { return this._currentMode; }
   get currentIndex(): number { return this._currentIndex; }
@@ -255,6 +264,18 @@ export class MapEditorUI {
     this.callbacks = cb;
   }
 
+  setThumbnail(category: EditorItemCategory, type: string, dataUrl: string): void {
+    this.thumbnailUrls.set(this.getThumbnailKey(category, type), dataUrl);
+    // Update visible hotbar slot thumbnail immediately (no full rebuild)
+    for (const slot of this.hotbarSlots) {
+      if (slot.dataset.category !== category || slot.dataset.type !== type) continue;
+      const thumbWrap = slot.querySelector('.map-editor-hotbar-thumb') as HTMLDivElement | null;
+      if (!thumbWrap) continue;
+      thumbWrap.innerHTML = '';
+      thumbWrap.appendChild(this.createHotbarThumbnailElement(category, type));
+    }
+  }
+
   setStatus(msg: string): void {
     this.statusEl.textContent = msg;
     // Auto-clear after 3s
@@ -328,7 +349,7 @@ export class MapEditorUI {
 
   private currentItems(): Array<EditorPickupDef | EditorPropDef> {
     if (this._currentMode === 'pickup') return PICKUP_TYPES;
-    return PROP_TYPES.filter((p) => !p.customOnly || this.mapId === 'custom');
+    return getEditorPropDefs(this.mapId);
   }
 
   private syncPanel(): void {
@@ -357,34 +378,44 @@ export class MapEditorUI {
       const slot = document.createElement('div');
       const isActive = i === this._currentIndex;
       slot.style.cssText = `
-        width: 56px; height: 56px;
+        width: 64px; height: 64px;
         display: flex; flex-direction: column;
-        align-items: center; justify-content: center;
-        gap: 3px;
+        align-items: center; justify-content: flex-start;
+        gap: 2px;
         background: rgba(0,0,0,0.65);
         border: 2px solid ${isActive ? '#d4af37' : '#3a2a1a'};
         box-sizing: border-box;
-        padding: 4px;
-        transition: border-color 0.1s;
+        padding: 4px 4px 3px;
+        transition: border-color 0.1s, box-shadow 0.1s;
+        box-shadow: ${isActive ? '0 0 12px rgba(212,175,55,0.25)' : 'none'};
       `;
+      slot.dataset.category = this._currentMode;
+      slot.dataset.type = item.type;
 
       // Index number (top-left style)
       const num = document.createElement('div');
-      num.style.cssText = 'font-size:8px; color:#5a4a3a; font-family: "Courier New", monospace; align-self:flex-start;';
+      num.style.cssText = 'font-size:8px; color:#5a4a3a; font-family: "Courier New", monospace; align-self:flex-start; height:9px;';
       num.textContent = String(i + 1);
+
+      const thumbWrap = document.createElement('div');
+      thumbWrap.className = 'map-editor-hotbar-thumb';
+      thumbWrap.style.cssText = 'width:44px; height:24px;';
+      thumbWrap.appendChild(this.createHotbarThumbnailElement(this._currentMode, item.type));
 
       // Item label
       const lbl = document.createElement('div');
+      lbl.className = 'map-editor-hotbar-label';
       lbl.style.cssText = `
         font-size: 8px; font-family: 'Courier New', monospace;
         color: ${isActive ? '#d4af37' : '#8b7355'};
         text-align: center; line-height: 1.2;
         word-break: break-word;
-        max-width: 48px;
+        max-width: 56px;
       `;
       lbl.textContent = item.label;
 
       slot.appendChild(num);
+      slot.appendChild(thumbWrap);
       slot.appendChild(lbl);
       this.hotbarEl.appendChild(slot);
       this.hotbarSlots.push(slot);
@@ -396,8 +427,218 @@ export class MapEditorUI {
       const active = i === this._currentIndex;
       const slot = this.hotbarSlots[i];
       slot.style.borderColor = active ? '#d4af37' : '#3a2a1a';
-      const lbl = slot.querySelector('div:last-child') as HTMLDivElement | null;
+      slot.style.boxShadow = active ? '0 0 12px rgba(212,175,55,0.25)' : 'none';
+      const lbl = slot.querySelector('.map-editor-hotbar-label') as HTMLDivElement | null;
       if (lbl) lbl.style.color = active ? '#d4af37' : '#8b7355';
     }
+  }
+
+  private createHotbarThumbnail(category: EditorItemCategory, type: string): HTMLCanvasElement {
+    const canvas = document.createElement('canvas');
+    canvas.width = 44;
+    canvas.height = 24;
+    canvas.style.cssText = `
+      width: 44px;
+      height: 24px;
+      border: 1px solid rgba(90,74,58,0.55);
+      background: rgba(10,10,10,0.55);
+      image-rendering: pixelated;
+    `;
+
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return canvas;
+
+    this.drawThumbnailBackdrop(ctx, canvas.width, canvas.height);
+    if (category === 'pickup') {
+      this.drawPickupThumbnail(ctx, type, canvas.width, canvas.height);
+    } else {
+      this.drawPropThumbnail(ctx, type, canvas.width, canvas.height);
+    }
+    return canvas;
+  }
+
+  private createHotbarThumbnailElement(category: EditorItemCategory, type: string): HTMLElement {
+    const dataUrl = this.thumbnailUrls.get(this.getThumbnailKey(category, type));
+    if (!dataUrl) return this.createHotbarThumbnail(category, type);
+
+    const img = document.createElement('img');
+    img.src = dataUrl;
+    img.alt = `${category} ${type}`;
+    img.decoding = 'async';
+    img.loading = 'eager';
+    img.style.cssText = `
+      width: 44px;
+      height: 24px;
+      border: 1px solid rgba(90,74,58,0.55);
+      background: rgba(10,10,10,0.55);
+      image-rendering: pixelated;
+      object-fit: cover;
+      display: block;
+    `;
+    return img;
+  }
+
+  private getThumbnailKey(category: EditorItemCategory, type: string): string {
+    return `${category}:${type}`;
+  }
+
+  private drawThumbnailBackdrop(ctx: CanvasRenderingContext2D, w: number, h: number): void {
+    const g = ctx.createLinearGradient(0, 0, 0, h);
+    g.addColorStop(0, '#17120d');
+    g.addColorStop(1, '#0a0907');
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, w, h);
+
+    ctx.strokeStyle = 'rgba(212,175,55,0.2)';
+    ctx.strokeRect(0.5, 0.5, w - 1, h - 1);
+  }
+
+  private drawPickupThumbnail(ctx: CanvasRenderingContext2D, type: string, w: number, h: number): void {
+    if (type === 'health') {
+      ctx.fillStyle = '#b01f1f';
+      ctx.fillRect(15, 5, 14, 14);
+      ctx.fillStyle = '#f7d0d0';
+      ctx.fillRect(20, 7, 4, 10);
+      ctx.fillRect(17, 10, 10, 4);
+      return;
+    }
+
+    if (type === 'armor') {
+      ctx.fillStyle = '#3f79c7';
+      ctx.beginPath();
+      ctx.moveTo(22, 4);
+      ctx.lineTo(31, 8);
+      ctx.lineTo(28, 18);
+      ctx.lineTo(22, 21);
+      ctx.lineTo(16, 18);
+      ctx.lineTo(13, 8);
+      ctx.closePath();
+      ctx.fill();
+      ctx.strokeStyle = '#b8d5ff';
+      ctx.stroke();
+      return;
+    }
+
+    if (type.startsWith('weapon-')) {
+      this.drawWeaponSilhouette(ctx, type, w, h);
+      return;
+    }
+
+    if (type.startsWith('ammo-')) {
+      this.drawAmmoSilhouette(ctx, type);
+      return;
+    }
+
+    ctx.fillStyle = '#999';
+    ctx.fillRect(16, 8, 12, 8);
+  }
+
+  private drawWeaponSilhouette(ctx: CanvasRenderingContext2D, type: string, w: number, h: number): void {
+    const y = Math.floor(h * 0.58);
+    let body = '#7c8b9e';
+    if (type === 'weapon-rpg') body = '#6f8d60';
+    if (type === 'weapon-sniper') body = '#8893a7';
+    if (type === 'weapon-minigun') body = '#8d7f62';
+
+    ctx.fillStyle = body;
+
+    if (type === 'weapon-rpg') {
+      ctx.fillRect(9, y - 3, 26, 6);
+      ctx.fillRect(34, y - 2, 4, 4);
+      return;
+    }
+
+    if (type === 'weapon-minigun') {
+      ctx.fillRect(11, y - 4, 18, 8);
+      ctx.fillRect(28, y - 3, 9, 2);
+      ctx.fillRect(28, y - 1, 9, 2);
+      ctx.fillRect(28, y + 1, 9, 2);
+      ctx.fillStyle = '#5d4f38';
+      ctx.fillRect(16, y + 2, 4, 6);
+      return;
+    }
+
+    if (type === 'weapon-shotgun' || type === 'weapon-sniper') {
+      const barrelLen = type === 'weapon-sniper' ? 18 : 14;
+      ctx.fillRect(10, y - 3, 12 + barrelLen, 5);
+      if (type === 'weapon-sniper') {
+        ctx.fillStyle = '#4f5968';
+        ctx.fillRect(14, y - 6, 9, 2);
+      }
+      ctx.fillStyle = '#5f4f3a';
+      ctx.fillRect(10, y + 2, 7, 4);
+      return;
+    }
+
+    // Rifle + grenade launcher fallback
+    ctx.fillRect(10, y - 3, 22, 5);
+    if (type === 'weapon-grenade-launcher') {
+      ctx.fillStyle = '#7a8a4a';
+      ctx.fillRect(15, y + 2, 12, 3);
+    }
+    ctx.fillStyle = '#5f4f3a';
+    ctx.fillRect(11, y + 2, 6, 4);
+  }
+
+  private drawAmmoSilhouette(ctx: CanvasRenderingContext2D, type: string): void {
+    let count = 3;
+    let color = '#c8b15a';
+    if (type === 'ammo-shotgun') {
+      count = 2;
+      color = '#c63f3f';
+    } else if (type === 'ammo-sniper') {
+      count = 1;
+      color = '#b7d0df';
+    } else if (type === 'ammo-minigun') {
+      count = 4;
+      color = '#d0a858';
+    } else if (type === 'ammo-rpg' || type === 'ammo-grenade-launcher') {
+      count = 1;
+      color = '#7f9b62';
+    }
+
+    const spacing = 6;
+    const start = 22 - Math.floor((count - 1) * spacing * 0.5);
+    for (let i = 0; i < count; i++) {
+      const x = start + i * spacing;
+      ctx.fillStyle = color;
+      ctx.fillRect(x, 7, 3, 11);
+      ctx.fillStyle = '#f2e7bf';
+      ctx.fillRect(x, 6, 3, 2);
+      ctx.fillStyle = '#6a5532';
+      ctx.fillRect(x, 17, 3, 1);
+    }
+  }
+
+  private drawPropThumbnail(ctx: CanvasRenderingContext2D, type: string, w: number, h: number): void {
+    if (type === 'barrel') {
+      ctx.fillStyle = '#67717c';
+      ctx.fillRect(16, 6, 12, 13);
+      ctx.fillStyle = '#8e98a4';
+      ctx.fillRect(16, 6, 12, 2);
+      ctx.fillRect(16, 17, 12, 2);
+      return;
+    }
+
+    if (type === 'tank' || type === 'tube') {
+      const color = type === 'tank' ? '#5f87aa' : '#5fa57f';
+      ctx.fillStyle = color;
+      ctx.fillRect(17, 4, 10, 16);
+      ctx.fillStyle = 'rgba(230,255,245,0.45)';
+      ctx.fillRect(20, 6, 3, 12);
+      return;
+    }
+
+    // Crates
+    const wood = type === 'crate';
+    ctx.fillStyle = wood ? '#89643f' : '#6d7885';
+    ctx.fillRect(13, 5, 18, 14);
+    ctx.strokeStyle = wood ? '#60452b' : '#4e5863';
+    ctx.strokeRect(13.5, 5.5, 17, 13);
+    ctx.beginPath();
+    ctx.moveTo(13, h - 5);
+    ctx.lineTo(22, 5);
+    ctx.lineTo(31, h - 5);
+    ctx.stroke();
   }
 }

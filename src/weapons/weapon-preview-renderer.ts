@@ -13,6 +13,7 @@ let sharedLight: THREE.DirectionalLight | null = null;
 let sharedAmbient: THREE.AmbientLight | null = null;
 
 const cache = new Map<string, string>();
+const objectCache = new Map<string, string>();
 
 function getCacheKey(type: WeaponType, skin: WeaponSkin): string {
   return `${type}:${skin}`;
@@ -56,10 +57,24 @@ function ensureRenderer(): {
   return { renderer, scene, camera };
 }
 
-/** Compute bounding box of a group (including children). */
-function computeGroupBox(group: THREE.Group): THREE.Box3 {
+function ensureRendererSize(
+  renderer: THREE.WebGLRenderer,
+  camera: THREE.PerspectiveCamera,
+  w: number,
+  h: number,
+): void {
+  if (renderer.domElement.width === w && renderer.domElement.height === h) return;
+  renderer.setSize(w, h);
+  renderer.domElement.width = w;
+  renderer.domElement.height = h;
+  camera.aspect = w / h;
+  camera.updateProjectionMatrix();
+}
+
+/** Compute bounding box of any object (including mesh descendants). */
+function computeObjectBox(root: THREE.Object3D): THREE.Box3 {
   const box = new THREE.Box3();
-  group.traverse((obj) => {
+  root.traverse((obj) => {
     if (obj instanceof THREE.Mesh && obj.geometry) {
       obj.geometry.computeBoundingBox();
       if (obj.geometry.boundingBox) {
@@ -69,6 +84,7 @@ function computeGroupBox(group: THREE.Group): THREE.Box3 {
       }
     }
   });
+  if (box.isEmpty()) box.setFromCenterAndSize(new THREE.Vector3(0, 0, 0), new THREE.Vector3(1, 1, 1));
   return box;
 }
 
@@ -86,10 +102,12 @@ export function renderWeaponPreviewToDataUrl(
   if (cached) return cached;
 
   const { renderer, scene, camera } = ensureRenderer();
+  ensureRendererSize(renderer, camera, PREVIEW_W, PREVIEW_H);
+  renderer.setClearColor(0x1a1a22, 0.95);
 
   scene.add(group);
   group.updateMatrixWorld(true);
-  const box = computeGroupBox(group);
+  const box = computeObjectBox(group);
   const center = new THREE.Vector3();
   const size = new THREE.Vector3();
   box.getCenter(center);
@@ -122,13 +140,8 @@ export function renderWeaponPreviewToCanvas(
   const { renderer, scene, camera } = ensureRenderer();
   const w = outputCanvas.width;
   const h = outputCanvas.height;
-  if (renderer.domElement.width !== w || renderer.domElement.height !== h) {
-    renderer.setSize(w, h);
-    renderer.domElement.width = w;
-    renderer.domElement.height = h;
-    camera.aspect = w / h;
-    camera.updateProjectionMatrix();
-  }
+  ensureRendererSize(renderer, camera, w, h);
+  renderer.setClearColor(0x1a1a22, 0.95);
 
   group.rotation.y = rotationY;
   if (_skin === 'plasma') {
@@ -145,7 +158,7 @@ export function renderWeaponPreviewToCanvas(
   }
   scene.add(group);
   group.updateMatrixWorld(true);
-  const box = computeGroupBox(group);
+  const box = computeObjectBox(group);
   const center = new THREE.Vector3();
   const size = new THREE.Vector3();
   box.getCenter(center);
@@ -163,4 +176,73 @@ export function renderWeaponPreviewToCanvas(
   if (ctx) {
     ctx.drawImage(renderer.domElement, 0, 0, w, h);
   }
+}
+
+interface ObjectPreviewOptions {
+  width?: number;
+  height?: number;
+  clearColor?: number;
+  clearAlpha?: number;
+  cameraDistanceScale?: number;
+  cameraOffset?: THREE.Vector3;
+  format?: 'image/png' | 'image/webp';
+  quality?: number;
+}
+
+/**
+ * Render any object to a data URL (cached by key).
+ * Uses the shared preview renderer to avoid additional WebGL contexts.
+ */
+export function renderObjectPreviewToDataUrl(
+  cacheKey: string,
+  object: THREE.Object3D,
+  options: ObjectPreviewOptions = {},
+): string {
+  const cached = objectCache.get(cacheKey);
+  if (cached) return cached;
+
+  const w = options.width ?? 88;
+  const h = options.height ?? 56;
+  const clearColor = options.clearColor ?? 0x0f0f14;
+  const clearAlpha = options.clearAlpha ?? 0.95;
+  const distanceScale = options.cameraDistanceScale ?? 2.8;
+  const cameraOffset = options.cameraOffset ?? new THREE.Vector3(0.45, 0.25, 0.6);
+  const format = options.format ?? 'image/webp';
+  const quality = options.quality ?? 0.82;
+
+  const { renderer, scene, camera } = ensureRenderer();
+  ensureRendererSize(renderer, camera, w, h);
+  renderer.setClearColor(clearColor, clearAlpha);
+
+  scene.add(object);
+  object.updateMatrixWorld(true);
+
+  const box = computeObjectBox(object);
+  const center = new THREE.Vector3();
+  const size = new THREE.Vector3();
+  box.getCenter(center);
+  box.getSize(size);
+  const maxDim = Math.max(size.x, size.y, size.z, 0.001);
+  const distance = maxDim * distanceScale;
+
+  camera.position.set(
+    center.x + distance * cameraOffset.x,
+    center.y + distance * cameraOffset.y,
+    center.z + distance * cameraOffset.z,
+  );
+  camera.lookAt(center);
+  camera.updateMatrixWorld(true);
+
+  renderer.render(scene, camera);
+  scene.remove(object);
+
+  let dataUrl: string;
+  try {
+    dataUrl = renderer.domElement.toDataURL(format, quality);
+  } catch {
+    dataUrl = renderer.domElement.toDataURL('image/png');
+  }
+
+  objectCache.set(cacheKey, dataUrl);
+  return dataUrl;
 }
