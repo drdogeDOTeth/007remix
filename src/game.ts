@@ -45,7 +45,16 @@ import { ObjectivesDisplay } from './ui/objectives-display';
 import { InventoryScreen } from './ui/inventory-screen';
 import { PauseMenu } from './ui/pause-menu';
 import { MissionCompleteScreen } from './ui/mission-complete-screen';
-import { MapEditorUI, getEditorPickupDefs, getEditorPropDefs, type EditorItemCategory } from './ui/map-editor-ui';
+import {
+  MapEditorUI,
+  getEditorPickupDefs,
+  getEditorPropDefs,
+  type EditorItemCategory,
+  type EditorMinimapBounds,
+  type EditorMinimapEntityKind,
+  type EditorMinimapEntityMarker,
+  type EditorMinimapPoint,
+} from './ui/map-editor-ui';
 import { MobileControls } from './ui/mobile-controls';
 import { renderWeaponPreviewToCanvas, renderObjectPreviewToDataUrl } from './weapons/weapon-preview-renderer';
 import {
@@ -155,6 +164,8 @@ export class Game {
   private customTerrainRaycaster: { raycaster: THREE.Raycaster; meshes: THREE.Mesh[]; down: THREE.Vector3; origin: THREE.Vector3 } | null = null;
   /** Bbox center for prop layout across full terrain (custom quickplay). */
   private customSpawnCenter: { x: number; z: number } | null = null;
+  /** World-space bounds of custom terrain/environment, used for aerial map export and world->map transforms. */
+  private customTerrainBounds: THREE.Box3 | null = null;
   /** Optional placement from config.json (pickups, props). Overrides defaults when set. */
   private customQuickplayPlacement: { pickups?: QuickplayPickupDef[]; props?: QuickplayPropDef[]; labProps?: QuickplayLabPropDef[] } | null = null;
   /** Day/night cycle (custom quickplay). */
@@ -230,6 +241,13 @@ export class Game {
   private editorGhostGroup: THREE.Group | null = null;
   /** Cached hotbar thumbnail data URLs, keyed by `${category}:${type}`. */
   private editorThumbnailCache = new Map<string, string>();
+  /** Cached aerial minimap image + bounds (rebuilt when terrain reloads). */
+  private editorMinimapCache: { dataUrl: string; bounds: EditorMinimapBounds } | null = null;
+  /** Reused buffers for live minimap entity markers (avoid per-frame allocations). */
+  private readonly editorMinimapEnemyPoints: EditorMinimapPoint[] = [];
+  private readonly editorMinimapPickupPoints: EditorMinimapEntityMarker[] = [];
+  private readonly editorMinimapPropPoints: EditorMinimapEntityMarker[] = [];
+  private readonly editorMinimapItemPoints: EditorMinimapEntityMarker[] = [];
   /** Incremented to cancel in-flight thumbnail generation when editor UI is recreated/detached. */
   private editorThumbnailBuildToken = 0;
 
@@ -1466,35 +1484,53 @@ export class Game {
     }
 
     // Map editor: Tab mode switch, scroll cycle, click/delete, ghost update
-    if (this.editorMode && this.mapEditorUI && this.input.pointerLocked) {
-      // Tab: toggle between pickup / prop mode
-      if (this.input.wasKeyJustPressed('Tab')) {
-        const newMode = this.mapEditorUI.currentMode === 'pickup' ? 'prop' : 'pickup';
-        this.mapEditorUI.setMode(newMode);
-        this.rebuildEditorHandAndGhost();
+    if (this.editorMode && this.mapEditorUI) {
+      if (this.input.wasKeyJustPressed('m')) {
+        const expanded = this.mapEditorUI.toggleMinimapExpanded();
+        this.mapEditorUI.setStatus(expanded ? 'Map expanded' : 'Map compact');
       }
-      // Scroll wheel: cycle items within current mode
-      const scroll = this.input.scrollDelta;
-      if (scroll !== 0) {
-        const nextIdx = this.mapEditorUI.currentIndex + (scroll > 0 ? 1 : -1);
-        this.mapEditorUI.selectIndex(nextIdx);
-        this.rebuildEditorHandAndGhost();
-      }
-      // Delete / place
-      if (this.input.wasKeyJustPressed('Delete') || this.input.wasKeyJustPressed('Backspace')) {
-        this.deleteEditorItemAtCursor();
-      }
-      if (this.input.wasMouseJustPressed) {
-        // Only place when clicking the world (canvas), not when clicking the editor panel
-        const target = this.input.lastMouseDownTarget as Node | null;
-        const clickOnPanel = target && this.mapEditorUI.getElement().contains(target);
-        if (!clickOnPanel) {
-          const hit = this.getEditorRaycastHit();
-          if (hit) this.placeEditorItemAt(hit);
+      if (this.input.pointerLocked) {
+        // Tab: toggle between pickup / prop mode
+        if (this.input.wasKeyJustPressed('Tab')) {
+          const newMode = this.mapEditorUI.currentMode === 'pickup' ? 'prop' : 'pickup';
+          this.mapEditorUI.setMode(newMode);
+          this.rebuildEditorHandAndGhost();
+        }
+        // Scroll wheel: cycle items within current mode
+        const scroll = this.input.scrollDelta;
+        if (scroll !== 0) {
+          const nextIdx = this.mapEditorUI.currentIndex + (scroll > 0 ? 1 : -1);
+          this.mapEditorUI.selectIndex(nextIdx);
+          this.rebuildEditorHandAndGhost();
+        }
+        // Delete / place
+        if (this.input.wasKeyJustPressed('Delete') || this.input.wasKeyJustPressed('Backspace')) {
+          this.deleteEditorItemAtCursor();
+        }
+        if (this.input.wasMouseJustPressed) {
+          // Only place when clicking the world (canvas), not when clicking the editor panel
+          const target = this.input.lastMouseDownTarget as Node | null;
+          const clickOnPanel = target && this.mapEditorUI.getElement().contains(target);
+          if (!clickOnPanel) {
+            const hit = this.getEditorRaycastHit();
+            if (hit) this.placeEditorItemAt(hit);
+          }
         }
       }
-      // Update ghost mesh position every frame
+      // Update ghost mesh + minimap every frame in editor mode (even when pointer lock is off).
       this.updateEditorGhost();
+      const p = this.player.getPosition();
+      this.mapEditorUI.updateMinimapPlayer(p.x, p.z, this.fpsCamera.getYRotation());
+      this.rebuildEditorMinimapEntityBuffers();
+      this.mapEditorUI.updateMinimapEntities(
+        this.editorMinimapEnemyPoints,
+        this.editorMinimapItemPoints,
+      );
+    }
+
+    // Export aerial/top-down survey map for custom arena (PNG + JSON metadata)
+    if (this.customQuickplay && this.editorMode && this.input.wasKeyJustPressed('9')) {
+      void this.exportCustomArenaAerialMap();
     }
 
     // Set spawn point (F8 key) — use current position for single-player respawn
@@ -1989,6 +2025,8 @@ export class Game {
     this.customGroundLevel = null;
     this.customSpawnCenter = null;
     this.customTerrainRaycaster = null;
+    this.customTerrainBounds = null;
+    this.editorMinimapCache = null;
     this.customQuickplayPlacement = null;
     try {
       await this.buildCustomQuickplayScene();
@@ -2175,7 +2213,8 @@ export class Game {
       this.scene.add(pointLight);
     }
 
-    const bbox = new THREE.Box3().setFromObject(envResult.scene);
+    const bbox = this.computeCustomTerrainBounds(envResult.scene);
+    this.customTerrainBounds = bbox.clone();
     const centerX = (bbox.min.x + bbox.max.x) / 2;
     const centerZ = (bbox.min.z + bbox.max.z) / 2;
     const groundLevel = (bbox.min.y + bbox.max.y) / 2;
@@ -2183,7 +2222,13 @@ export class Game {
     // Collect terrain meshes for Three.js raycasting (hits actual visible geometry)
     const terrainMeshes: THREE.Mesh[] = [];
     envResult.scene.traverse((obj) => {
-      if (obj instanceof THREE.Mesh && obj.geometry) terrainMeshes.push(obj);
+      if (
+        obj instanceof THREE.Mesh &&
+        obj.geometry &&
+        !this.isLikelySkyOrBackdropMeshName(obj.name)
+      ) {
+        terrainMeshes.push(obj);
+      }
     });
     const raycaster = new THREE.Raycaster();
     const down = new THREE.Vector3(0, -1, 0);
@@ -2417,9 +2462,31 @@ export class Game {
       onDeleteSelected: () => {},
     });
     this.scheduleEditorHotbarThumbnails(ui, mapId);
+    this.setupEditorLiveMinimap(ui, mapId);
     // Hide weapon hand; show editor hand mesh instead
     this.weaponManager.setViewModelVisible(false);
     this.rebuildEditorHandAndGhost();
+  }
+
+  private setupEditorLiveMinimap(
+    ui: MapEditorUI,
+    mapId: 'crossfire' | 'wasteland' | 'custom',
+  ): void {
+    if (mapId !== 'custom') return;
+    if (this.editorMinimapCache) {
+      ui.setMinimapImage(this.editorMinimapCache.dataUrl, this.editorMinimapCache.bounds);
+      return;
+    }
+
+    // Defer one tick so the editor UI appears immediately.
+    window.setTimeout(() => {
+      if (this.mapEditorUI !== ui) return;
+      const survey = this.captureCustomArenaSurvey(768);
+      if (!survey) return;
+      this.editorMinimapCache = { dataUrl: survey.dataUrl, bounds: survey.bounds };
+      ui.setMinimapImage(survey.dataUrl, survey.bounds);
+      ui.setStatus('Live minimap ready');
+    }, 0);
   }
 
   private scheduleEditorHotbarThumbnails(
@@ -2548,6 +2615,276 @@ export class Game {
 
     for (const g of geometries) g.dispose();
     for (const m of materials) m.dispose();
+  }
+
+  /**
+   * Export a top-down survey of the custom arena as:
+   * - PNG image (orthographic aerial render)
+   * - JSON metadata (world bounds + world<->pixel formulas)
+   */
+  private async exportCustomArenaAerialMap(): Promise<void> {
+    const survey = this.captureCustomArenaSurvey(1024);
+    if (!survey) {
+      this.mapEditorUI?.setStatus('Aerial export unavailable (terrain bounds missing)');
+      return;
+    }
+
+    const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+    const baseName = `custom-arena-aerial-${stamp}`;
+    const width = survey.bounds.maxX - survey.bounds.minX;
+    const depth = survey.bounds.maxZ - survey.bounds.minZ;
+    const meta = {
+      mapId: this.editorMapId ?? (this.customQuickplay ? 'custom' : 'unknown'),
+      generatedAt: new Date().toISOString(),
+      image: {
+        file: `${baseName}.png`,
+        width: survey.imageSize,
+        height: survey.imageSize,
+      },
+      worldBounds: {
+        minX: survey.bounds.minX,
+        maxX: survey.bounds.maxX,
+        minZ: survey.bounds.minZ,
+        maxZ: survey.bounds.maxZ,
+        minY: survey.minY,
+        maxY: survey.maxY,
+        padding: survey.padding,
+      },
+      center: {
+        x: (survey.bounds.minX + survey.bounds.maxX) * 0.5,
+        z: (survey.bounds.minZ + survey.bounds.maxZ) * 0.5,
+      },
+      playerSpawn: this.playerSpawnPosition,
+      worldToPixel: {
+        formulaX: `pixelX = ((worldX - ${survey.bounds.minX}) / (${width})) * ${survey.imageSize}`,
+        formulaY: `pixelY = ((worldZ - ${survey.bounds.minZ}) / (${depth})) * ${survey.imageSize}`,
+      },
+      pixelToWorld: {
+        formulaX: `worldX = ${survey.bounds.minX} + (pixelX / ${survey.imageSize}) * (${width})`,
+        formulaZ: `worldZ = ${survey.bounds.minZ} + (pixelY / ${survey.imageSize}) * (${depth})`,
+      },
+    };
+
+    const saved = await this.saveAerialSurveyToServer('custom', baseName, survey.dataUrl, meta);
+    if (saved.ok) {
+      this.mapEditorUI?.setStatus(`Aerial saved: ${saved.path}`);
+      this.hud.showPickupNotification('Aerial map saved to project');
+      return;
+    }
+
+    // Fallback if server API is unavailable: browser download.
+    this.downloadDataUrl(survey.dataUrl, `${baseName}.png`);
+    this.downloadTextFile(JSON.stringify(meta, null, 2), `${baseName}.json`, 'application/json');
+    this.mapEditorUI?.setStatus(`Server save failed; downloaded instead (${saved.error})`);
+  }
+
+  private captureCustomArenaSurvey(imageSize: number): {
+    dataUrl: string;
+    bounds: EditorMinimapBounds;
+    minY: number;
+    maxY: number;
+    padding: number;
+    imageSize: number;
+  } | null {
+    const sourceBounds = this.customTerrainBounds?.clone();
+    if (!sourceBounds) return null;
+
+    const padding = 4;
+    const bounds = sourceBounds.clone();
+    bounds.min.x -= padding;
+    bounds.max.x += padding;
+    bounds.min.z -= padding;
+    bounds.max.z += padding;
+
+    const width = bounds.max.x - bounds.min.x;
+    const depth = bounds.max.z - bounds.min.z;
+    if (width <= 0 || depth <= 0) return null;
+
+    const centerX = (bounds.min.x + bounds.max.x) * 0.5;
+    const centerY = (sourceBounds.min.y + sourceBounds.max.y) * 0.5;
+    const centerZ = (bounds.min.z + bounds.max.z) * 0.5;
+    const heightSpan = Math.max(10, sourceBounds.max.y - sourceBounds.min.y);
+    const cameraY = sourceBounds.max.y + heightSpan + 25;
+
+    const halfW = width * 0.5;
+    const halfD = depth * 0.5;
+    const camera = new THREE.OrthographicCamera(
+      -halfW,
+      halfW,
+      halfD,
+      -halfD,
+      0.1,
+      heightSpan * 12 + 400,
+    );
+    camera.position.set(centerX, cameraY, centerZ);
+    camera.up.set(0, 0, -1);
+    camera.lookAt(centerX, centerY, centerZ);
+    camera.updateMatrixWorld(true);
+
+    const target = new THREE.WebGLRenderTarget(imageSize, imageSize, {
+      depthBuffer: true,
+      stencilBuffer: false,
+    });
+    const pixels = new Uint8Array(imageSize * imageSize * 4);
+
+    const renderer = this.renderer.instance;
+    const prevTarget = renderer.getRenderTarget();
+    const prevColor = new THREE.Color();
+    renderer.getClearColor(prevColor);
+    const prevAlpha = renderer.getClearAlpha();
+    const prevAutoClear = renderer.autoClear;
+    const prevXrEnabled = renderer.xr.enabled;
+    const prevGhostVisible = this.editorGhostGroup?.visible ?? false;
+    const hiddenForCapture: Array<{ obj: THREE.Object3D; visible: boolean }> = [];
+
+    try {
+      this.scene.traverse((obj) => {
+        if (!(obj instanceof THREE.Mesh)) return;
+        if (!this.isLikelySkyOrBackdropMeshName(obj.name)) return;
+        hiddenForCapture.push({ obj, visible: obj.visible });
+        obj.visible = false;
+      });
+      if (this.skySphere) {
+        hiddenForCapture.push({ obj: this.skySphere, visible: this.skySphere.visible });
+        this.skySphere.visible = false;
+      }
+      if (this.editorGhostGroup) this.editorGhostGroup.visible = false;
+      renderer.xr.enabled = false;
+      renderer.autoClear = true;
+      renderer.setRenderTarget(target);
+      renderer.setClearColor(0x0a0f17, 1);
+      renderer.clear(true, true, true);
+      renderer.render(this.scene, camera);
+      renderer.readRenderTargetPixels(target, 0, 0, imageSize, imageSize, pixels);
+
+      const canvas = document.createElement('canvas');
+      canvas.width = imageSize;
+      canvas.height = imageSize;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) return null;
+
+      const imageData = ctx.createImageData(imageSize, imageSize);
+      const rowStride = imageSize * 4;
+      for (let y = 0; y < imageSize; y++) {
+        const src = (imageSize - 1 - y) * rowStride;
+        const dst = y * rowStride;
+        imageData.data.set(pixels.subarray(src, src + rowStride), dst);
+      }
+      ctx.putImageData(imageData, 0, 0);
+
+      return {
+        dataUrl: canvas.toDataURL('image/png'),
+        bounds: {
+          minX: bounds.min.x,
+          maxX: bounds.max.x,
+          minZ: bounds.min.z,
+          maxZ: bounds.max.z,
+        },
+        minY: sourceBounds.min.y,
+        maxY: sourceBounds.max.y,
+        padding,
+        imageSize,
+      };
+    } finally {
+      for (const entry of hiddenForCapture) {
+        entry.obj.visible = entry.visible;
+      }
+      if (this.editorGhostGroup) this.editorGhostGroup.visible = prevGhostVisible;
+      renderer.setRenderTarget(prevTarget);
+      renderer.setClearColor(prevColor, prevAlpha);
+      renderer.autoClear = prevAutoClear;
+      renderer.xr.enabled = prevXrEnabled;
+      target.dispose();
+    }
+  }
+
+  private isLikelySkyOrBackdropMeshName(name: string): boolean {
+    const n = name.toLowerCase();
+    if (!n) return false;
+    return (
+      n.includes('skydome') ||
+      n.includes('sky') ||
+      n.includes('dome') ||
+      n.includes('cloud') ||
+      n.includes('atmosphere') ||
+      n.includes('horizon') ||
+      n.includes('background')
+    );
+  }
+
+  private computeCustomTerrainBounds(root: THREE.Object3D): THREE.Box3 {
+    const bounds = new THREE.Box3();
+    const meshBounds = new THREE.Box3();
+    let hasNonSkyMesh = false;
+
+    root.updateMatrixWorld(true);
+    root.traverse((obj) => {
+      if (!(obj instanceof THREE.Mesh) || !obj.geometry) return;
+      if (this.isLikelySkyOrBackdropMeshName(obj.name)) return;
+      meshBounds.setFromObject(obj);
+      if (meshBounds.isEmpty()) return;
+      if (!hasNonSkyMesh) {
+        bounds.copy(meshBounds);
+        hasNonSkyMesh = true;
+      } else {
+        bounds.union(meshBounds);
+      }
+    });
+
+    if (!hasNonSkyMesh) {
+      bounds.setFromObject(root);
+    }
+    return bounds;
+  }
+
+  private async saveAerialSurveyToServer(
+    mapId: 'custom' | 'crossfire' | 'wasteland',
+    baseName: string,
+    imageDataUrl: string,
+    metadata: unknown,
+  ): Promise<{ ok: boolean; path?: string; error?: string }> {
+    const apiUrl = `${NetworkConfig.SERVER_URL}/api/maps/${mapId}/aerial`;
+    try {
+      const res = await fetch(apiUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          filenameBase: baseName,
+          imageDataUrl,
+          metadata,
+        }),
+      });
+      const data = await res.json() as { ok?: boolean; path?: string; error?: string };
+      if (!res.ok || !data.ok) {
+        return { ok: false, error: data.error ?? `HTTP ${res.status}` };
+      }
+      return { ok: true, path: data.path };
+    } catch (err) {
+      return { ok: false, error: (err as Error).message };
+    }
+  }
+
+  private downloadDataUrl(dataUrl: string, filename: string): void {
+    const link = document.createElement('a');
+    link.href = dataUrl;
+    link.download = filename;
+    link.rel = 'noopener';
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+  }
+
+  private downloadTextFile(text: string, filename: string, mime: string): void {
+    const blob = new Blob([text], { type: mime });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = filename;
+    link.rel = 'noopener';
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
   }
 
   // ── Editor hand mesh + ghost preview ────────────────────────────────────
@@ -2700,6 +3037,110 @@ export class Game {
 
     ghost.position.copy(hit.point).addScaledVector(hit.normal, offset);
     ghost.visible = true;
+  }
+
+  private rebuildEditorMinimapEntityBuffers(): void {
+    this.enemyManager.appendAliveEnemyXZ(this.editorMinimapEnemyPoints, 64);
+    this.pickupSystem.appendActiveMinimapMarkers(this.editorMinimapPickupPoints, 192);
+    this.destructibleSystem.appendLivePropMinimapMarkers(this.editorMinimapPropPoints, 192);
+
+    // Merge live pickups + destructible props into a single raw marker list.
+    let write = 0;
+    write = this.appendMinimapEntityMarkers(
+      this.editorMinimapItemPoints,
+      this.editorMinimapPickupPoints,
+      write,
+      420,
+    );
+    write = this.appendMinimapEntityMarkers(
+      this.editorMinimapItemPoints,
+      this.editorMinimapPropPoints,
+      write,
+      420,
+    );
+
+    // Include custom lab props (non-destructible) while editing Custom Arena.
+    if (this.editorMode && this.editorMapId === 'custom') {
+      const center = this.customSpawnCenter;
+      if (center) {
+        for (let i = 0; i < this.editorLabProps.length && write < 420; i++) {
+          const lp = this.editorLabProps[i];
+          const rec = this.editorMinimapItemPoints[write] ?? { x: 0, z: 0, kind: 'structure' as EditorMinimapEntityKind };
+          rec.x = center.x + lp.x;
+          rec.z = center.z + lp.z;
+          rec.kind = 'structure';
+          rec.count = 1;
+          this.editorMinimapItemPoints[write] = rec;
+          write++;
+        }
+      }
+    }
+
+    this.clusterEditorMinimapItemMarkers(write);
+  }
+
+  private appendMinimapEntityMarkers(
+    target: EditorMinimapEntityMarker[],
+    source: ReadonlyArray<EditorMinimapEntityMarker>,
+    startIndex: number,
+    limit: number,
+  ): number {
+    let write = startIndex;
+    for (let i = 0; i < source.length && write < limit; i++) {
+      const src = source[i];
+      const rec = target[write] ?? { x: 0, z: 0, kind: 'item' as EditorMinimapEntityKind };
+      rec.x = src.x;
+      rec.z = src.z;
+      rec.kind = src.kind;
+      rec.count = src.count ?? 1;
+      target[write] = rec;
+      write++;
+    }
+    return write;
+  }
+
+  private clusterEditorMinimapItemMarkers(rawCount: number): void {
+    type Cluster = { total: number; sumX: number; sumZ: number };
+
+    const cellSize = 4.8;
+    const clusters = new Map<string, Cluster>();
+    for (let i = 0; i < rawCount; i++) {
+      const m = this.editorMinimapItemPoints[i];
+      const gx = Math.floor(m.x / cellSize);
+      const gz = Math.floor(m.z / cellSize);
+      const key = `${gx}|${gz}`;
+      let c = clusters.get(key);
+      if (!c) {
+        c = {
+          total: 0,
+          sumX: 0,
+          sumZ: 0,
+        };
+        clusters.set(key, c);
+      }
+      c.total++;
+      c.sumX += m.x;
+      c.sumZ += m.z;
+    }
+
+    const sorted = [...clusters.values()].sort((a, b) => b.total - a.total);
+    const maxMarkers = 48;
+    const clusterMinSize = 3;
+    let write = 0;
+    for (let i = 0; i < sorted.length && write < maxMarkers; i++) {
+      const c = sorted[i];
+      if (c.total < clusterMinSize) continue;
+
+      const rec = this.editorMinimapItemPoints[write] ?? { x: 0, z: 0, kind: 'item' as EditorMinimapEntityKind };
+      rec.x = c.sumX / c.total;
+      rec.z = c.sumZ / c.total;
+      rec.kind = 'poi';
+      rec.count = c.total;
+      this.editorMinimapItemPoints[write] = rec;
+      write++;
+    }
+
+    this.editorMinimapItemPoints.length = write;
   }
 
   private getEditorRaycastHit(): { point: THREE.Vector3; normal: THREE.Vector3 } | null {

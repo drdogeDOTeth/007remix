@@ -166,6 +166,46 @@ export class DestructibleSystem {
     return this.props.filter((p) => p.health > 0).map((p) => p.mesh);
   }
 
+  /**
+   * Fill `out` with live destructible prop XZ positions for minimap overlays.
+   * Reuses caller-provided array to avoid per-frame allocations.
+   */
+  appendLivePropXZ(out: Array<{ x: number; z: number }>, limit = 192): void {
+    let i = 0;
+    for (const prop of this.props) {
+      if (prop.health <= 0) continue;
+      if (i >= limit) break;
+      const rec = out[i] ?? { x: 0, z: 0 };
+      rec.x = prop.mesh.position.x;
+      rec.z = prop.mesh.position.z;
+      out[i] = rec;
+      i++;
+    }
+    out.length = i;
+  }
+
+  /**
+   * Fill `out` with live destructible prop minimap markers.
+   * Props are tagged as `structure`.
+   */
+  appendLivePropMinimapMarkers(
+    out: Array<{ x: number; z: number; kind: 'structure' }>,
+    limit = 192,
+  ): void {
+    let i = 0;
+    for (const prop of this.props) {
+      if (prop.health <= 0) continue;
+      if (i >= limit) break;
+      const rec = out[i] ?? { x: 0, z: 0, kind: 'structure' as const };
+      rec.x = prop.mesh.position.x;
+      rec.z = prop.mesh.position.z;
+      rec.kind = 'structure';
+      out[i] = rec;
+      i++;
+    }
+    out.length = i;
+  }
+
   /** Remove prop nearest to position within maxDist. Returns the removed prop or null. */
   removePropNear(position: { x: number; y: number; z: number }, maxDist: number): DestructibleProp | null {
     let best: DestructibleProp | null = null;

@@ -36,7 +36,7 @@ class GameServer {
 
   constructor() {
     const app = express();
-    app.use(express.json({ limit: '1mb' }));
+    app.use(express.json({ limit: '12mb' }));
 
     // CORS for API (dev)
     app.use((_req: express.Request, res: express.Response, next: express.NextFunction) => {
@@ -47,9 +47,13 @@ class GameServer {
     });
 
     app.options('/api/maps/:mapId/config', (_req: express.Request, res: express.Response) => res.sendStatus(204));
+    app.options('/api/maps/:mapId/aerial', (_req: express.Request, res: express.Response) => res.sendStatus(204));
 
     app.post('/api/maps/:mapId/config', (req: express.Request, res: express.Response) =>
       this.handleSaveMapConfig(req, res),
+    );
+    app.post('/api/maps/:mapId/aerial', (req: express.Request, res: express.Response) =>
+      this.handleSaveAerialSurvey(req, res),
     );
 
     this.httpServer = createServer(app);
@@ -121,6 +125,86 @@ class GameServer {
     } catch (err) {
       console.error('[Server] Failed to write config:', err);
       res.status(500).json({ ok: false, error: 'Failed to write config' });
+    }
+  }
+
+  private async handleSaveAerialSurvey(
+    req: express.Request,
+    res: express.Response,
+  ): Promise<void> {
+    const mapId = req.params.mapId as string;
+    if (!VALID_MAP_IDS.includes(mapId as MultiplayerMapId)) {
+      res.status(400).json({ ok: false, error: `Invalid mapId: ${mapId}` });
+      return;
+    }
+
+    const folder = MAP_ID_TO_FOLDER[mapId];
+    const mapDir = join(process.cwd(), 'public', 'maps', folder);
+    const surveyDir = join(mapDir, 'surveys');
+
+    const body = req.body as {
+      filenameBase?: unknown;
+      imageDataUrl?: unknown;
+      metadata?: unknown;
+    };
+
+    if (!body || typeof body !== 'object') {
+      res.status(400).json({ ok: false, error: 'Invalid JSON body' });
+      return;
+    }
+
+    const rawBase = typeof body.filenameBase === 'string' && body.filenameBase.trim().length > 0
+      ? body.filenameBase.trim()
+      : `custom-arena-aerial-${new Date().toISOString().replace(/[:.]/g, '-')}`;
+    // Keep filename safe and predictable.
+    const safeBase = rawBase.replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 120);
+
+    const imageDataUrl = typeof body.imageDataUrl === 'string' ? body.imageDataUrl : '';
+    const expectedPrefix = 'data:image/png;base64,';
+    if (!imageDataUrl.startsWith(expectedPrefix)) {
+      res.status(400).json({ ok: false, error: 'imageDataUrl must be a PNG data URL' });
+      return;
+    }
+    const imageBase64 = imageDataUrl.slice(expectedPrefix.length);
+    let imageBuffer: Buffer;
+    try {
+      imageBuffer = Buffer.from(imageBase64, 'base64');
+      if (imageBuffer.byteLength === 0) {
+        res.status(400).json({ ok: false, error: 'Decoded image is empty' });
+        return;
+      }
+    } catch {
+      res.status(400).json({ ok: false, error: 'Invalid base64 image data' });
+      return;
+    }
+
+    const metadata = body.metadata ?? {};
+    if (typeof metadata !== 'object' || metadata === null) {
+      res.status(400).json({ ok: false, error: 'metadata must be an object' });
+      return;
+    }
+
+    try {
+      await mkdir(surveyDir, { recursive: true });
+      const pngName = `${safeBase}.png`;
+      const jsonName = `${safeBase}.json`;
+      const pngPath = join(surveyDir, pngName);
+      const jsonPath = join(surveyDir, jsonName);
+
+      await writeFile(pngPath, imageBuffer);
+      await writeFile(jsonPath, JSON.stringify(metadata, null, 2), 'utf-8');
+
+      const relativeDir = `public/maps/${folder}/surveys`;
+      console.log(`[Server] Wrote aerial survey to ${relativeDir}/${safeBase}.{png,json}`);
+      res.json({
+        ok: true,
+        path: `${relativeDir}/${safeBase}.{png,json}`,
+        png: `${relativeDir}/${pngName}`,
+        json: `${relativeDir}/${jsonName}`,
+      });
+    } catch (err) {
+      console.error('[Server] Failed to write aerial survey:', err);
+      res.status(500).json({ ok: false, error: 'Failed to write aerial survey files' });
     }
   }
 

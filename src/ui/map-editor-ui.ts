@@ -61,6 +61,25 @@ export interface MapEditorUICallbacks {
   onDeleteSelected: () => void;
 }
 
+export interface EditorMinimapBounds {
+  minX: number;
+  maxX: number;
+  minZ: number;
+  maxZ: number;
+}
+
+export interface EditorMinimapPoint {
+  x: number;
+  z: number;
+}
+
+export type EditorMinimapEntityKind = 'item' | 'weapon' | 'structure' | 'poi';
+
+export interface EditorMinimapEntityMarker extends EditorMinimapPoint {
+  kind: EditorMinimapEntityKind;
+  count?: number;
+}
+
 export class MapEditorUI {
   private container: HTMLDivElement;
   private panel: HTMLDivElement;
@@ -77,6 +96,30 @@ export class MapEditorUI {
   private itemNameEl: HTMLDivElement;
   private amountWrap: HTMLDivElement;
   private amountInput: HTMLInputElement;
+  private minimapWrap: HTMLDivElement;
+  private minimapImageEl: HTMLImageElement;
+  private minimapEntityLayerEl: HTMLDivElement;
+  private minimapPlayerEl: HTMLDivElement;
+  private minimapHeadingEl: HTMLDivElement;
+  private minimapZoomEl: HTMLDivElement;
+  private minimapBounds: EditorMinimapBounds | null = null;
+  private minimapEnemies: EditorMinimapPoint[] = [];
+  private minimapItems: EditorMinimapEntityMarker[] = [];
+  private minimapEnemyMarkers: HTMLDivElement[] = [];
+  private minimapItemMarkers: HTMLDivElement[] = [];
+  private minimapWorldX = 0;
+  private minimapWorldZ = 0;
+  private minimapYawRadians = 0;
+  private minimapHasPose = false;
+  private minimapExpanded = false;
+  private readonly minimapSizeCompact = 210;
+  private readonly minimapSizeExpanded = 420;
+  private readonly minimapZoomMin = 1.2;
+  private readonly minimapZoomMax = 25;
+  private readonly minimapZoomStepClick = 0.45;
+  private readonly minimapZoomStepWheel = 0.2;
+  private minimapZoom = 7;
+  private readonly onWindowResize = () => this.applyMinimapLayout();
 
   // Hotbar slot elements, rebuilt on mode switch
   private hotbarSlots: HTMLDivElement[] = [];
@@ -214,7 +257,7 @@ export class MapEditorUI {
     // Controls hint
     const hint = document.createElement('div');
     hint.style.cssText = 'font-size:9px; color:#4a3a2a; line-height:1.5;';
-    hint.innerHTML = 'SCROLL cycle &nbsp;·&nbsp; TAB mode<br>CLICK place &nbsp;·&nbsp; DEL remove';
+    hint.innerHTML = 'SCROLL cycle &nbsp;·&nbsp; TAB mode<br>CLICK place &nbsp;·&nbsp; DEL remove &nbsp;·&nbsp; 9 export &nbsp;·&nbsp; M map';
     this.panel.appendChild(hint);
 
     // Status
@@ -223,6 +266,151 @@ export class MapEditorUI {
     this.panel.appendChild(this.statusEl);
 
     this.container.appendChild(this.panel);
+
+    // Live minimap (top-right). Shown when map data is provided by Game.
+    this.minimapWrap = document.createElement('div');
+    this.minimapWrap.style.cssText = `
+      position: absolute;
+      top: 16px;
+      right: 16px;
+      width: 210px;
+      height: 210px;
+      border: 1px solid rgba(90,74,58,0.95);
+      background: rgba(0,0,0,0.72);
+      box-shadow: 0 0 12px rgba(0,0,0,0.45);
+      pointer-events: auto;
+      cursor: zoom-in;
+      display: none;
+      overflow: hidden;
+    `;
+
+    this.minimapImageEl = document.createElement('img');
+    this.minimapImageEl.alt = 'Aerial map';
+    this.minimapImageEl.style.cssText = `
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      transform-origin: 0 0;
+      image-rendering: pixelated;
+      opacity: 0.95;
+      filter: contrast(1.08) saturate(0.9);
+    `;
+    this.minimapWrap.appendChild(this.minimapImageEl);
+
+    this.minimapEntityLayerEl = document.createElement('div');
+    this.minimapEntityLayerEl.style.cssText = `
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+    `;
+    this.minimapWrap.appendChild(this.minimapEntityLayerEl);
+
+    const centerCross = document.createElement('div');
+    centerCross.style.cssText = `
+      position: absolute;
+      left: 50%;
+      top: 50%;
+      width: 10px;
+      height: 10px;
+      transform: translate(-50%, -50%);
+      border: 1px solid rgba(212,175,55,0.35);
+      box-sizing: border-box;
+    `;
+    this.minimapWrap.appendChild(centerCross);
+
+    this.minimapHeadingEl = document.createElement('div');
+    this.minimapHeadingEl.style.cssText = `
+      position: absolute;
+      left: 50%;
+      top: 50%;
+      width: 0;
+      height: 0;
+      border-left: 4px solid transparent;
+      border-right: 4px solid transparent;
+      border-bottom: 8px solid rgba(255,220,120,0.95);
+      transform: translate(-50%, -50%) rotate(0deg) translateY(-8px);
+      transform-origin: 50% 8px;
+    `;
+    this.minimapWrap.appendChild(this.minimapHeadingEl);
+
+    this.minimapPlayerEl = document.createElement('div');
+    this.minimapPlayerEl.style.cssText = `
+      position: absolute;
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: rgba(255,220,120,0.98);
+      box-shadow: 0 0 8px rgba(255,220,120,0.75);
+      transform: translate(-50%, -50%);
+      left: 50%;
+      top: 50%;
+    `;
+    this.minimapWrap.appendChild(this.minimapPlayerEl);
+
+    const minimapLabel = document.createElement('div');
+    minimapLabel.style.cssText = `
+      position: absolute;
+      left: 8px;
+      top: 6px;
+      font-size: 10px;
+      color: rgba(212,175,55,0.95);
+      letter-spacing: 1px;
+      font-family: 'Courier New', monospace;
+      text-shadow: 0 0 5px rgba(0,0,0,0.8);
+    `;
+    minimapLabel.textContent = 'LIVE MAP';
+    this.minimapWrap.appendChild(minimapLabel);
+
+    this.minimapZoomEl = document.createElement('div');
+    this.minimapZoomEl.style.cssText = `
+      position: absolute;
+      right: 8px;
+      bottom: 8px;
+      font-size: 9px;
+      color: rgba(212,175,55,0.95);
+      letter-spacing: 0.6px;
+      font-family: 'Courier New', monospace;
+      text-shadow: 0 0 5px rgba(0,0,0,0.8);
+      background: rgba(0,0,0,0.42);
+      border: 1px solid rgba(212,175,55,0.28);
+      padding: 1px 4px;
+    `;
+    this.minimapWrap.appendChild(this.minimapZoomEl);
+    this.updateMinimapZoomBadge();
+
+    this.minimapWrap.title = 'M expand/collapse, LMB zoom in, RMB zoom out, wheel fine zoom';
+    this.minimapWrap.addEventListener('mousedown', (e) => {
+      if (e.button === 0) {
+        this.adjustMinimapZoom(this.minimapZoomStepClick);
+      } else if (e.button === 2) {
+        this.adjustMinimapZoom(-this.minimapZoomStepClick);
+      } else if (e.button === 1) {
+        this.minimapZoom = 7;
+        this.updateMinimapZoomBadge();
+        this.renderMinimapView();
+      } else {
+        return;
+      }
+      e.preventDefault();
+      e.stopPropagation();
+    });
+    this.minimapWrap.addEventListener('wheel', (e) => {
+      const dir = Math.sign(e.deltaY);
+      if (dir === 0) return;
+      this.adjustMinimapZoom(-dir * this.minimapZoomStepWheel);
+      e.preventDefault();
+      e.stopPropagation();
+    }, { passive: false });
+    this.minimapWrap.addEventListener('contextmenu', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+    });
+    window.addEventListener('resize', this.onWindowResize);
+    this.applyMinimapLayout();
+
+    this.container.appendChild(this.minimapWrap);
 
     // ── Bottom hotbar ───────────────────────────────────────────────
     this.hotbarEl = document.createElement('div');
@@ -262,6 +450,333 @@ export class MapEditorUI {
 
   setCallbacks(cb: MapEditorUICallbacks | null): void {
     this.callbacks = cb;
+  }
+
+  toggleMinimapExpanded(): boolean {
+    this.minimapExpanded = !this.minimapExpanded;
+    this.applyMinimapLayout();
+    return this.minimapExpanded;
+  }
+
+  setMinimapImage(dataUrl: string, bounds: EditorMinimapBounds): void {
+    this.minimapBounds = bounds;
+    this.minimapImageEl.src = dataUrl;
+    this.minimapWrap.style.display = 'block';
+    this.renderMinimapView();
+  }
+
+  updateMinimapPlayer(worldX: number, worldZ: number, yawRadians: number): void {
+    this.minimapWorldX = worldX;
+    this.minimapWorldZ = worldZ;
+    this.minimapYawRadians = yawRadians;
+    this.minimapHasPose = true;
+    this.renderMinimapView();
+  }
+
+  updateMinimapEntities(
+    enemies: ReadonlyArray<EditorMinimapPoint>,
+    items: ReadonlyArray<EditorMinimapEntityMarker>,
+  ): void {
+    this.copyMinimapPoints(this.minimapEnemies, enemies, 64);
+    this.copyMinimapEntityMarkers(this.minimapItems, items, 256);
+    this.renderMinimapView();
+  }
+
+  private adjustMinimapZoom(delta: number): void {
+    const next = Math.max(
+      this.minimapZoomMin,
+      Math.min(this.minimapZoomMax, this.minimapZoom + delta),
+    );
+    if (Math.abs(next - this.minimapZoom) < 0.0001) return;
+    this.minimapZoom = Math.round(next * 100) / 100;
+    this.updateMinimapZoomBadge();
+    this.renderMinimapView();
+  }
+
+  private updateMinimapZoomBadge(): void {
+    this.minimapZoomEl.textContent = `${this.minimapZoom.toFixed(1)}x`;
+  }
+
+  private applyMinimapLayout(): void {
+    const viewportW = Math.max(320, window.innerWidth || 0);
+    const viewportH = Math.max(240, window.innerHeight || 0);
+    const maxSize = Math.max(160, Math.min(viewportW - 24, viewportH - 24));
+    const compactSize = Math.max(160, Math.min(this.minimapSizeCompact, maxSize));
+    const expandedAdaptive = Math.floor(Math.min(viewportW * 0.46, viewportH * 0.62));
+    const expandedSize = Math.max(220, Math.min(this.minimapSizeExpanded, expandedAdaptive, maxSize));
+    const size = this.minimapExpanded ? expandedSize : compactSize;
+    this.minimapWrap.style.width = `${size}px`;
+    this.minimapWrap.style.height = `${size}px`;
+    this.minimapWrap.style.top = this.minimapExpanded ? '12px' : '16px';
+    this.minimapWrap.style.right = this.minimapExpanded ? '12px' : '16px';
+    this.minimapWrap.style.boxShadow = this.minimapExpanded
+      ? '0 0 20px rgba(0,0,0,0.58)'
+      : '0 0 12px rgba(0,0,0,0.45)';
+    this.renderMinimapView();
+  }
+
+  private renderMinimapView(): void {
+    const b = this.minimapBounds;
+    if (!b || !this.minimapHasPose) {
+      this.minimapImageEl.style.transform = 'translate(0px, 0px) scale(1)';
+      this.hideUnusedMarkers(this.minimapEnemyMarkers, 0);
+      this.hideUnusedMarkers(this.minimapItemMarkers, 0);
+      return;
+    }
+
+    const width = b.maxX - b.minX;
+    const depth = b.maxZ - b.minZ;
+    if (width <= 0 || depth <= 0) return;
+
+    const nx = Math.max(0, Math.min(1, (this.minimapWorldX - b.minX) / width));
+    const nz = Math.max(0, Math.min(1, (this.minimapWorldZ - b.minZ) / depth));
+
+    const wrapW = this.minimapWrap.clientWidth || 210;
+    const wrapH = this.minimapWrap.clientHeight || 210;
+    const zoom = Math.max(1, this.minimapZoom);
+
+    const mapX = nx * wrapW;
+    const mapY = nz * wrapH;
+    let tx = wrapW * 0.5 - mapX * zoom;
+    let ty = wrapH * 0.5 - mapY * zoom;
+    const minTx = wrapW - wrapW * zoom;
+    const minTy = wrapH - wrapH * zoom;
+    tx = Math.max(minTx, Math.min(0, tx));
+    ty = Math.max(minTy, Math.min(0, ty));
+    this.minimapImageEl.style.transform = `translate(${tx}px, ${ty}px) scale(${zoom})`;
+
+    const screenX = mapX * zoom + tx;
+    const screenY = mapY * zoom + ty;
+    const cx = (screenX / wrapW) * 100;
+    const cy = (screenY / wrapH) * 100;
+    this.minimapPlayerEl.style.left = `${cx}%`;
+    this.minimapPlayerEl.style.top = `${cy}%`;
+    this.minimapHeadingEl.style.left = `${cx}%`;
+    this.minimapHeadingEl.style.top = `${cy}%`;
+
+    const headingDeg = ((-this.minimapYawRadians * 180) / Math.PI + 360) % 360;
+    this.minimapHeadingEl.style.transform =
+      `translate(-50%, -50%) rotate(${headingDeg}deg) translateY(-8px)`;
+
+    this.renderMinimapMarkers(
+      b,
+      width,
+      depth,
+      wrapW,
+      wrapH,
+      zoom,
+      tx,
+      ty,
+    );
+  }
+
+  private renderMinimapMarkers(
+    bounds: EditorMinimapBounds,
+    width: number,
+    depth: number,
+    wrapW: number,
+    wrapH: number,
+    zoom: number,
+    tx: number,
+    ty: number,
+  ): void {
+    const itemCount = this.renderItemMarkerSet(
+      this.minimapItems,
+      this.minimapItemMarkers,
+      bounds,
+      width,
+      depth,
+      wrapW,
+      wrapH,
+      zoom,
+      tx,
+      ty,
+    );
+    this.hideUnusedMarkers(this.minimapItemMarkers, itemCount);
+
+    const enemyCount = this.renderEnemyMarkerSet(
+      this.minimapEnemies,
+      this.minimapEnemyMarkers,
+      bounds,
+      width,
+      depth,
+      wrapW,
+      wrapH,
+      zoom,
+      tx,
+      ty,
+    );
+    this.hideUnusedMarkers(this.minimapEnemyMarkers, enemyCount);
+  }
+
+  private renderEnemyMarkerSet(
+    points: ReadonlyArray<EditorMinimapPoint>,
+    pool: HTMLDivElement[],
+    bounds: EditorMinimapBounds,
+    width: number,
+    depth: number,
+    wrapW: number,
+    wrapH: number,
+    zoom: number,
+    tx: number,
+    ty: number,
+  ): number {
+    let used = 0;
+    for (let i = 0; i < points.length; i++) {
+      const p = points[i];
+      const nx = Math.max(0, Math.min(1, (p.x - bounds.minX) / width));
+      const nz = Math.max(0, Math.min(1, (p.z - bounds.minZ) / depth));
+      const mapX = nx * wrapW;
+      const mapY = nz * wrapH;
+      const screenX = mapX * zoom + tx;
+      const screenY = mapY * zoom + ty;
+      if (screenX < -4 || screenX > wrapW + 4 || screenY < -4 || screenY > wrapH + 4) continue;
+
+      let marker = pool[used];
+      if (!marker) {
+        marker = this.createEnemyMinimapMarker();
+        pool[used] = marker;
+        this.minimapEntityLayerEl.appendChild(marker);
+      }
+      marker.style.display = 'block';
+      marker.style.left = `${screenX}px`;
+      marker.style.top = `${screenY}px`;
+      used++;
+    }
+    return used;
+  }
+
+  private renderItemMarkerSet(
+    points: ReadonlyArray<EditorMinimapEntityMarker>,
+    pool: HTMLDivElement[],
+    bounds: EditorMinimapBounds,
+    width: number,
+    depth: number,
+    wrapW: number,
+    wrapH: number,
+    zoom: number,
+    tx: number,
+    ty: number,
+  ): number {
+    let used = 0;
+    for (let i = 0; i < points.length; i++) {
+      const p = points[i];
+      const nx = Math.max(0, Math.min(1, (p.x - bounds.minX) / width));
+      const nz = Math.max(0, Math.min(1, (p.z - bounds.minZ) / depth));
+      const mapX = nx * wrapW;
+      const mapY = nz * wrapH;
+      const screenX = mapX * zoom + tx;
+      const screenY = mapY * zoom + ty;
+      if (screenX < -6 || screenX > wrapW + 6 || screenY < -6 || screenY > wrapH + 6) continue;
+
+      let marker = pool[used];
+      if (!marker) {
+        marker = this.createItemMinimapMarker();
+        pool[used] = marker;
+        this.minimapEntityLayerEl.appendChild(marker);
+      }
+      this.applyItemMarkerKind(marker, p.kind, p.count);
+      marker.style.display = 'flex';
+      marker.style.left = `${screenX}px`;
+      marker.style.top = `${screenY}px`;
+      used++;
+    }
+    return used;
+  }
+
+  private createEnemyMinimapMarker(): HTMLDivElement {
+    const marker = document.createElement('div');
+    marker.style.cssText = `
+      position: absolute;
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      transform: translate(-50%, -50%);
+      background: rgba(255,72,72,0.95);
+      border: 1px solid rgba(255,190,190,0.9);
+      box-shadow: 0 0 7px rgba(255,64,64,0.7);
+      pointer-events: none;
+    `;
+    return marker;
+  }
+
+  private createItemMinimapMarker(): HTMLDivElement {
+    const marker = document.createElement('div');
+    marker.style.cssText = `
+      position: absolute;
+      transform: translate(-50%, -50%);
+      pointer-events: none;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      font-family: 'Courier New', monospace;
+      font-size: 8px;
+      font-weight: 700;
+      line-height: 1;
+      user-select: none;
+    `;
+    return marker;
+  }
+
+  private applyItemMarkerKind(
+    marker: HTMLDivElement,
+    kind: EditorMinimapEntityKind,
+    count?: number,
+  ): void {
+    const countText = count && count > 1 ? (count > 9 ? '9+' : String(count)) : '';
+    const key = `${kind}:${countText}`;
+    if (marker.dataset.kindKey === key) return;
+    marker.dataset.kindKey = key;
+
+    marker.style.width = '14px';
+    marker.style.height = '14px';
+    marker.style.borderRadius = '3px';
+    marker.style.background = 'rgba(178,224,255,0.92)';
+    marker.style.border = '1px solid rgba(238,248,255,0.95)';
+    marker.style.color = 'rgba(11,30,48,0.96)';
+    marker.style.boxShadow = '0 0 8px rgba(152,214,255,0.62)';
+    marker.textContent = '?';
+    marker.style.fontSize = '9px';
+  }
+
+  private hideUnusedMarkers(pool: HTMLDivElement[], used: number): void {
+    for (let i = used; i < pool.length; i++) {
+      pool[i].style.display = 'none';
+    }
+  }
+
+  private copyMinimapPoints(
+    target: EditorMinimapPoint[],
+    source: ReadonlyArray<EditorMinimapPoint>,
+    limit: number,
+  ): void {
+    const count = Math.min(limit, source.length);
+    for (let i = 0; i < count; i++) {
+      const src = source[i];
+      const rec = target[i] ?? { x: 0, z: 0 };
+      rec.x = src.x;
+      rec.z = src.z;
+      target[i] = rec;
+    }
+    target.length = count;
+  }
+
+  private copyMinimapEntityMarkers(
+    target: EditorMinimapEntityMarker[],
+    source: ReadonlyArray<EditorMinimapEntityMarker>,
+    limit: number,
+  ): void {
+    const count = Math.min(limit, source.length);
+    for (let i = 0; i < count; i++) {
+      const src = source[i];
+      const rec = target[i] ?? { x: 0, z: 0, kind: 'item' as EditorMinimapEntityKind };
+      rec.x = src.x;
+      rec.z = src.z;
+      rec.kind = src.kind;
+      rec.count = src.count;
+      target[i] = rec;
+    }
+    target.length = count;
   }
 
   setThumbnail(category: EditorItemCategory, type: string, dataUrl: string): void {
@@ -337,6 +852,7 @@ export class MapEditorUI {
   }
 
   detach(): void {
+    window.removeEventListener('resize', this.onWindowResize);
     this.container.remove();
   }
 
@@ -642,3 +1158,4 @@ export class MapEditorUI {
     ctx.stroke();
   }
 }
+

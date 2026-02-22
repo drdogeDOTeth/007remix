@@ -419,6 +419,24 @@ export class EnemyManager {
     }
   }
 
+  /**
+   * Fill `out` with alive enemy XZ positions for minimap overlays.
+   * Reuses caller-provided array to avoid per-frame allocations.
+   */
+  appendAliveEnemyXZ(out: Array<{ x: number; z: number }>, limit = 64): void {
+    let i = 0;
+    for (const enemy of this.enemies) {
+      if (enemy.dead) continue;
+      if (i >= limit) break;
+      const rec = out[i] ?? { x: 0, z: 0 };
+      rec.x = enemy.group.position.x;
+      rec.z = enemy.group.position.z;
+      out[i] = rec;
+      i++;
+    }
+    out.length = i;
+  }
+
   get aliveCount(): number {
     return this.enemies.filter((e) => !e.dead).length;
   }

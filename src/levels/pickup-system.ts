@@ -165,6 +165,47 @@ export class PickupSystem {
       }
     }
   }
+
+  /**
+   * Fill `out` with active pickup XZ positions for minimap overlays.
+   * Reuses caller-provided array to avoid per-frame allocations.
+   */
+  appendActivePickupXZ(out: Array<{ x: number; z: number }>, limit = 160): void {
+    let i = 0;
+    for (const pickup of this.pickups) {
+      if (pickup.collected) continue;
+      if (i >= limit) break;
+      const rec = out[i] ?? { x: 0, z: 0 };
+      // Use mesh position so bob/offset updates remain visually aligned.
+      rec.x = pickup.mesh.position.x;
+      rec.z = pickup.mesh.position.z;
+      out[i] = rec;
+      i++;
+    }
+    out.length = i;
+  }
+
+  /**
+   * Fill `out` with active pickup minimap markers.
+   * Weapon pickups are tagged as `weapon`; everything else as `item`.
+   */
+  appendActiveMinimapMarkers(
+    out: Array<{ x: number; z: number; kind: 'item' | 'weapon' }>,
+    limit = 160,
+  ): void {
+    let i = 0;
+    for (const pickup of this.pickups) {
+      if (pickup.collected) continue;
+      if (i >= limit) break;
+      const rec = out[i] ?? { x: 0, z: 0, kind: 'item' as const };
+      rec.x = pickup.mesh.position.x;
+      rec.z = pickup.mesh.position.z;
+      rec.kind = pickup.type.startsWith('weapon-') ? 'weapon' : 'item';
+      out[i] = rec;
+      i++;
+    }
+    out.length = i;
+  }
 }
 
 // ─── Per-type mesh builders ───
