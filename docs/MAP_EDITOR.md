@@ -2,6 +2,8 @@
 
 This document covers map editor controls and the hotbar thumbnail pipeline.
 
+See also: `docs/MINIMAP_WIDGET.md` for detailed minimap behavior and clustering rules.
+
 ## Basic Controls
 
 - `Tab`: Switch mode (`PICKUPS` / `PROPS`)
