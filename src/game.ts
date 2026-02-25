@@ -70,6 +70,8 @@ import { RemotePlayerManager } from './player/remote-player-manager';
 import { NetworkConfig } from './network/network-config';
 import { GameSettings } from './core/game-settings';
 import { getSunState, getSkyboxMode } from './core/day-night-cycle';
+import { DoomMode } from './core/doom-mode';
+import { setEnemyRenderConfig } from './enemies/enemy-render-config';
 
 const PHYSICS_STEP = 1 / 60;
 
@@ -251,6 +253,9 @@ export class Game {
   /** Incremented to cancel in-flight thumbnail generation when editor UI is recreated/detached. */
   private editorThumbnailBuildToken = 0;
 
+  /** Doom mode: flat 2D rendering toggle. */
+  private doomMode!: DoomMode;
+
   /** Called when all objectives are done and player reaches extraction (mission:complete). */
   onMissionComplete: (() => void) | null = null;
 
@@ -279,6 +284,7 @@ export class Game {
     this.physics = physics;
     this.events = new EventBus();
     this.renderer = new Renderer(canvas);
+    this.doomMode = new DoomMode();
     this.input = new InputManager(canvas);
     this.scene = new THREE.Scene();
     this.scene.background = new THREE.Color(0x1a1a2e);
@@ -542,6 +548,8 @@ export class Game {
     this.pauseMenu.onExit = () => {
       this.exitToMenu();
     };
+    // Wire renderer into settings so POST FX tab can apply changes live
+    this.pauseMenu.setRenderer(this.renderer, this.scene, this.fpsCamera.camera);
 
     // Click canvas to re-engage pointer lock (e.g. after screenshot, clicking outside)
     this.canvas.addEventListener('click', this.onCanvasClick);
@@ -610,6 +618,7 @@ export class Game {
       this.buildTestScene();
       this.spawnTestEnemies();
       this.spawnTestPickups();
+      this.applyDoomModeIfActive();
     }
 
     // Initialize multiplayer components if in network mode
@@ -955,6 +964,7 @@ export class Game {
       navMesh: this.navMesh ?? undefined,
       levelGroup: this.levelGroup,
     });
+    this.applyDoomModeIfActive();
   }
 
   /** Dispose previous level before loading a new one. Clears systems and level geometry. */
@@ -1216,6 +1226,11 @@ export class Game {
       } else if (!this.inventoryScreen.isOpen) {
         this.pauseGame();
       }
+    }
+
+    // Doom mode toggle (F2)
+    if (this.input.wasKeyJustPressed('f2')) {
+      this.toggleDoomMode();
     }
 
     // While paused or mission complete, only render (frozen frame)
@@ -1851,6 +1866,29 @@ export class Game {
 
   // ──────────── Test Scene ────────────
 
+  private toggleDoomMode(): void {
+    if (this.doomMode.isActive) {
+      this.doomMode.setActive(false);
+      GameSettings.set({ pixelMode: false });
+      this.renderer.disableSpriteBakerView();
+      setEnemyRenderConfig({ mode: 'model' });
+    } else {
+      this.doomMode.setActive(true);
+      const pixelSize = GameSettings.getPixelSize();
+      GameSettings.set({ pixelMode: true });
+      this.renderer.enableSpriteBakerView(this.scene, this.fpsCamera.camera, pixelSize);
+      setEnemyRenderConfig({ mode: 'sprite', spriteSource: 'procedural' });
+    }
+    this.doomMode.save();
+    this.hud.showPickupNotification(this.doomMode.isActive ? 'DOOM MODE ON' : 'DOOM MODE OFF');
+  }
+
+  private applyDoomModeIfActive(): void {
+    if (!this.doomMode.isActive) return;
+    this.renderer.enableSpriteBakerView(this.scene, this.fpsCamera.camera, GameSettings.getPixelSize());
+    setEnemyRenderConfig({ mode: 'sprite', spriteSource: 'procedural' });
+  }
+
   private buildTestScene(): void {
     // Ambient light (dim, blue-ish)
     const ambient = new THREE.AmbientLight(0x404060, 0.6);
@@ -2044,6 +2082,7 @@ export class Game {
       this.customSpawnCenter = null;
       this.customTerrainRaycaster = null;
     }
+    this.applyDoomModeIfActive();
   }
 
   private async buildCustomQuickplayScene(): Promise<void> {

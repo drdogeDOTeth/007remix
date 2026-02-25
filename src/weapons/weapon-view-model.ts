@@ -124,8 +124,9 @@ export class WeaponViewModel {
     this.weaponMesh.add(this.muzzleFlash);
     this.muzzleLight.position.copy(this.muzzleOffset);
     this.weaponMesh.add(this.muzzleLight);
-    
+
     this.weaponMesh.position.copy(this.restPosition);
+
   }
 
   /** Refresh current weapon mesh with a new skin (same type). */

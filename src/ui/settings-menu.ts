@@ -3,9 +3,11 @@
  * Tabbed by category. Accessible from pause menu and main menu.
  */
 
+import * as THREE from 'three';
 import { GameSettings, type GamepadResponseCurve, type DifficultyLevel } from '../core/game-settings';
 import { setMusicVolume } from '../audio/music';
 import { setSFXVolume } from '../audio/sound-effects';
+import type { Renderer } from '../core/renderer';
 
 function applyVolume(): void {
   const m = GameSettings.getVolumeMaster() * GameSettings.getVolumeMusic();
@@ -14,7 +16,7 @@ function applyVolume(): void {
   setSFXVolume(s);
 }
 
-type SettingsTab = 'controls' | 'aim' | 'audio' | 'gameplay' | 'display';
+type SettingsTab = 'controls' | 'aim' | 'audio' | 'gameplay' | 'display' | 'postfx';
 
 export class SettingsMenu {
   private overlay: HTMLDivElement;
@@ -24,6 +26,24 @@ export class SettingsMenu {
 
   /** Fires when user clicks Back */
   onBack: (() => void) | null = null;
+
+  /** Renderer reference for live post-processing updates. */
+  private renderer: Renderer | null = null;
+  private rendererScene: THREE.Scene | null = null;
+  private rendererCamera: THREE.Camera | null = null;
+
+  setRenderer(renderer: Renderer, scene: THREE.Scene, camera: THREE.Camera): void {
+    this.renderer = renderer;
+    this.rendererScene = scene;
+    this.rendererCamera = camera;
+  }
+
+  private applyPostFX(): void {
+    this.renderer?.applyPostProcessingSettings(
+      this.rendererScene ?? undefined,
+      this.rendererCamera ?? undefined,
+    );
+  }
 
   constructor() {
     this.overlay = document.createElement('div');
@@ -73,7 +93,7 @@ export class SettingsMenu {
       font-family: 'Courier New', monospace;
       transition: background 0.2s;
     `;
-    for (const id of ['controls', 'aim', 'audio', 'gameplay', 'display'] as const) {
+    for (const id of ['controls', 'aim', 'audio', 'gameplay', 'display', 'postfx'] as const) {
       const tab = document.createElement('div');
       const labels: Record<SettingsTab, string> = {
         controls: 'CONTROLS',
@@ -81,6 +101,7 @@ export class SettingsMenu {
         audio: 'AUDIO',
         gameplay: 'GAMEPLAY',
         display: 'DISPLAY',
+        postfx: 'POST FX',
       };
       tab.textContent = labels[id];
       tab.style.cssText = tabStyle(id === 'controls');
@@ -199,6 +220,63 @@ export class SettingsMenu {
     this.panels.display = displayPanel;
     contentWrap.appendChild(displayPanel);
 
+    // POST FX panel
+    const postfxPanel = document.createElement('div');
+    postfxPanel.dataset.panel = 'postfx';
+    const postfxSection = this.createSectionContent();
+
+    // Section header helper
+    const makeHeader = (text: string): HTMLDivElement => {
+      const h = document.createElement('div');
+      h.textContent = text;
+      h.style.cssText = `font-size: 11px; letter-spacing: 3px; color: rgba(212,175,55,0.55); margin: 14px 0 8px; border-bottom: 1px solid rgba(212,175,55,0.15); padding-bottom: 4px;`;
+      return h;
+    };
+
+    postfxSection.appendChild(makeHeader('TONE MAPPING'));
+    postfxSection.appendChild(this.createToneMappingRow(g.toneMapping));
+    postfxSection.appendChild(this.createSlider('Exposure', g.exposure, 50, 200, '%', (v) => {
+      GameSettings.set({ exposure: v });
+      this.applyPostFX();
+    }, (v) => `${(v / 100).toFixed(2)}x`));
+
+    postfxSection.appendChild(makeHeader('BLOOM'));
+    postfxSection.appendChild(this.createCheckbox('Bloom Enabled', g.bloomEnabled, (v) => {
+      GameSettings.set({ bloomEnabled: v });
+      this.applyPostFX();
+    }));
+    postfxSection.appendChild(this.createSlider('Strength', g.bloomStrength, 0, 100, '', (v) => {
+      GameSettings.set({ bloomStrength: v });
+      this.applyPostFX();
+    }, (v) => `${(v / 100).toFixed(2)}`));
+    postfxSection.appendChild(this.createSlider('Radius', g.bloomRadius, 0, 100, '', (v) => {
+      GameSettings.set({ bloomRadius: v });
+      this.applyPostFX();
+    }, (v) => `${(v / 100).toFixed(2)}`));
+    postfxSection.appendChild(this.createSlider('Threshold', g.bloomThreshold, 0, 100, '', (v) => {
+      GameSettings.set({ bloomThreshold: v });
+      this.applyPostFX();
+    }, (v) => `${(v / 100).toFixed(2)}`));
+
+    postfxSection.appendChild(makeHeader('RENDERING'));
+    postfxSection.appendChild(this.createCheckbox('Shadows', g.shadowsEnabled, (v) => {
+      GameSettings.set({ shadowsEnabled: v });
+      this.applyPostFX();
+    }));
+    postfxSection.appendChild(this.createCheckbox('Pixel Mode (F2)', g.pixelMode, (v) => {
+      GameSettings.set({ pixelMode: v });
+      this.applyPostFX();
+    }));
+    postfxSection.appendChild(this.createSlider('Pixel Size', g.pixelSize, 2, 8, 'px', (v) => {
+      GameSettings.set({ pixelSize: v });
+      this.applyPostFX();
+    }, (v) => `${v}px`));
+
+    postfxPanel.appendChild(postfxSection);
+    postfxPanel.style.display = 'none';
+    this.panels.postfx = postfxPanel;
+    contentWrap.appendChild(postfxPanel);
+
     this.overlay.appendChild(contentWrap);
 
     const backBtn = this.createButton('BACK');
@@ -214,7 +292,7 @@ export class SettingsMenu {
   }
 
   private showTab(id: SettingsTab): void {
-    for (const tabId of ['controls', 'aim', 'audio', 'gameplay', 'display'] as const) {
+    for (const tabId of ['controls', 'aim', 'audio', 'gameplay', 'display', 'postfx'] as const) {
       const panel = this.panels[tabId];
       const tab = this.tabs[tabId];
       const active = tabId === id;
@@ -234,6 +312,46 @@ export class SettingsMenu {
       min-width: 280px;
     `;
     return section;
+  }
+
+  private createToneMappingRow(value: string): HTMLDivElement {
+    const row = document.createElement('div');
+    row.style.cssText = `display: flex; align-items: center; gap: 12px; margin-bottom: 12px; min-width: 260px;`;
+    const lab = document.createElement('label');
+    lab.textContent = 'Tone Map';
+    lab.style.cssText = `width: 90px; font-size: 12px; letter-spacing: 1px;`;
+    const select = document.createElement('select');
+    select.style.cssText = `
+      flex: 1;
+      padding: 6px 10px;
+      font-family: 'Courier New', monospace;
+      font-size: 12px;
+      background: rgba(0,0,0,0.5);
+      color: #d4af37;
+      border: 1px solid rgba(212, 175, 55, 0.5);
+      border-radius: 2px;
+      cursor: pointer;
+    `;
+    const options: { v: string; label: string }[] = [
+      { v: 'aces',     label: 'ACES Filmic (cinematic)' },
+      { v: 'reinhard', label: 'Reinhard (natural)' },
+      { v: 'cineon',   label: 'Cineon (film)' },
+      { v: 'linear',   label: 'Linear (raw / no tone map)' },
+    ];
+    for (const opt of options) {
+      const o = document.createElement('option');
+      o.value = opt.v;
+      o.textContent = opt.label;
+      if (opt.v === value) o.selected = true;
+      select.appendChild(o);
+    }
+    select.addEventListener('change', () => {
+      GameSettings.set({ toneMapping: select.value as 'aces' | 'linear' | 'reinhard' | 'cineon' });
+      this.applyPostFX();
+    });
+    row.appendChild(lab);
+    row.appendChild(select);
+    return row;
   }
 
   private createResponseCurveRow(value: GamepadResponseCurve): HTMLDivElement {

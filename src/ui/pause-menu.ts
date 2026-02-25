@@ -3,7 +3,9 @@
  * Resume or exit back to the start screen.
  */
 
+import * as THREE from 'three';
 import { SettingsMenu } from './settings-menu';
+import type { Renderer } from '../core/renderer';
 
 export class PauseMenu {
   private overlay: HTMLDivElement;
@@ -124,6 +126,10 @@ export class PauseMenu {
       btn.style.color = '#d4af37';
     });
     return btn;
+  }
+
+  setRenderer(renderer: Renderer, scene: THREE.Scene, camera: THREE.Camera): void {
+    this.settingsMenu.setRenderer(renderer, scene, camera);
   }
 
   get isOpen(): boolean {

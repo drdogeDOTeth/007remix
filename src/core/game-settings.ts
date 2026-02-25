@@ -36,6 +36,16 @@ export interface GameSettingsValues {
   dayNightSpeed: number;       // 0=paused, 100=~24min per day, 200=~12min
   timeOfDay: number;           // 0–100, manual time when paused (0=midnight, 50=noon)
   dayNightIntensity: number;   // 0–200, sun/sky intensity multiplier (100=1.0)
+  // Post-processing
+  bloomEnabled: boolean;
+  bloomStrength: number;       // 0–100 (stored as 0–100, actual 0–1.0)
+  bloomRadius: number;         // 0–100 (stored as 0–100, actual 0–1.0)
+  bloomThreshold: number;      // 0–100 (stored as 0–100, actual 0–1.0)
+  exposure: number;            // 50–200 (stored as %, actual 0.5–2.0)
+  shadowsEnabled: boolean;
+  pixelMode: boolean;          // sprite-baker view pass
+  pixelSize: number;           // 2–8 block size in screen pixels
+  toneMapping: 'aces' | 'linear' | 'reinhard' | 'cineon';
 }
 
 const DEFAULTS: GameSettingsValues = {
@@ -63,6 +73,16 @@ const DEFAULTS: GameSettingsValues = {
   dayNightSpeed: 100,          // ~24 min per full day
   timeOfDay: 30,               // 7:12am default
   dayNightIntensity: 100,      // 1.0x
+  // Post-processing
+  bloomEnabled: true,
+  bloomStrength: 15,           // 0.15 actual
+  bloomRadius: 35,             // 0.35 actual
+  bloomThreshold: 85,          // 0.85 actual
+  exposure: 115,               // 1.15x actual
+  shadowsEnabled: true,
+  pixelMode: false,
+  pixelSize: 4,
+  toneMapping: 'aces',
 };
 
 function clamp(v: number, lo: number, hi: number): number {
@@ -116,6 +136,17 @@ function load(): GameSettingsValues {
         dayNightSpeed: clamp(parsed.dayNightSpeed ?? DEFAULTS.dayNightSpeed, 0, 200),
         timeOfDay: clamp(parsed.timeOfDay ?? DEFAULTS.timeOfDay, 0, 100),
         dayNightIntensity: clamp(parsed.dayNightIntensity ?? DEFAULTS.dayNightIntensity, 0, 200),
+        bloomEnabled: parsed.bloomEnabled ?? DEFAULTS.bloomEnabled,
+        bloomStrength: clamp(parsed.bloomStrength ?? DEFAULTS.bloomStrength, 0, 100),
+        bloomRadius: clamp(parsed.bloomRadius ?? DEFAULTS.bloomRadius, 0, 100),
+        bloomThreshold: clamp(parsed.bloomThreshold ?? DEFAULTS.bloomThreshold, 0, 100),
+        exposure: clamp(parsed.exposure ?? DEFAULTS.exposure, 50, 200),
+        shadowsEnabled: parsed.shadowsEnabled ?? DEFAULTS.shadowsEnabled,
+        pixelMode: parsed.pixelMode ?? DEFAULTS.pixelMode,
+        pixelSize: clamp(parsed.pixelSize ?? DEFAULTS.pixelSize, 2, 8),
+        toneMapping: (['aces', 'linear', 'reinhard', 'cineon'] as const).includes(parsed.toneMapping as any)
+          ? (parsed.toneMapping as GameSettingsValues['toneMapping'])
+          : DEFAULTS.toneMapping,
       };
     }
   } catch (_) {}
@@ -154,6 +185,15 @@ export const GameSettings = {
     if (values.dayNightSpeed !== undefined) cache.dayNightSpeed = clamp(values.dayNightSpeed, 0, 200);
     if (values.timeOfDay !== undefined) cache.timeOfDay = clamp(values.timeOfDay, 0, 100);
     if (values.dayNightIntensity !== undefined) cache.dayNightIntensity = clamp(values.dayNightIntensity, 0, 200);
+    if (values.bloomEnabled !== undefined) cache.bloomEnabled = values.bloomEnabled;
+    if (values.bloomStrength !== undefined) cache.bloomStrength = clamp(values.bloomStrength, 0, 100);
+    if (values.bloomRadius !== undefined) cache.bloomRadius = clamp(values.bloomRadius, 0, 100);
+    if (values.bloomThreshold !== undefined) cache.bloomThreshold = clamp(values.bloomThreshold, 0, 100);
+    if (values.exposure !== undefined) cache.exposure = clamp(values.exposure, 50, 200);
+    if (values.shadowsEnabled !== undefined) cache.shadowsEnabled = values.shadowsEnabled;
+    if (values.pixelMode !== undefined) cache.pixelMode = values.pixelMode;
+    if (values.pixelSize !== undefined) cache.pixelSize = clamp(values.pixelSize, 2, 8);
+    if (values.toneMapping !== undefined) cache.toneMapping = values.toneMapping;
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(cache));
     } catch (_) {}
@@ -245,4 +285,13 @@ export const GameSettings = {
   getDayNightIntensity(): number {
     return cache.dayNightIntensity / 100; // 0–2 (100 = 1.0)
   },
+  getBloomEnabled(): boolean { return cache.bloomEnabled; },
+  getBloomStrength(): number { return cache.bloomStrength / 100; },
+  getBloomRadius(): number { return cache.bloomRadius / 100; },
+  getBloomThreshold(): number { return cache.bloomThreshold / 100; },
+  getExposure(): number { return cache.exposure / 100; },
+  getShadowsEnabled(): boolean { return cache.shadowsEnabled; },
+  getPixelMode(): boolean { return cache.pixelMode; },
+  getPixelSize(): number { return cache.pixelSize; },
+  getToneMapping(): GameSettingsValues['toneMapping'] { return cache.toneMapping; },
 };
