@@ -328,10 +328,18 @@ export class EnemyManager {
       if (enemy.dead) continue;
       const dx = enemy.group.position.x - center.x;
       const dz = enemy.group.position.z - center.z;
-      if (Math.sqrt(dx * dx + dz * dz) <= radius) {
+      const dist = Math.sqrt(dx * dx + dz * dz);
+      if (dist <= radius) {
+        const wasDead = enemy.dead;
         enemy.takeDamage(damage);
-        if (enemy.dead) {
+        if (!wasDead && enemy.dead) {
+          // Blast knockback: push corpse away from explosion center, scaled by proximity
+          const falloff = 1 - dist / radius;
+          const speed = 20 + falloff * 25;
+          const len = dist > 0.01 ? dist : 0.01;
+          enemy.deathKnockback.set(dx / len * speed, 8 + falloff * 10, dz / len * speed);
           this.removeEnemyPhysics(enemy);
+          enemy.applyDeathKnockback();
           this.events.emit('enemy:killed', {
             position: enemy.group.position.clone(),
           });

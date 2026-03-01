@@ -211,6 +211,13 @@ export class Ragdoll {
     mesh.updateMatrixWorld(true);
   }
 
+  /** Apply an impulse to all ragdoll bodies (e.g. blast knockback). */
+  applyBlastImpulse(impulse: { x: number; y: number; z: number }): void {
+    for (const body of this.bodies.values()) {
+      body.applyImpulse(impulse, true);
+    }
+  }
+
   /** Get pelvis position for moving the character group */
   getPelvisPosition(out: THREE.Vector3): void {
     const pelvis = this.bodies.get('hips');

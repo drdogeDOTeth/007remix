@@ -30,6 +30,32 @@ export function setSFXVolume(vol: number): void {
 
 export type WeaponSoundType = 'pistol' | 'rifle' | 'shotgun' | 'sniper' | 'minigun' | 'rpg' | 'grenade-launcher';
 
+/**
+ * Pre-warm the AudioContext and pre-build cached noise buffers.
+ * Call once on first user interaction (e.g. pickup collected) to eliminate
+ * the stall on first gunship cannon burst caused by suspended AudioContext resume.
+ */
+export function prewarmAudio(): void {
+  const ctx = getAudioCtx();
+  if (ctx.state === 'suspended') {
+    ctx.resume().catch(() => {/* ignore */});
+  }
+  // Pre-build cannon noise buffer so first burst has no allocation stall
+  _getCannonNoiseBuf(ctx);
+}
+
+/** Cached short noise buffer reused for every cannon crack — avoids per-shot allocation. */
+let _cannonNoiseBuf: AudioBuffer | null = null;
+function _getCannonNoiseBuf(ctx: AudioContext): AudioBuffer {
+  if (!_cannonNoiseBuf || _cannonNoiseBuf.sampleRate !== ctx.sampleRate) {
+    const size = Math.ceil(ctx.sampleRate * 0.06);
+    _cannonNoiseBuf = ctx.createBuffer(1, size, ctx.sampleRate);
+    const d = _cannonNoiseBuf.getChannelData(0);
+    for (let i = 0; i < size; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / size, 6);
+  }
+  return _cannonNoiseBuf;
+}
+
 // ─── Shared helpers ───
 
 function makeNoise(ctx: AudioContext, duration: number, decay = 3): AudioBufferSourceNode {
@@ -1144,8 +1170,9 @@ export function playGunshipCannon(): void {
   if (!ctx) return;
   const now = ctx.currentTime;
 
-  // High-frequency crack (noise burst through highpass)
-  const crack = makeNoise(ctx, 0.06, 6);
+  // High-frequency crack — use cached buffer to avoid per-shot allocation stall
+  const crack = ctx.createBufferSource();
+  crack.buffer = _getCannonNoiseBuf(ctx);
   const hp = ctx.createBiquadFilter();
   hp.type = 'highpass';
   hp.frequency.value = 3000;

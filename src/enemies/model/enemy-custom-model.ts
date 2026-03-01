@@ -301,6 +301,11 @@ export class EnemyCustomModel {
     return true;
   }
 
+  /** Apply a blast impulse to all ragdoll bodies. No-op if ragdoll not active. */
+  applyRagdollBlast(impulse: { x: number; y: number; z: number }): void {
+    this.ragdoll?.applyBlastImpulse(impulse);
+  }
+
   /** Clean up ragdoll when enemy is removed */
   disposeRagdoll(): void {
     this.ragdoll?.dispose();

@@ -112,9 +112,10 @@ export class GunshipScorestreak {
       new THREE.Vector3(0, -1, 0),
     ]);
     for (let i = 0; i < 16; i++) {
-      const mat = new THREE.LineBasicMaterial({ color: 0xffffff, linewidth: 2, transparent: true, opacity: 1 });
+      const mat = new THREE.LineBasicMaterial({ color: 0xffffff, linewidth: 2, transparent: true, opacity: 1, depthTest: false, depthWrite: false });
       const line = new THREE.Line(tracerGeo.clone(), mat);
       line.visible = false;
+      line.renderOrder = 999;
       this.scene.add(line);
       this._tracerPool.push(line);
     }
@@ -199,7 +200,7 @@ export class GunshipScorestreak {
     if (input.mouseDown && this.cannonCooldown <= 0 && this.burstCount === 0) {
       this.cannonCooldown = CANNON_COOLDOWN;
       this.burstCount = CANNON_BURST_SIZE;
-      this.burstTimer = 0;
+      this.burstTimer = -dt; // fire first shot immediately this frame
     }
 
     // Howitzer: right mouse fires (separate cooldown, always available)
@@ -275,20 +276,34 @@ export class GunshipScorestreak {
       -(this.reticleY * 2 - 1),
     );
     this._raycaster.setFromCamera(this._ndcPos, this.gunshipCamera);
-    const target = this._worldFirePos;
-    const hit = this._raycaster.ray.intersectPlane(this._groundPlane, target);
-    if (hit) return target.clone();
-
-    // Fallback: project along ray to groundY
     const ray = this._raycaster.ray;
-    if (Math.abs(ray.direction.y) > 0.001) {
-      const t = (this.groundY - ray.origin.y) / ray.direction.y;
-      if (t > 0) {
-        target.copy(ray.origin).addScaledVector(ray.direction, t);
+    const target = this._worldFirePos;
+
+    // Helper: intersect ray with a horizontal plane at given Y
+    const intersectAtY = (planeY: number): THREE.Vector3 | null => {
+      if (Math.abs(ray.direction.y) < 0.0001) return null;
+      const t = (planeY - ray.origin.y) / ray.direction.y;
+      if (t <= 0) return null;
+      return ray.origin.clone().addScaledVector(ray.direction, t);
+    };
+
+    // Pass 1: hit the flat ground plane to get an approximate X/Z
+    const approx = intersectAtY(this.groundY);
+    if (!approx) return null;
+
+    // Pass 2: if we have terrain raycast, look up the real surface Y at that X/Z
+    // and re-intersect at that height for a corrected X/Z
+    if (this.getTerrainY) {
+      const terrainY = this.getTerrainY(approx.x, approx.z);
+      const refined = intersectAtY(terrainY);
+      if (refined) {
+        target.copy(refined);
         return target.clone();
       }
     }
-    return null;
+
+    target.copy(approx);
+    return target.clone();
   }
 
   /** Actual terrain surface Y at (x,z) — uses raycast when available, else flat groundY. */
@@ -296,32 +311,45 @@ export class GunshipScorestreak {
     return this.getTerrainY ? this.getTerrainY(x, z) : this.groundY;
   }
 
-  private _fireCannon(worldPos: THREE.Vector3): void {
-    const pos = worldPos.clone();
-    pos.x += (Math.random() - 0.5) * 0.7;
-    pos.z += (Math.random() - 0.5) * 0.7;
-    pos.y = this._surfaceY(pos.x, pos.z);
+  // Reusable vectors to avoid per-shot allocations
+  private readonly _cannonSurfacePos = new THREE.Vector3();
+  private readonly _camDir = new THREE.Vector3();
+  private readonly _tracerFrom = new THREE.Vector3();
 
-    // XZ-only damage — AC-130 fires straight down so vertical offset is irrelevant
-    this.enemyManager.damageEnemiesInRadiusXZ(pos, CANNON_RADIUS, CANNON_DAMAGE);
+  private _fireCannon(worldPos: THREE.Vector3): void {
+    const vfxPos = worldPos.clone();
+
+    // Scatter only affects damage, not visuals
+    const dmgX = worldPos.x + (Math.random() - 0.5) * 0.7;
+    const dmgZ = worldPos.z + (Math.random() - 0.5) * 0.7;
+    this._cannonSurfacePos.set(dmgX, 0, dmgZ); // Y unused in XZ check
+
+    this.enemyManager.damageEnemiesInRadiusXZ(this._cannonSurfacePos, CANNON_RADIUS, CANNON_DAMAGE);
+
+    // Pass surface Y to destructibles
+    this._cannonSurfacePos.set(vfxPos.x, this._surfaceY(vfxPos.x, vfxPos.z), vfxPos.z);
+    this.onExplosion?.(this._cannonSurfacePos, CANNON_RADIUS, CANNON_DAMAGE);
+
     this.overlay.flashReticle();
     playGunshipCannon();
-    this._spawnCannonImpact(pos);
-    const tracerFrom = new THREE.Vector3(pos.x, pos.y + 25, pos.z);
-    this._spawnTracer(tracerFrom, pos, 0.10);
+    this._spawnCannonImpact(vfxPos);
+
+    // Tracer from camera direction toward impact
+    this._camDir.subVectors(this.gunshipCamera.position, vfxPos).normalize();
+    this._tracerFrom.copy(vfxPos).addScaledVector(this._camDir, 30);
+    this._spawnTracer(this._tracerFrom, vfxPos, 0.12);
   }
 
   private _fireHowitzer(worldPos: THREE.Vector3): void {
-    const pos = worldPos.clone();
-    pos.y = this._surfaceY(pos.x, pos.z);
+    const vfxPos = worldPos.clone();
+    this._cannonSurfacePos.set(vfxPos.x, this._surfaceY(vfxPos.x, vfxPos.z), vfxPos.z);
 
-    // XZ-only damage — AC-130 fires straight down so vertical offset is irrelevant
-    this.enemyManager.damageEnemiesInRadiusXZ(pos, HOWITZER_RADIUS, HOWITZER_DAMAGE);
-    this.grenadeSystem.spawnExplosion(pos);
-    this.onExplosion?.(pos, HOWITZER_RADIUS, HOWITZER_DAMAGE);
+    this.enemyManager.damageEnemiesInRadiusXZ(vfxPos, HOWITZER_RADIUS, HOWITZER_DAMAGE);
+    this.grenadeSystem.spawnExplosion(this._cannonSurfacePos);
+    this.onExplosion?.(this._cannonSurfacePos, HOWITZER_RADIUS, HOWITZER_DAMAGE);
     this.overlay.flashReticle();
     playGunshipHowitzer();
-    this._spawnHowitzerImpact(pos);
+    this._spawnHowitzerImpact(vfxPos);
   }
 
   // ─── VFX ───────────────────────────────────────────────────────────────────
@@ -339,14 +367,14 @@ export class GunshipScorestreak {
     if (mesh) {
       (mesh.material as THREE.MeshBasicMaterial).color.setHex(0xffffff);
       mesh.scale.setScalar(2.5);
-      mesh.position.set(pos.x, pos.y + 1, pos.z);
+      mesh.position.set(pos.x, pos.y, pos.z);
       mesh.visible = true;
       this._activeImpacts.push({ mesh, life: 0, maxLife: 0.25, initScale: 2.5 });
     }
 
     // Short PointLight flash
     const light = new THREE.PointLight(0xff7722, 30, 10);
-    light.position.set(pos.x, pos.y + 1, pos.z);
+    light.position.set(pos.x, pos.y, pos.z);
     this.scene.add(light);
     const born = performance.now();
     const tick = () => {
@@ -368,7 +396,7 @@ export class GunshipScorestreak {
       const dist = 1.5 + Math.random() * 2;
       d.position.set(
         pos.x + Math.cos(ang) * dist,
-        pos.y + 0.5,
+        pos.y,
         pos.z + Math.sin(ang) * dist,
       );
       d.visible = true;
@@ -382,7 +410,7 @@ export class GunshipScorestreak {
     if (mesh) {
       (mesh.material as THREE.MeshBasicMaterial).color.setHex(0xffffff);
       mesh.scale.setScalar(8);
-      mesh.position.set(pos.x, pos.y + 3, pos.z);
+      mesh.position.set(pos.x, pos.y, pos.z);
       mesh.visible = true;
       this._activeImpacts.push({ mesh, life: 0, maxLife: 0.8, initScale: 8 });
     }

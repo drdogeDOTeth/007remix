@@ -40,7 +40,7 @@ import { KillFeed } from './ui/kill-feed';
 import { Scoreboard, type ScoreboardPlayer } from './ui/scoreboard';
 import { NameTagManager } from './ui/name-tags';
 import { GameOverOverlay } from './ui/game-over-overlay';
-import { playDestruction, playFleshImpact, playRespawnSound, playBarrelExplode } from './audio/sound-effects';
+import { playDestruction, playFleshImpact, playRespawnSound, playBarrelExplode, prewarmAudio } from './audio/sound-effects';
 import { startMusic, stopMusic } from './audio/music';
 import { BriefingScreen } from './ui/briefing-screen';
 import { ObjectivesDisplay } from './ui/objectives-display';
@@ -1819,6 +1819,7 @@ export class Game {
         break;
       case 'gunship':
         if (!this.gunshipActive) {
+          prewarmAudio(); // resume AudioContext + pre-build noise buffers before first burst
           this.gunshipActive = true;
           this.hud.hide();
           const pp = this.player.getPosition();
