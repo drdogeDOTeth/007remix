@@ -22,7 +22,8 @@ export type PickupType =
   | 'weapon-minigun'
   | 'weapon-rpg'
   | 'weapon-grenade-launcher'
-  | 'key';
+  | 'key'
+  | 'gunship';
 
 interface Pickup {
   type: PickupType;
@@ -110,7 +111,14 @@ export class PickupSystem {
     const isWeapon = type.startsWith('weapon-');
     let pickupLight: THREE.PointLight | undefined;
 
-    if (isWeapon && this.weaponModelBuilder) {
+    if (type === 'gunship') {
+      const gunshipMesh = buildGunshipPickupMesh();
+      // Extract the embedded PointLight so intensity can be pulsed
+      pickupLight = gunshipMesh.children.find(
+        (c) => c instanceof THREE.PointLight,
+      ) as THREE.PointLight | undefined;
+      group.add(gunshipMesh);
+    } else if (isWeapon && this.weaponModelBuilder) {
       // Build actual 3D weapon model for ground pickup
       const weaponType = type.replace('weapon-', '');
       const weaponMesh = this.weaponModelBuilder(weaponType);
@@ -214,6 +222,7 @@ function buildPickupMesh(type: PickupType): THREE.Group {
   if (type === 'health') return buildHealthMesh();
   if (type === 'armor') return buildArmorMesh();
   if (type === 'key') return buildKeyMesh();
+  if (type === 'gunship') return buildGunshipPickupMesh();
   if (type.startsWith('weapon-')) return buildWeaponFallbackMesh(type);
   return buildAmmoMesh(type);
 }
@@ -396,5 +405,59 @@ function buildKeyMesh(): THREE.Group {
   // Flat card shape
   const card = new THREE.Mesh(createSubdividedBox(0.18, 0.12, 0.02), mat);
   g.add(card);
+  return g;
+}
+
+function buildGunshipPickupMesh(): THREE.Group {
+  const g = new THREE.Group();
+
+  // Base disc — targeting chip / calling card
+  const discMat = new THREE.MeshStandardMaterial({
+    color: 0x1a1a1a,
+    roughness: 0.5,
+    metalness: 0.7,
+    emissive: 0xff6600,
+    emissiveIntensity: 0.4,
+  });
+  const disc = new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.18, 0.03, 24), discMat);
+  g.add(disc);
+
+  // Crosshair bars on top face (two thin crossing bars)
+  const barMat = new THREE.MeshStandardMaterial({
+    color: 0xff8800,
+    roughness: 0.3,
+    metalness: 0.5,
+    emissive: 0xff8800,
+    emissiveIntensity: 0.8,
+  });
+  const hBar = new THREE.Mesh(new THREE.BoxGeometry(0.32, 0.008, 0.025), barMat);
+  hBar.position.y = 0.02;
+  g.add(hBar);
+  const vBar = new THREE.Mesh(new THREE.BoxGeometry(0.025, 0.008, 0.32), barMat);
+  vBar.position.y = 0.02;
+  g.add(vBar);
+
+  // Corner bracket marks (four small L-shaped indicators)
+  const bMat = new THREE.MeshStandardMaterial({
+    color: 0xffaa44,
+    emissive: 0xffaa44,
+    emissiveIntensity: 0.6,
+    roughness: 0.4,
+    metalness: 0.4,
+  });
+  for (const [sx, sz] of [[-1, -1], [1, -1], [-1, 1], [1, 1]] as [number, number][]) {
+    const bh = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.007, 0.014), bMat);
+    bh.position.set(sx * 0.12, 0.022, sz * 0.12);
+    g.add(bh);
+    const bv = new THREE.Mesh(new THREE.BoxGeometry(0.014, 0.007, 0.06), bMat);
+    bv.position.set(sx * 0.12, 0.022, sz * 0.12);
+    g.add(bv);
+  }
+
+  // Add orange-yellow glow light
+  const light = new THREE.PointLight(0xff8800, 4, 4);
+  light.position.set(0, 0.1, 0);
+  g.add(light);
+
   return g;
 }

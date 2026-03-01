@@ -37,6 +37,7 @@ const QUICK_PLAY_LEVELS: QuickPlayLevel[] = [
 const MISSION_LEVELS: MissionLevel[] = [
   { id: 'facility', name: 'Facility', description: 'Multi-room infiltration' },
   { id: 'mountain', name: 'Mountain Outpost', description: 'Outdoor snowy base' },
+  { id: 'custom-arena', name: 'Custom Arena', description: 'Outdoor combat arena' },
 ];
 
 const TAB_BUTTON_STYLE = `

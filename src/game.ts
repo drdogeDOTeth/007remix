@@ -30,6 +30,8 @@ import { DamageIndicator } from './ui/damage-indicator';
 import { RespawnFlash } from './ui/respawn-flash';
 import { ScopeOverlay } from './ui/scope-overlay';
 import { TacticalOverlay } from './ui/tactical-overlay';
+import { GunshipOverlay } from './ui/gunship-overlay';
+import { GunshipScorestreak } from './gameplay/gunship-scorestreak';
 import { DeathOverlay } from './ui/death-overlay';
 import { LowHealthOverlay } from './ui/low-health-overlay';
 import { HitMarker } from './ui/hit-marker';
@@ -128,6 +130,9 @@ export class Game {
   private respawnFlash: RespawnFlash | null = null;
   private scopeOverlay: ScopeOverlay;
   private tacticalOverlay: TacticalOverlay;
+  private gunshipOverlay: GunshipOverlay;
+  private gunshipScorestreak: GunshipScorestreak;
+  private gunshipActive = false;
   private deathOverlay: DeathOverlay;
   private lowHealthOverlay: LowHealthOverlay;
   private hitMarker: HitMarker;
@@ -362,6 +367,34 @@ export class Game {
     this.damageIndicator = new DamageIndicator();
     this.scopeOverlay = new ScopeOverlay();
     this.tacticalOverlay = new TacticalOverlay();
+
+    // Gunship scorestreak
+    this.gunshipOverlay = new GunshipOverlay();
+    this.gunshipOverlay.setWebGLCanvas(this.renderer.instance.domElement);
+    const groundY = this.customQuickplay ? 0 : -2;
+    this.gunshipScorestreak = new GunshipScorestreak(
+      this.scene,
+      this.enemyManager,
+      this.grenadeSystem,
+      this.gunshipOverlay,
+      this.fpsCamera,
+      groundY,
+    );
+    this.gunshipScorestreak.onEnd = () => {
+      this.gunshipActive = false;
+      this.hud.show();
+    };
+    this.gunshipScorestreak.onExplosion = (pos, radius, damage) => {
+      this.destructibleSystem.damageInRadius(pos, radius, damage);
+    };
+    this.gunshipScorestreak.onActivate = () => {
+      // Reduce bloom significantly — it washes out the FLIR thermal look
+      this.renderer.setBloomStrengthOverride(0.05);
+    };
+    this.gunshipScorestreak.onDeactivate = () => {
+      // Restore bloom from GameSettings
+      this.renderer.setBloomStrengthOverride(null);
+    };
 
     // Multiplayer UI (death overlay, hit markers, blood overlay, kill feed, scoreboard)
     this.deathOverlay = new DeathOverlay();
@@ -1240,6 +1273,18 @@ export class Game {
       return;
     }
 
+    // Gunship scorestreak: override camera + skip normal FPS logic
+    if (this.gunshipActive && this.gunshipScorestreak.isActive()) {
+      this.gunshipScorestreak.update(dt, this.input);
+      this.enemyManager.update(dt);
+      this.grenadeSystem.update(dt, this.gunshipScorestreak.getCamera());
+      this.projectileSystem.update(dt);
+      this.destructibleSystem.update(dt);
+      this.renderer.render(this.scene, this.gunshipScorestreak.getCamera());
+      this.input.resetMouse();
+      return;
+    }
+
     // Track mission time
     if (this.levelMode) this.missionElapsed += dt;
 
@@ -1771,6 +1816,19 @@ export class Game {
       case 'weapon-grenade-launcher':
         this.weaponManager.addWeapon('grenade-launcher');
         this.hud.showPickupNotification('M79 Grenade Launcher');
+        break;
+      case 'gunship':
+        if (!this.gunshipActive) {
+          this.gunshipActive = true;
+          this.hud.hide();
+          const pp = this.player.getPosition();
+          this.gunshipScorestreak.activate(new THREE.Vector3(pp.x, pp.y, pp.z));
+          this.hud.showPickupNotification('AC-130 GUNSHIP INBOUND');
+          // Ensure pointer lock stays active for reticle mouse movement
+          if (!MobileControls.isSupported()) {
+            this.input.requestPointerLock();
+          }
+        }
         break;
     }
   }
@@ -2434,6 +2492,11 @@ export class Game {
 
     this.customGroundLevel = groundLevel;
     this.customSpawnCenter = { x: layoutCenterX, z: layoutCenterZ };
+    // Update gunship with the actual terrain ground level (known only after scene load)
+    this.gunshipScorestreak.setGroundY(groundLevel);
+    if (this.getGroundHeight) {
+      this.gunshipScorestreak.getTerrainY = (x, z) => this.getGroundHeight!(x, z);
+    }
 
     if (this.editorMode && this.customQuickplayPlacement) {
       this.editorPickups = (this.customQuickplayPlacement.pickups ?? []).map((p) => ({

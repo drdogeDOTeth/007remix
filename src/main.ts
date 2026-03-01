@@ -192,6 +192,22 @@ async function init(): Promise<void> {
       }
     },
     onMissionLevel: async (levelId) => {
+      // Custom Arena as a mission level (uses outdoor GLB arena)
+      if (levelId === 'custom-arena') {
+        await customModelReady;
+        try {
+          const game = new Game(canvas, physics, { customQuickplay: true });
+          await game.prepareCustomScene();
+          document.getElementById('start-screen')!.style.display = 'none';
+          hideCCTVBackground();
+          game.start();
+        } catch (err) {
+          console.error('Custom Arena load failed:', err);
+          alert('Could not load Custom Arena. Make sure you run with "npm run dev".');
+        }
+        return;
+      }
+
       const levelUrls: Record<string, string> = {
         facility: '/levels/facility.json',
         mountain: '/levels/mountain-outpost.json',

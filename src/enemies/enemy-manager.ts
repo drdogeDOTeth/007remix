@@ -322,6 +322,24 @@ export class EnemyManager {
     }
   }
 
+  /** Damage all living enemies within XZ-only radius (ignores height — for top-down attacks). */
+  damageEnemiesInRadiusXZ(center: THREE.Vector3, radius: number, damage: number): void {
+    for (const enemy of this.enemies) {
+      if (enemy.dead) continue;
+      const dx = enemy.group.position.x - center.x;
+      const dz = enemy.group.position.z - center.z;
+      if (Math.sqrt(dx * dx + dz * dz) <= radius) {
+        enemy.takeDamage(damage);
+        if (enemy.dead) {
+          this.removeEnemyPhysics(enemy);
+          this.events.emit('enemy:killed', {
+            position: enemy.group.position.clone(),
+          });
+        }
+      }
+    }
+  }
+
   /** Compute a repulsion force pushing enemy away from nearby allies to prevent overlap. */
   private readonly _repulsion = new THREE.Vector3();
   private readonly _diff = new THREE.Vector3();

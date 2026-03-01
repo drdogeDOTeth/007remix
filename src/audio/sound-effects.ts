@@ -1137,3 +1137,103 @@ export function playPositionalGunshot(
   body.start(now);
   body.stop(now + 0.1);
 }
+
+/** AC-130 25mm cannon burst — sharp high-frequency crack + mechanical recoil thud. */
+export function playGunshipCannon(): void {
+  const ctx = getAudioCtx();
+  if (!ctx) return;
+  const now = ctx.currentTime;
+
+  // High-frequency crack (noise burst through highpass)
+  const crack = makeNoise(ctx, 0.06, 6);
+  const hp = ctx.createBiquadFilter();
+  hp.type = 'highpass';
+  hp.frequency.value = 3000;
+  const crackG = ctx.createGain();
+  crackG.gain.setValueAtTime(0.5, now);
+  crackG.gain.exponentialRampToValueAtTime(0.001, now + 0.05);
+  crack.connect(hp);
+  hp.connect(crackG);
+  crackG.connect(getSFXDest());
+  crack.start(now);
+  crack.stop(now + 0.06);
+
+  // Low mechanical thud (oscillator sweep: 80 → 40 Hz)
+  const osc = ctx.createOscillator();
+  osc.type = 'sine';
+  osc.frequency.setValueAtTime(80, now);
+  osc.frequency.exponentialRampToValueAtTime(40, now + 0.05);
+  const thudG = ctx.createGain();
+  thudG.gain.setValueAtTime(0.55, now);
+  thudG.gain.exponentialRampToValueAtTime(0.001, now + 0.12);
+  osc.connect(thudG);
+  thudG.connect(getSFXDest());
+  osc.start(now);
+  osc.stop(now + 0.12);
+}
+
+/** AC-130 105mm howitzer — distant cannon thump + massive low explosion boom. */
+export function playGunshipHowitzer(): void {
+  const ctx = getAudioCtx();
+  if (!ctx) return;
+  const now = ctx.currentTime;
+
+  // Distant cannon fire "thump" from the aircraft (very low, heard first)
+  const thump = ctx.createOscillator();
+  thump.type = 'sine';
+  thump.frequency.setValueAtTime(55, now);
+  thump.frequency.exponentialRampToValueAtTime(20, now + 0.25);
+  const thumpG = ctx.createGain();
+  thumpG.gain.setValueAtTime(0.9, now);
+  thumpG.gain.exponentialRampToValueAtTime(0.001, now + 0.25);
+  thump.connect(thumpG);
+  thumpG.connect(getSFXDest());
+  thump.start(now);
+  thump.stop(now + 0.3);
+
+  // Explosion boom: heavy low noise burst (hits ~0.4s after thump — shell travel time)
+  const boom = makeNoise(ctx, 1.2, 1.5);
+  const lp = ctx.createBiquadFilter();
+  lp.type = 'lowpass';
+  lp.frequency.setValueAtTime(200, now + 0.38);
+  lp.frequency.exponentialRampToValueAtTime(60, now + 1.5);
+  const boomG = ctx.createGain();
+  boomG.gain.setValueAtTime(0.0, now + 0.37);
+  boomG.gain.linearRampToValueAtTime(1.8, now + 0.4);
+  boomG.gain.exponentialRampToValueAtTime(0.001, now + 1.5);
+  boom.connect(lp);
+  lp.connect(boomG);
+  boomG.connect(getSFXDest());
+  boom.start(now + 0.38);
+  boom.stop(now + 1.5);
+
+  // Sub-bass concussion punch
+  const sub = ctx.createOscillator();
+  sub.type = 'sine';
+  sub.frequency.setValueAtTime(80, now + 0.39);
+  sub.frequency.exponentialRampToValueAtTime(18, now + 1.2);
+  const subG = ctx.createGain();
+  subG.gain.setValueAtTime(0.0, now + 0.38);
+  subG.gain.linearRampToValueAtTime(1.4, now + 0.42);
+  subG.gain.exponentialRampToValueAtTime(0.001, now + 1.3);
+  sub.connect(subG);
+  subG.connect(getSFXDest());
+  sub.start(now + 0.38);
+  sub.stop(now + 1.3);
+
+  // Mid-range crack to add presence
+  const crack = makeNoise(ctx, 0.15, 4);
+  const bp = ctx.createBiquadFilter();
+  bp.type = 'bandpass';
+  bp.frequency.value = 800;
+  bp.Q.value = 0.5;
+  const crackG = ctx.createGain();
+  crackG.gain.setValueAtTime(0.0, now + 0.38);
+  crackG.gain.linearRampToValueAtTime(0.6, now + 0.4);
+  crackG.gain.exponentialRampToValueAtTime(0.001, now + 0.55);
+  crack.connect(bp);
+  bp.connect(crackG);
+  crackG.connect(getSFXDest());
+  crack.start(now + 0.38);
+  crack.stop(now + 0.55);
+}

@@ -180,7 +180,24 @@ export class Renderer {
     if (this.doomMode || !this.composer) {
       this.instance.render(scene, camera);
     } else {
+      // Update the RenderPass camera so the correct viewpoint is used
+      if (this.renderPass && this.renderPass.camera !== camera) {
+        this.renderPass.camera = camera;
+      }
       this.composer.render();
+    }
+  }
+
+  /** Temporarily override bloom strength (0 = off). Pass null to restore from GameSettings. */
+  setBloomStrengthOverride(strength: number | null): void {
+    if (!this.bloomPass) return;
+    if (strength === null) {
+      const s = GameSettings.get();
+      this.bloomPass.enabled = s.bloomEnabled;
+      this.bloomPass.strength = s.bloomStrength / 100;
+    } else {
+      this.bloomPass.enabled = strength > 0;
+      this.bloomPass.strength = strength;
     }
   }
 

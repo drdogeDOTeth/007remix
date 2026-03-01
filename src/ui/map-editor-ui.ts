@@ -36,6 +36,7 @@ const PICKUP_TYPES: EditorPickupDef[] = [
   { type: 'ammo-rpg', label: 'Ammo·RPG', defaultAmount: 1 },
   { type: 'weapon-grenade-launcher', label: 'Grenade·GL', defaultAmount: 0 },
   { type: 'ammo-grenade-launcher', label: 'Ammo·GL', defaultAmount: 6 },
+  { type: 'gunship', label: 'Gunship', defaultAmount: 1 },
 ];
 
 const PROP_TYPES: EditorPropDef[] = [

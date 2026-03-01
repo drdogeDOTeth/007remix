@@ -34,7 +34,8 @@
     {"type":"ammo-rifle","x":14,"y":-2,"z":32,"amount":30},
     {"type":"health","x":8,"y":-2,"z":28,"amount":25},
     {"type":"armor","x":-3,"y":-2,"z":2,"amount":50},
-    {"type":"ammo-pistol","x":3,"y":-2,"z":-2,"amount":24}
+    {"type":"ammo-pistol","x":3,"y":-2,"z":-2,"amount":24},
+    {"type":"gunship","x":16,"y":-2,"z":32,"amount":1}
   ],
   "objectives": [
     {"id":"obj1","title":"Secure red key card from storage"},
