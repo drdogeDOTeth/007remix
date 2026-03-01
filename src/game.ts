@@ -40,7 +40,7 @@ import { KillFeed } from './ui/kill-feed';
 import { Scoreboard, type ScoreboardPlayer } from './ui/scoreboard';
 import { NameTagManager } from './ui/name-tags';
 import { GameOverOverlay } from './ui/game-over-overlay';
-import { playDestruction, playFleshImpact, playRespawnSound, playBarrelExplode, prewarmAudio } from './audio/sound-effects';
+import { playDestruction, playFleshImpact, playRespawnSound, playBarrelExplode, prewarmAudio, startGunshipAmbient, stopGunshipAmbient } from './audio/sound-effects';
 import { startMusic, stopMusic } from './audio/music';
 import { BriefingScreen } from './ui/briefing-screen';
 import { ObjectivesDisplay } from './ui/objectives-display';
@@ -390,10 +390,21 @@ export class Game {
     this.gunshipScorestreak.onActivate = () => {
       // Reduce bloom significantly — it washes out the FLIR thermal look
       this.renderer.setBloomStrengthOverride(0.05);
+      // Force LinearToneMapping + fixed exposure for consistent FLIR luminance
+      this.renderer.setFlirExposureOverride(true);
+      startGunshipAmbient();
     };
     this.gunshipScorestreak.onDeactivate = () => {
       // Restore bloom from GameSettings
       this.renderer.setBloomStrengthOverride(null);
+      this.renderer.setFlirExposureOverride(false);
+      stopGunshipAmbient();
+    };
+    this.gunshipScorestreak.onFlirModeChange = (mode) => {
+      // Color mode uses normal scene rendering — no exposure override needed
+      this.renderer.setFlirExposureOverride(mode !== 'color');
+      // Also restore bloom in color mode (FLIR modes suppress it)
+      this.renderer.setBloomStrengthOverride(mode !== 'color' ? 0.05 : null);
     };
 
     // Multiplayer UI (death overlay, hit markers, blood overlay, kill feed, scoreboard)

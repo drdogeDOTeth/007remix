@@ -44,6 +44,77 @@ export function prewarmAudio(): void {
   _getCannonNoiseBuf(ctx);
 }
 
+// ─── Gunship ambient loop ───
+let _gunshipAmbientNodes: { static: AudioBufferSourceNode; staticGain: GainNode; beepInterval: ReturnType<typeof setInterval> | null } | null = null;
+
+/** Start looping AC-130 cabin ambient: radio static hiss + intermittent comms beeps. */
+export function startGunshipAmbient(): void {
+  stopGunshipAmbient();
+  const ctx = getAudioCtx();
+  const dest = getSFXDest();
+
+  // Continuous low-level static hiss — white noise through narrow bandpass (radio freq)
+  const bufSize = ctx.sampleRate * 2; // 2s looping buffer
+  const staticBuf = ctx.createBuffer(1, bufSize, ctx.sampleRate);
+  const d = staticBuf.getChannelData(0);
+  for (let i = 0; i < bufSize; i++) d[i] = Math.random() * 2 - 1;
+
+  const staticSrc = ctx.createBufferSource();
+  staticSrc.buffer = staticBuf;
+  staticSrc.loop = true;
+
+  const bp1 = ctx.createBiquadFilter();
+  bp1.type = 'bandpass';
+  bp1.frequency.value = 2400;
+  bp1.Q.value = 0.6;
+
+  const bp2 = ctx.createBiquadFilter();
+  bp2.type = 'bandpass';
+  bp2.frequency.value = 1200;
+  bp2.Q.value = 1.2;
+
+  const staticGain = ctx.createGain();
+  staticGain.gain.value = 0.04; // subtle — sits under gameplay audio
+
+  staticSrc.connect(bp1); bp1.connect(bp2); bp2.connect(staticGain); staticGain.connect(dest);
+  staticSrc.start();
+
+  // Intermittent radio beep — short sine burst every 4-8 seconds
+  const scheduleBeep = () => {
+    const beepCtx = getAudioCtx();
+    const beepNow = beepCtx.currentTime;
+    const osc = beepCtx.createOscillator();
+    osc.type = 'sine';
+    osc.frequency.value = 1050 + Math.random() * 200;
+    const g = beepCtx.createGain();
+    g.gain.setValueAtTime(0.0, beepNow);
+    g.gain.linearRampToValueAtTime(0.12, beepNow + 0.01);
+    g.gain.setValueAtTime(0.12, beepNow + 0.06 + Math.random() * 0.08);
+    g.gain.linearRampToValueAtTime(0.0, beepNow + 0.08 + Math.random() * 0.08);
+    osc.connect(g); g.connect(getSFXDest());
+    osc.start(beepNow); osc.stop(beepNow + 0.2);
+  };
+
+  const beepInterval = setInterval(scheduleBeep, 4000 + Math.random() * 4000);
+  scheduleBeep(); // play one immediately on start
+
+  _gunshipAmbientNodes = { static: staticSrc, staticGain, beepInterval };
+}
+
+/** Stop the gunship ambient loop and fade out static. */
+export function stopGunshipAmbient(): void {
+  if (!_gunshipAmbientNodes) return;
+  const { static: src, staticGain, beepInterval } = _gunshipAmbientNodes;
+  _gunshipAmbientNodes = null;
+  if (beepInterval !== null) clearInterval(beepInterval);
+  // Fade out static over 0.3s then stop
+  const ctx = getAudioCtx();
+  const now = ctx.currentTime;
+  staticGain.gain.setValueAtTime(staticGain.gain.value, now);
+  staticGain.gain.linearRampToValueAtTime(0, now + 0.3);
+  setTimeout(() => { try { src.stop(); } catch { /* already stopped */ } }, 350);
+}
+
 /** Cached short noise buffer reused for every cannon crack — avoids per-shot allocation. */
 let _cannonNoiseBuf: AudioBuffer | null = null;
 function _getCannonNoiseBuf(ctx: AudioContext): AudioBuffer {
@@ -1164,103 +1235,109 @@ export function playPositionalGunshot(
   body.stop(now + 0.1);
 }
 
-/** AC-130 25mm cannon burst — sharp high-frequency crack + mechanical recoil thud. */
+/** AC-130 30mm GAU-23 — punchy 808-style kick thump, chain-drive mechanical rattle, supersonic crack, reverb tail. */
 export function playGunshipCannon(): void {
   const ctx = getAudioCtx();
   if (!ctx) return;
   const now = ctx.currentTime;
+  const dest = getSFXDest();
 
-  // High-frequency crack — use cached buffer to avoid per-shot allocation stall
-  const crack = ctx.createBufferSource();
-  crack.buffer = _getCannonNoiseBuf(ctx);
-  const hp = ctx.createBiquadFilter();
-  hp.type = 'highpass';
-  hp.frequency.value = 3000;
-  const crackG = ctx.createGain();
-  crackG.gain.setValueAtTime(0.5, now);
-  crackG.gain.exponentialRampToValueAtTime(0.001, now + 0.05);
-  crack.connect(hp);
-  hp.connect(crackG);
-  crackG.connect(getSFXDest());
-  crack.start(now);
-  crack.stop(now + 0.06);
+  // ── 808-style kick thump (20–80 Hz sine sweep) — the dominant muzzle punch ──
+  const kick = ctx.createOscillator();
+  kick.type = 'sine';
+  kick.frequency.setValueAtTime(80, now);
+  kick.frequency.exponentialRampToValueAtTime(22, now + 0.25);
+  const kickG = ctx.createGain();
+  kickG.gain.setValueAtTime(0, now);
+  kickG.gain.linearRampToValueAtTime(3.2, now + 0.004); // instant attack
+  kickG.gain.exponentialRampToValueAtTime(0.001, now + 0.3);
+  kick.connect(kickG); kickG.connect(dest);
+  kick.start(now); kick.stop(now + 0.3);
 
-  // Low mechanical thud (oscillator sweep: 80 → 40 Hz)
-  const osc = ctx.createOscillator();
-  osc.type = 'sine';
-  osc.frequency.setValueAtTime(80, now);
-  osc.frequency.exponentialRampToValueAtTime(40, now + 0.05);
-  const thudG = ctx.createGain();
-  thudG.gain.setValueAtTime(0.55, now);
-  thudG.gain.exponentialRampToValueAtTime(0.001, now + 0.12);
-  osc.connect(thudG);
-  thudG.connect(getSFXDest());
-  osc.start(now);
-  osc.stop(now + 0.12);
+  // ── Midrange body thud — noise lowpassed at 250 Hz, gives grit to the kick ──
+  const body = makeNoise(ctx, 0.28, 2.8);
+  const bodyLp = ctx.createBiquadFilter();
+  bodyLp.type = 'lowpass';
+  bodyLp.frequency.value = 250;
+  const bodyG = ctx.createGain();
+  bodyG.gain.setValueAtTime(3.0, now);
+  bodyG.gain.exponentialRampToValueAtTime(0.001, now + 0.28);
+  body.connect(bodyLp); bodyLp.connect(bodyG); bodyG.connect(dest);
+  body.start(now); body.stop(now + 0.28);
+
 }
 
-/** AC-130 105mm howitzer — distant cannon thump + massive low explosion boom. */
+/** AC-130 105mm howitzer — deep muzzle thump from aircraft, then shell-travel delay, then massive ground impact. */
 export function playGunshipHowitzer(): void {
   const ctx = getAudioCtx();
   if (!ctx) return;
   const now = ctx.currentTime;
+  const dest = getSFXDest();
 
-  // Distant cannon fire "thump" from the aircraft (very low, heard first)
-  const thump = ctx.createOscillator();
-  thump.type = 'sine';
-  thump.frequency.setValueAtTime(55, now);
-  thump.frequency.exponentialRampToValueAtTime(20, now + 0.25);
-  const thumpG = ctx.createGain();
-  thumpG.gain.setValueAtTime(0.9, now);
-  thumpG.gain.exponentialRampToValueAtTime(0.001, now + 0.25);
-  thump.connect(thumpG);
-  thumpG.connect(getSFXDest());
-  thump.start(now);
-  thump.stop(now + 0.3);
+  // ── Muzzle blast (heard immediately from aircraft) ──
+  // Very deep oscillator boom (60 → 18 Hz) — the 105mm leaving the barrel
+  const muzzle = ctx.createOscillator();
+  muzzle.type = 'sine';
+  muzzle.frequency.setValueAtTime(60, now);
+  muzzle.frequency.exponentialRampToValueAtTime(18, now + 0.35);
+  const muzzleG = ctx.createGain();
+  muzzleG.gain.setValueAtTime(1.6, now);
+  muzzleG.gain.exponentialRampToValueAtTime(0.001, now + 0.4);
+  muzzle.connect(muzzleG); muzzleG.connect(dest);
+  muzzle.start(now); muzzle.stop(now + 0.4);
 
-  // Explosion boom: heavy low noise burst (hits ~0.4s after thump — shell travel time)
-  const boom = makeNoise(ctx, 1.2, 1.5);
-  const lp = ctx.createBiquadFilter();
-  lp.type = 'lowpass';
-  lp.frequency.setValueAtTime(200, now + 0.38);
-  lp.frequency.exponentialRampToValueAtTime(60, now + 1.5);
+  // Muzzle noise burst — low rumble
+  const muzzleNoise = makeNoise(ctx, 0.3, 3);
+  const muzzleLp = ctx.createBiquadFilter();
+  muzzleLp.type = 'lowpass';
+  muzzleLp.frequency.value = 300;
+  const muzzleNG = ctx.createGain();
+  muzzleNG.gain.setValueAtTime(1.2, now);
+  muzzleNG.gain.exponentialRampToValueAtTime(0.001, now + 0.3);
+  muzzleNoise.connect(muzzleLp); muzzleLp.connect(muzzleNG); muzzleNG.connect(dest);
+  muzzleNoise.start(now); muzzleNoise.stop(now + 0.3);
+
+  // ── Shell travel (1.2s delay — AC-130 orbits at altitude, shell has real travel time) ──
+  const HIT = 1.2;
+
+  // Ground impact boom — massive low noise swell
+  const boom = makeNoise(ctx, 2.0, 1.2);
+  const boomLp = ctx.createBiquadFilter();
+  boomLp.type = 'lowpass';
+  boomLp.frequency.setValueAtTime(250, now + HIT);
+  boomLp.frequency.exponentialRampToValueAtTime(55, now + HIT + 2.0);
   const boomG = ctx.createGain();
-  boomG.gain.setValueAtTime(0.0, now + 0.37);
-  boomG.gain.linearRampToValueAtTime(1.8, now + 0.4);
-  boomG.gain.exponentialRampToValueAtTime(0.001, now + 1.5);
-  boom.connect(lp);
-  lp.connect(boomG);
-  boomG.connect(getSFXDest());
-  boom.start(now + 0.38);
-  boom.stop(now + 1.5);
+  boomG.gain.setValueAtTime(0.0, now + HIT - 0.01);
+  boomG.gain.linearRampToValueAtTime(3.5, now + HIT + 0.06);
+  boomG.gain.exponentialRampToValueAtTime(0.001, now + HIT + 2.0);
+  boom.connect(boomLp); boomLp.connect(boomG); boomG.connect(dest);
+  boom.start(now + HIT); boom.stop(now + HIT + 2.0);
 
-  // Sub-bass concussion punch
+  // Sub-bass concussion (40 → 12 Hz ground shake)
   const sub = ctx.createOscillator();
   sub.type = 'sine';
-  sub.frequency.setValueAtTime(80, now + 0.39);
-  sub.frequency.exponentialRampToValueAtTime(18, now + 1.2);
+  sub.frequency.setValueAtTime(40, now + HIT);
+  sub.frequency.exponentialRampToValueAtTime(12, now + HIT + 1.5);
   const subG = ctx.createGain();
-  subG.gain.setValueAtTime(0.0, now + 0.38);
-  subG.gain.linearRampToValueAtTime(1.4, now + 0.42);
-  subG.gain.exponentialRampToValueAtTime(0.001, now + 1.3);
-  sub.connect(subG);
-  subG.connect(getSFXDest());
-  sub.start(now + 0.38);
-  sub.stop(now + 1.3);
+  subG.gain.setValueAtTime(0.0, now + HIT - 0.01);
+  subG.gain.linearRampToValueAtTime(2.2, now + HIT + 0.05);
+  subG.gain.exponentialRampToValueAtTime(0.001, now + HIT + 1.6);
+  sub.connect(subG); subG.connect(dest);
+  sub.start(now + HIT); sub.stop(now + HIT + 1.6);
 
-  // Mid-range crack to add presence
-  const crack = makeNoise(ctx, 0.15, 4);
-  const bp = ctx.createBiquadFilter();
-  bp.type = 'bandpass';
-  bp.frequency.value = 800;
-  bp.Q.value = 0.5;
-  const crackG = ctx.createGain();
-  crackG.gain.setValueAtTime(0.0, now + 0.38);
-  crackG.gain.linearRampToValueAtTime(0.6, now + 0.4);
-  crackG.gain.exponentialRampToValueAtTime(0.001, now + 0.55);
-  crack.connect(bp);
-  bp.connect(crackG);
-  crackG.connect(getSFXDest());
-  crack.start(now + 0.38);
-  crack.stop(now + 0.55);
+  // High crack on impact — sharp transient presence
+  const impactNoise = makeNoise(ctx, 0.12, 6);
+  const impactHp = ctx.createBiquadFilter();
+  impactHp.type = 'bandpass';
+  impactHp.frequency.value = 1200;
+  impactHp.Q.value = 0.4;
+  const impactG = ctx.createGain();
+  impactG.gain.setValueAtTime(0.0, now + HIT - 0.01);
+  impactG.gain.linearRampToValueAtTime(1.4, now + HIT + 0.02);
+  impactG.gain.exponentialRampToValueAtTime(0.001, now + HIT + 0.25);
+  impactNoise.connect(impactHp); impactHp.connect(impactG); impactG.connect(dest);
+  impactNoise.start(now + HIT); impactNoise.stop(now + HIT + 0.25);
 }
+
+/** Returns the howitzer shell travel delay in seconds — used to sync VFX with audio impact. */
+export const HOWITZER_SHELL_DELAY = 1.2;

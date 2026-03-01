@@ -201,6 +201,24 @@ export class Renderer {
     }
   }
 
+  /**
+   * Force a fixed tone mapping + exposure for the gunship FLIR view.
+   * The CSS filter on the canvas handles the thermal look, but needs consistent
+   * scene luminance regardless of day/night cycle. Pass null to restore from GameSettings.
+   */
+  setFlirExposureOverride(active: boolean): void {
+    if (active) {
+      // LinearToneMapping + fixed exposure gives predictable midtone luminance
+      // that the CSS brightness/contrast filter can work with consistently
+      this.instance.toneMapping = THREE.LinearToneMapping;
+      this.instance.toneMappingExposure = 1.8;
+    } else {
+      const s = GameSettings.get();
+      this.instance.toneMapping = TONE_MAP[s.toneMapping] ?? THREE.ACESFilmicToneMapping;
+      this.instance.toneMappingExposure = s.exposure / 100;
+    }
+  }
+
   enableDoomMode(): void {
     this.doomMode = true;
     this.instance.shadowMap.enabled = false;

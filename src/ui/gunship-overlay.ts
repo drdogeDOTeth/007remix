@@ -10,12 +10,16 @@
  * Black-hot: inverted — hot areas appear black, cooler areas white
  */
 
-export type FlirMode = 'white-hot' | 'black-hot';
+export type FlirMode = 'white-hot' | 'black-hot' | 'color';
 export type GunshipWeaponMode = 'cannon' | 'howitzer';
 
 // CSS filter strings applied to the WebGL canvas for thermal effect
-const FILTER_WHITE_HOT = 'grayscale(1) contrast(3.5) brightness(0.65)';
-const FILTER_BLACK_HOT = 'grayscale(1) contrast(3.5) brightness(0.65) invert(1)';
+// brightness(1.6) compensates for dark night scenes without washing out daytime
+// contrast(2.2) separates hot/cool without crushing detail in bright daylight
+const FILTER_WHITE_HOT = 'grayscale(1) brightness(1.6) contrast(2.2)';
+const FILTER_BLACK_HOT = 'grayscale(1) brightness(1.6) contrast(2.2) invert(1)';
+// Color mode: no grayscale — just a mild contrast boost and slight green tint via hue shift
+const FILTER_COLOR = 'brightness(1.1) contrast(1.15) saturate(0.85)';
 
 export class GunshipOverlay {
   private overlay: HTMLDivElement;
@@ -133,8 +137,9 @@ export class GunshipOverlay {
 
   private _applyCanvasFilter(): void {
     if (!this._webglCanvas) return;
-    this._webglCanvas.style.filter =
-      this._flirMode === 'white-hot' ? FILTER_WHITE_HOT : FILTER_BLACK_HOT;
+    if (this._flirMode === 'white-hot') this._webglCanvas.style.filter = FILTER_WHITE_HOT;
+    else if (this._flirMode === 'black-hot') this._webglCanvas.style.filter = FILTER_BLACK_HOT;
+    else this._webglCanvas.style.filter = FILTER_COLOR;
   }
 
   private _removeCanvasFilter(): void {
@@ -211,11 +216,10 @@ export class GunshipOverlay {
 
   private _drawCornerPanels(W: number, H: number): void {
     const c = this.ctx;
-    // In white-hot mode the canvas is dark, so use bright green text
-    // In black-hot mode the canvas is bright/light, so use dark text
-    const isWhiteHot = this._flirMode === 'white-hot';
-    const textColor = isWhiteHot ? '#00ff88' : '#003318';
-    const panelBg   = isWhiteHot ? 'rgba(0,0,0,0.55)'   : 'rgba(180,220,180,0.55)';
+    // black-hot: bright/light canvas → dark text. white-hot/color: dark canvas → bright green text
+    const isBlackHot = this._flirMode === 'black-hot';
+    const textColor = isBlackHot ? '#003318' : '#00ff88';
+    const panelBg   = isBlackHot ? 'rgba(180,220,180,0.55)' : 'rgba(0,0,0,0.55)';
 
     c.font = '11px "Courier New", monospace';
     c.textBaseline = 'top';
@@ -244,7 +248,10 @@ export class GunshipOverlay {
     blLines.forEach((ln, i) => c.fillText(ln, pad + 6, blY + 5 + i * lineH));
 
     // Bottom-right: FLIR mode
-    const brLines = [isWhiteHot ? 'FLIR: WHITE-HOT' : 'FLIR: BLACK-HOT', 'PRESS T TO TOGGLE'];
+    const flirLabel = this._flirMode === 'white-hot' ? 'FLIR: WHITE-HOT'
+                    : this._flirMode === 'black-hot'  ? 'FLIR: BLACK-HOT'
+                    : 'MODE: FULL COLOR';
+    const brLines = [flirLabel, 'PRESS T TO TOGGLE'];
     const brW = 170;
     const brY = H - pad - lineH * brLines.length - 10;
     this._panel(c, W - pad - brW, brY, brW, lineH * brLines.length + 10, panelBg);
@@ -252,7 +259,7 @@ export class GunshipOverlay {
     brLines.forEach((ln, i) => c.fillText(ln, W - pad - brW + 6, brY + 5 + i * lineH));
 
     // Screen-corner bracket decorations
-    const dimColor = isWhiteHot ? 'rgba(0,255,136,0.5)' : 'rgba(0,51,24,0.5)';
+    const dimColor = isBlackHot ? 'rgba(0,51,24,0.5)' : 'rgba(0,255,136,0.5)';
     c.strokeStyle = dimColor;
     c.lineWidth = 2;
     const bl = 22, bp = 8;
@@ -276,7 +283,7 @@ export class GunshipOverlay {
 
   private _drawTimer(W: number, H: number): void {
     const c = this.ctx;
-    const isWhiteHot = this._flirMode === 'white-hot';
+    const isBlackHot = this._flirMode === 'black-hot';
     const secs = Math.ceil(this._timeRemaining);
     const isLow = secs <= 10;
     const isCritical = secs <= 5;
@@ -293,15 +300,15 @@ export class GunshipOverlay {
     const pW = 160, pH = 28;
     const px = W / 2 - pW / 2, py = 14;
 
-    const bg = isWhiteHot
-      ? (isLow ? 'rgba(100,0,0,0.7)' : 'rgba(0,0,0,0.5)')
-      : (isLow ? 'rgba(255,160,160,0.65)' : 'rgba(180,220,180,0.5)');
+    const bg = isBlackHot
+      ? (isLow ? 'rgba(255,160,160,0.65)' : 'rgba(180,220,180,0.5)')
+      : (isLow ? 'rgba(100,0,0,0.7)' : 'rgba(0,0,0,0.5)');
     c.fillStyle = bg;
     c.fillRect(px, py, pW, pH);
 
     c.fillStyle = isLow
-      ? (isWhiteHot ? '#ff4444' : '#880000')
-      : (isWhiteHot ? '#00ff88' : '#003318');
+      ? (isBlackHot ? '#880000' : '#ff4444')
+      : (isBlackHot ? '#003318' : '#00ff88');
     c.fillText(`GUNSHIP: ${String(secs).padStart(2, '0')}s`, W / 2, py + pH / 2);
     c.restore();
     c.textAlign = 'left';
@@ -310,10 +317,10 @@ export class GunshipOverlay {
 
   private _drawWeaponHUD(W: number, H: number): void {
     const c = this.ctx;
-    const isWhiteHot = this._flirMode === 'white-hot';
-    const activeColor   = isWhiteHot ? '#00ff88' : '#003318';
-    const inactiveColor = isWhiteHot ? 'rgba(0,255,136,0.3)' : 'rgba(0,51,24,0.3)';
-    const bg = isWhiteHot ? 'rgba(0,0,0,0.55)' : 'rgba(180,220,180,0.55)';
+    const isBlackHot = this._flirMode === 'black-hot';
+    const activeColor   = isBlackHot ? '#003318' : '#00ff88';
+    const inactiveColor = isBlackHot ? 'rgba(0,51,24,0.3)' : 'rgba(0,255,136,0.3)';
+    const bg = isBlackHot ? 'rgba(180,220,180,0.55)' : 'rgba(0,0,0,0.55)';
 
     const pW = 310, pH = 32;
     const px = W / 2 - pW / 2, py = H - 14 - pH;
@@ -333,7 +340,7 @@ export class GunshipOverlay {
     c.textAlign = 'right';
     c.fillText('[105mm HOW]', px + pW - 12, midY);
 
-    c.fillStyle = isWhiteHot ? 'rgba(0,255,136,0.55)' : 'rgba(0,51,24,0.55)';
+    c.fillStyle = isBlackHot ? 'rgba(0,51,24,0.55)' : 'rgba(0,255,136,0.55)';
     c.font = '9px "Courier New", monospace';
     c.textAlign = 'center';
     c.fillText('[G] SWITCH', W / 2, midY);
@@ -346,7 +353,7 @@ export class GunshipOverlay {
     const c = this.ctx;
     const cx = this._reticleX * W;
     const cy = this._reticleY * H;
-    const isWhiteHot = this._flirMode === 'white-hot';
+    const isBlackHot = this._flirMode === 'black-hot';
     const flashing = this._reticleFlash > 0;
     const isHowitzer = this._weaponMode === 'howitzer';
 
@@ -357,10 +364,11 @@ export class GunshipOverlay {
     let color: string;
     if (flashing) {
       color = '#ffffff';
-    } else if (isWhiteHot) {
-      color = isHowitzer ? '#ff7733' : '#00ff88';
-    } else {
+    } else if (isBlackHot) {
       color = isHowitzer ? '#bb3300' : '#003318';
+    } else {
+      // white-hot and color mode both use bright green (dark canvas background)
+      color = isHowitzer ? '#ff7733' : '#00ff88';
     }
 
     c.save();

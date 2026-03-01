@@ -4,15 +4,15 @@ import { EnemyManager } from '../enemies/enemy-manager';
 import { GrenadeSystem } from '../weapons/grenade-system';
 import { InputManager } from '../core/input-manager';
 import { FPSCamera } from '../player/fps-camera';
-import { playGunshipCannon, playGunshipHowitzer } from '../audio/sound-effects';
+import { playGunshipCannon, playGunshipHowitzer, HOWITZER_SHELL_DELAY } from '../audio/sound-effects';
 
 const DURATION = 30;
 
-const CANNON_COOLDOWN   = 0.08;
+const CANNON_COOLDOWN   = 0.18;
 const CANNON_DAMAGE     = 35;
 const CANNON_RADIUS     = 1.5;
 const CANNON_BURST_SIZE = 4;
-const CANNON_BURST_DT   = 0.025;
+const CANNON_BURST_DT   = 0.12;
 
 const HOWITZER_COOLDOWN = 3.5;
 const HOWITZER_DAMAGE   = 250;
@@ -57,9 +57,14 @@ export class GunshipScorestreak {
   private burstCount = 0;
   private burstTimer = 0;
 
+  // Camera shake
+  private _shakeTrauma = 0;   // 0-1, decays over time
+  private readonly _shakeOffset = new THREE.Vector3();
+
   // Cannon impact VFX: pooled spheres
   private readonly _impactPool: THREE.Mesh[] = [];
   private readonly _activeImpacts: { mesh: THREE.Mesh; life: number; maxLife: number; initScale: number }[] = [];
+  private readonly _activeLights: { light: THREE.PointLight; life: number; maxLife: number; initIntensity: number }[] = [];
 
   // Tracer VFX: brief bright lines from gunship to impact
   private readonly _tracerPool: THREE.Line[] = [];
@@ -70,6 +75,8 @@ export class GunshipScorestreak {
   onExplosion:   ((pos: THREE.Vector3, radius: number, damage: number) => void) | null = null;
   onActivate:    (() => void) | null = null;   // called so game.ts can dim bloom
   onDeactivate:  (() => void) | null = null;   // called so game.ts can restore bloom
+  /** Called when T key cycles FLIR mode — game.ts uses this to toggle exposure override. */
+  onFlirModeChange: ((mode: FlirMode) => void) | null = null;
   /** Optional terrain raycast — provides actual surface Y instead of flat groundY. Set by game.ts. */
   getTerrainY:   ((x: number, z: number) => number) | null = null;
 
@@ -168,6 +175,8 @@ export class GunshipScorestreak {
     this._activeImpacts.length = 0;
     for (const tr of this._activeTracers) tr.line.visible = false;
     this._activeTracers.length = 0;
+    for (const l of this._activeLights) this.scene.remove(l.light);
+    this._activeLights.length = 0;
   }
 
   update(dt: number, input: InputManager): void {
@@ -183,6 +192,11 @@ export class GunshipScorestreak {
       return;
     }
     this.overlay.setTimeRemaining(this.timeRemaining);
+
+    // Camera shake decay
+    if (this._shakeTrauma > 0) {
+      this._shakeTrauma = Math.max(0, this._shakeTrauma - dt * 2.2);
+    }
 
     // Orbit camera
     this.orbitAngle += ORBIT_SPEED * dt;
@@ -236,7 +250,19 @@ export class GunshipScorestreak {
     const cz = this.orbitCenter.z + Math.sin(this.orbitAngle) * ORBIT_RADIUS;
     const cy = this.groundY + ORBIT_HEIGHT;
 
-    this.gunshipCamera.position.set(cx, cy, cz);
+    // Shake: square the trauma for a snappier feel, apply random XYZ offset
+    const shake = this._shakeTrauma * this._shakeTrauma;
+    this._shakeOffset.set(
+      (Math.random() * 2 - 1) * shake * 1.8,
+      (Math.random() * 2 - 1) * shake * 0.9,
+      (Math.random() * 2 - 1) * shake * 1.8,
+    );
+
+    this.gunshipCamera.position.set(
+      cx + this._shakeOffset.x,
+      cy + this._shakeOffset.y,
+      cz + this._shakeOffset.z,
+    );
     this.gunshipCamera.lookAt(this.orbitCenter);
     this.gunshipCamera.updateProjectionMatrix();
     this.gunshipCamera.updateMatrixWorld(true);
@@ -265,8 +291,10 @@ export class GunshipScorestreak {
     this.prevScrollDelta = scroll;
 
     if (input.wasKeyJustPressed('t')) {
-      this.flirMode = this.flirMode === 'white-hot' ? 'black-hot' : 'white-hot';
+      const cycle: FlirMode[] = ['white-hot', 'black-hot', 'color'];
+      this.flirMode = cycle[(cycle.indexOf(this.flirMode) + 1) % cycle.length];
       this.overlay.setFlirMode(this.flirMode);
+      this.onFlirModeChange?.(this.flirMode);
     }
   }
 
@@ -317,6 +345,7 @@ export class GunshipScorestreak {
   private readonly _tracerFrom = new THREE.Vector3();
 
   private _fireCannon(worldPos: THREE.Vector3): void {
+    this._shakeTrauma = 0.5; // reset each shot — consistent kick per round, no buildup
     const vfxPos = worldPos.clone();
 
     // Scatter only affects damage, not visuals
@@ -341,15 +370,21 @@ export class GunshipScorestreak {
   }
 
   private _fireHowitzer(worldPos: THREE.Vector3): void {
-    const vfxPos = worldPos.clone();
-    this._cannonSurfacePos.set(vfxPos.x, this._surfaceY(vfxPos.x, vfxPos.z), vfxPos.z);
-
-    this.enemyManager.damageEnemiesInRadiusXZ(vfxPos, HOWITZER_RADIUS, HOWITZER_DAMAGE);
-    this.grenadeSystem.spawnExplosion(this._cannonSurfacePos);
-    this.onExplosion?.(this._cannonSurfacePos, HOWITZER_RADIUS, HOWITZER_DAMAGE);
-    this.overlay.flashReticle();
+    // Play muzzle sound immediately — damage/VFX delayed by shell travel time
     playGunshipHowitzer();
-    this._spawnHowitzerImpact(vfxPos);
+    this.overlay.flashReticle();
+    // Muzzle shake on fire
+    this._shakeTrauma = Math.min(1, this._shakeTrauma + 0.8);
+
+    const impactPos = worldPos.clone();
+    setTimeout(() => {
+      if (!this.active) return;
+      const surfacePos = new THREE.Vector3(impactPos.x, this._surfaceY(impactPos.x, impactPos.z), impactPos.z);
+      this.enemyManager.damageEnemiesInRadiusXZ(impactPos, HOWITZER_RADIUS, HOWITZER_DAMAGE);
+      this.grenadeSystem.spawnExplosion(surfacePos);
+      this.onExplosion?.(surfacePos, HOWITZER_RADIUS, HOWITZER_DAMAGE);
+      this._spawnHowitzerImpact(impactPos);
+    }, HOWITZER_SHELL_DELAY * 1000);
   }
 
   // ─── VFX ───────────────────────────────────────────────────────────────────
@@ -372,18 +407,11 @@ export class GunshipScorestreak {
       this._activeImpacts.push({ mesh, life: 0, maxLife: 0.25, initScale: 2.5 });
     }
 
-    // Short PointLight flash
+    // Short PointLight flash — tracked in game loop, no rAF
     const light = new THREE.PointLight(0xff7722, 30, 10);
     light.position.set(pos.x, pos.y, pos.z);
     this.scene.add(light);
-    const born = performance.now();
-    const tick = () => {
-      const age = (performance.now() - born) / 1000;
-      if (age >= 0.15) { this.scene.remove(light); return; }
-      light.intensity = 30 * (1 - age / 0.15);
-      requestAnimationFrame(tick);
-    };
-    requestAnimationFrame(tick);
+    this._activeLights.push({ light, life: 0, maxLife: 0.15, initIntensity: 30 });
 
     // Dust/debris: a few spheres flung out
     for (let i = 0; i < 3; i++) {
@@ -415,18 +443,11 @@ export class GunshipScorestreak {
       this._activeImpacts.push({ mesh, life: 0, maxLife: 0.8, initScale: 8 });
     }
 
-    // Bright area light
+    // Bright area light — tracked in game loop, no rAF
     const light = new THREE.PointLight(0xff6600, 80, 30);
     light.position.set(pos.x, pos.y + 3, pos.z);
     this.scene.add(light);
-    const born = performance.now();
-    const tick = () => {
-      const age = (performance.now() - born) / 1000;
-      if (age >= 1.0) { this.scene.remove(light); return; }
-      light.intensity = 80 * (1 - age / 1.0);
-      requestAnimationFrame(tick);
-    };
-    requestAnimationFrame(tick);
+    this._activeLights.push({ light, life: 0, maxLife: 1.0, initIntensity: 80 });
 
     // Ring of debris spheres
     for (let i = 0; i < 6; i++) {
@@ -465,6 +486,17 @@ export class GunshipScorestreak {
         ? t / peak                          // 0 → 1 during growth
         : 1 - (t - peak) / (1 - peak);     // 1 → 0 during fade
       imp.mesh.scale.setScalar(imp.initScale * Math.max(0.01, scaleFactor));
+    }
+
+    for (let i = this._activeLights.length - 1; i >= 0; i--) {
+      const l = this._activeLights[i];
+      l.life += dt;
+      if (l.life >= l.maxLife) {
+        this.scene.remove(l.light);
+        this._activeLights.splice(i, 1);
+      } else {
+        l.light.intensity = l.initIntensity * (1 - l.life / l.maxLife);
+      }
     }
   }
 
