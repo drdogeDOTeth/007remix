@@ -186,9 +186,9 @@ export class EnemyBase {
     if ('applyRagdollBlast' in customModel && typeof customModel.applyRagdollBlast === 'function') {
       // Capsule bodies are very small/light — need large impulse to visibly throw the ragdoll
       customModel.applyRagdollBlast({
-        x: this.deathKnockback.x * 2.5,
-        y: this.deathKnockback.y * 2.5,
-        z: this.deathKnockback.z * 2.5,
+        x: this.deathKnockback.x * 0.69,
+        y: this.deathKnockback.y * 0.69,
+        z: this.deathKnockback.z * 0.69,
       });
       this.deathKnockback.set(0, 0, 0);
     }
