@@ -1280,6 +1280,12 @@ export class Game {
       this.grenadeSystem.update(dt, this.gunshipScorestreak.getCamera());
       this.projectileSystem.update(dt);
       this.destructibleSystem.update(dt);
+      // Step physics so ragdoll bodies (knockback impulses) actually simulate
+      this.physicsAccumulator += dt;
+      while (this.physicsAccumulator >= PHYSICS_STEP) {
+        this.physics.step();
+        this.physicsAccumulator -= PHYSICS_STEP;
+      }
       this.renderer.render(this.scene, this.gunshipScorestreak.getCamera());
       this.input.resetMouse();
       return;

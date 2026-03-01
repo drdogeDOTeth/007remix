@@ -183,17 +183,14 @@ export class EnemyBase {
   /** Apply deathKnockback — call after setting it. Routes to ragdoll physics or group.position slide. */
   applyDeathKnockback(): void {
     const customModel = this.model as EnemyCustomModel;
-    const hasRagdoll = 'applyRagdollBlast' in customModel && typeof customModel.applyRagdollBlast === 'function';
-    const hasActiveRagdoll = hasRagdoll && (customModel as any).ragdoll !== null;
-    console.log(`[KB] hasRagdoll=${hasRagdoll} active=${hasActiveRagdoll} kb=(${this.deathKnockback.x.toFixed(1)},${this.deathKnockback.y.toFixed(1)},${this.deathKnockback.z.toFixed(1)})`);
-    if (hasRagdoll) {
-      // Ragdoll mode: apply as physics impulse to all bodies, scale down since mass is ~45kg per body
-      (customModel as EnemyCustomModel).applyRagdollBlast({
-        x: this.deathKnockback.x * 0.15,
-        y: this.deathKnockback.y * 0.15,
-        z: this.deathKnockback.z * 0.15,
+    if ('applyRagdollBlast' in customModel && typeof customModel.applyRagdollBlast === 'function') {
+      // Capsule bodies are very small/light — need large impulse to visibly throw the ragdoll
+      customModel.applyRagdollBlast({
+        x: this.deathKnockback.x * 2.5,
+        y: this.deathKnockback.y * 2.5,
+        z: this.deathKnockback.z * 2.5,
       });
-      this.deathKnockback.set(0, 0, 0); // ragdoll handles motion, skip group.position slide
+      this.deathKnockback.set(0, 0, 0);
     }
     // Sprite/model-without-ragdoll: deathKnockback slides group.position in updateVisuals
   }
