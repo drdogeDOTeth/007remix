@@ -411,52 +411,167 @@ function buildKeyMesh(): THREE.Group {
 function buildGunshipPickupMesh(): THREE.Group {
   const g = new THREE.Group();
 
-  // Base disc — targeting chip / calling card
-  const discMat = new THREE.MeshStandardMaterial({
-    color: 0x1a1a1a,
-    roughness: 0.5,
-    metalness: 0.7,
-    emissive: 0xff6600,
-    emissiveIntensity: 0.4,
-  });
-  const disc = new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.18, 0.03, 24), discMat);
-  g.add(disc);
+  // Radio lies FLAT on its back, face pointing UP (+Y).
+  // Long axis = Z (front-to-back), wide axis = X, thin axis = Y (height of device).
+  // This way the Y-spin shows the face to the player looking down.
 
-  // Crosshair bars on top face (two thin crossing bars)
-  const barMat = new THREE.MeshStandardMaterial({
-    color: 0xff8800,
-    roughness: 0.3,
-    metalness: 0.5,
-    emissive: 0xff8800,
-    emissiveIntensity: 0.8,
-  });
-  const hBar = new THREE.Mesh(new THREE.BoxGeometry(0.32, 0.008, 0.025), barMat);
-  hBar.position.y = 0.02;
-  g.add(hBar);
-  const vBar = new THREE.Mesh(new THREE.BoxGeometry(0.025, 0.008, 0.32), barMat);
-  vBar.position.y = 0.02;
-  g.add(vBar);
+  // Procedural body texture
+  const bodyCanvas = document.createElement('canvas');
+  bodyCanvas.width = 64; bodyCanvas.height = 128;
+  const bc = bodyCanvas.getContext('2d')!;
+  bc.fillStyle = '#1c1e1a';
+  bc.fillRect(0, 0, 64, 128);
+  bc.strokeStyle = 'rgba(255,255,255,0.05)';
+  bc.lineWidth = 1;
+  for (let y = 3; y < 128; y += 3) { bc.beginPath(); bc.moveTo(0, y); bc.lineTo(64, y); bc.stroke(); }
+  const bodyTex = new THREE.CanvasTexture(bodyCanvas);
 
-  // Corner bracket marks (four small L-shaped indicators)
-  const bMat = new THREE.MeshStandardMaterial({
-    color: 0xffaa44,
-    emissive: 0xffaa44,
-    emissiveIntensity: 0.6,
-    roughness: 0.4,
-    metalness: 0.4,
+  // Procedural screen texture
+  const scrCanvas = document.createElement('canvas');
+  scrCanvas.width = 64; scrCanvas.height = 64;
+  const sc = scrCanvas.getContext('2d')!;
+  sc.fillStyle = '#001200';
+  sc.fillRect(0, 0, 64, 64);
+  sc.strokeStyle = 'rgba(0,255,60,0.2)';
+  sc.lineWidth = 0.5;
+  for (let i = 8; i < 64; i += 8) {
+    sc.beginPath(); sc.moveTo(i, 0); sc.lineTo(i, 64); sc.stroke();
+    sc.beginPath(); sc.moveTo(0, i); sc.lineTo(64, i); sc.stroke();
+  }
+  sc.strokeStyle = 'rgba(0,255,80,0.9)'; sc.lineWidth = 1;
+  sc.beginPath(); sc.moveTo(32, 16); sc.lineTo(32, 48); sc.stroke();
+  sc.beginPath(); sc.moveTo(16, 32); sc.lineTo(48, 32); sc.stroke();
+  sc.strokeRect(20, 20, 24, 24);
+  sc.fillStyle = 'rgba(0,255,60,0.85)'; sc.font = '7px monospace';
+  sc.fillText('AC-130', 3, 9); sc.fillText('ONLINE', 3, 62);
+  const scrTex = new THREE.CanvasTexture(scrCanvas);
+
+  // Grille texture
+  const grlCanvas = document.createElement('canvas');
+  grlCanvas.width = 32; grlCanvas.height = 32;
+  const gc = grlCanvas.getContext('2d')!;
+  gc.fillStyle = '#1a1a1a'; gc.fillRect(0, 0, 32, 32);
+  gc.fillStyle = '#0a0a0a';
+  for (let y = 2; y < 32; y += 5) gc.fillRect(2, y, 28, 2);
+  const grlTex = new THREE.CanvasTexture(grlCanvas);
+
+  const bodyMat = new THREE.MeshStandardMaterial({ map: bodyTex, roughness: 0.6, metalness: 0.5 });
+  const accentMat = new THREE.MeshStandardMaterial({ color: 0x2a2a2a, roughness: 0.5, metalness: 0.7 });
+  const screenMat = new THREE.MeshStandardMaterial({
+    map: scrTex, emissiveMap: scrTex,
+    emissive: new THREE.Color(0x00ff44), emissiveIntensity: 0.9,
+    roughness: 0.2, metalness: 0.4,
   });
-  for (const [sx, sz] of [[-1, -1], [1, -1], [-1, 1], [1, 1]] as [number, number][]) {
-    const bh = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.007, 0.014), bMat);
-    bh.position.set(sx * 0.12, 0.022, sz * 0.12);
-    g.add(bh);
-    const bv = new THREE.Mesh(new THREE.BoxGeometry(0.014, 0.007, 0.06), bMat);
-    bv.position.set(sx * 0.12, 0.022, sz * 0.12);
-    g.add(bv);
+  const grilleMat = new THREE.MeshStandardMaterial({ map: grlTex, roughness: 0.7, metalness: 0.3 });
+  const btnOrangeMat = new THREE.MeshStandardMaterial({
+    color: 0xdd4400, roughness: 0.4, metalness: 0.3,
+    emissive: new THREE.Color(0xff3300), emissiveIntensity: 0.5,
+  });
+  const btnGrayMat = new THREE.MeshStandardMaterial({ color: 0x555555, roughness: 0.5, metalness: 0.4 });
+
+  // Body slab: 0.10 wide (X), 0.020 thick (Y=up), 0.26 long (Z)
+  const body = new THREE.Mesh(new THREE.BoxGeometry(0.10, 0.020, 0.26), bodyMat);
+  body.position.set(0, 0.01, 0);
+  g.add(body);
+
+  // Antenna: thin cylinder along Z at one end, sticking up
+  const antenna = new THREE.Mesh(new THREE.CylinderGeometry(0.004, 0.005, 0.13, 6), accentMat);
+  antenna.position.set(-0.035, 0.075, -0.10); // top-left corner, pointing up
+  g.add(antenna);
+
+  // Speaker grille: flat face panel, near top end (Z = -0.08)
+  const grille = new THREE.Mesh(new THREE.BoxGeometry(0.072, 0.008, 0.065), grilleMat);
+  grille.position.set(0, 0.021, -0.075);
+  g.add(grille);
+
+  // Screen: flat face panel, mid-body
+  const screen = new THREE.Mesh(new THREE.BoxGeometry(0.072, 0.008, 0.075), screenMat);
+  screen.position.set(0, 0.021, 0.02);
+  g.add(screen);
+
+  // PTT button: raised nub on the side (+X edge)
+  const ptt = new THREE.Mesh(new THREE.BoxGeometry(0.010, 0.016, 0.038), btnOrangeMat);
+  ptt.position.set(0.055, 0.014, 0.01);
+  g.add(ptt);
+
+  // Two small grey buttons below screen
+  for (const bz of [0.115, 0.145]) {
+    const btn = new THREE.Mesh(new THREE.BoxGeometry(0.022, 0.008, 0.016), btnGrayMat);
+    btn.position.set(0, 0.021, bz);
+    g.add(btn);
   }
 
-  // Add orange-yellow glow light
-  const light = new THREE.PointLight(0xff8800, 4, 4);
-  light.position.set(0, 0.1, 0);
+  // Volume knob on top end
+  const knob = new THREE.Mesh(new THREE.CylinderGeometry(0.010, 0.010, 0.014, 8), accentMat);
+  knob.position.set(0.02, 0.02, -0.115);
+  g.add(knob);
+
+  // --- Tablet standing upright to the right of the radio (+X side) ---
+
+  // Tablet screen texture — FLIR map view
+  const tabCanvas = document.createElement('canvas');
+  tabCanvas.width = 128; tabCanvas.height = 96;
+  const tc = tabCanvas.getContext('2d')!;
+  tc.fillStyle = '#001400';
+  tc.fillRect(0, 0, 128, 96);
+  // terrain contours
+  tc.strokeStyle = 'rgba(0,255,60,0.18)'; tc.lineWidth = 1;
+  for (let i = 0; i < 6; i++) {
+    tc.beginPath();
+    tc.ellipse(64 + i * 4, 48 + i * 2, 30 + i * 6, 20 + i * 4, 0.3, 0, Math.PI * 2);
+    tc.stroke();
+  }
+  // target box
+  tc.strokeStyle = 'rgba(0,255,80,0.95)'; tc.lineWidth = 1.5;
+  tc.strokeRect(52, 36, 24, 24);
+  tc.beginPath(); tc.moveTo(64, 30); tc.lineTo(64, 36); tc.stroke();
+  tc.beginPath(); tc.moveTo(64, 60); tc.lineTo(64, 66); tc.stroke();
+  tc.beginPath(); tc.moveTo(46, 48); tc.lineTo(52, 48); tc.stroke();
+  tc.beginPath(); tc.moveTo(76, 48); tc.lineTo(82, 48); tc.stroke();
+  // HUD text
+  tc.fillStyle = 'rgba(0,255,60,0.9)'; tc.font = '7px monospace';
+  tc.fillText('TGT LOCK', 4, 10);
+  tc.fillText('ALT 15000FT', 4, 88);
+  tc.fillText('BRG 247', 88, 10);
+  const tabTex = new THREE.CanvasTexture(tabCanvas);
+
+  const tabBodyMat = new THREE.MeshStandardMaterial({ color: 0x1a1a1a, roughness: 0.5, metalness: 0.7 });
+  const tabScreenMat = new THREE.MeshStandardMaterial({
+    map: tabTex, emissiveMap: tabTex,
+    emissive: new THREE.Color(0x00ff44), emissiveIntensity: 1.0,
+    roughness: 0.2, metalness: 0.3,
+  });
+
+  // Tablet frame — stands upright, leaning slightly back (-Z tilt)
+  // Position to the LEFT of radio (-X), centered at same Z
+  const tabX = -0.20;
+  const tabW = 0.18; const tabH = 0.14; const tabD = 0.012;
+  const tabFrame = new THREE.Mesh(new THREE.BoxGeometry(tabW + 0.016, tabH + 0.016, tabD), tabBodyMat);
+  tabFrame.position.set(tabX, tabH * 0.5 + 0.008, 0.01);
+  tabFrame.rotation.x = THREE.MathUtils.degToRad(12);
+  tabFrame.rotation.z = THREE.MathUtils.degToRad(180);
+  g.add(tabFrame);
+
+  const tabScreen = new THREE.Mesh(new THREE.BoxGeometry(tabW, tabH, tabD + 0.002), tabScreenMat);
+  tabScreen.position.set(tabX, tabH * 0.5 + 0.008, 0.01);
+  tabScreen.rotation.x = THREE.MathUtils.degToRad(12);
+  tabScreen.rotation.z = THREE.MathUtils.degToRad(180);
+  g.add(tabScreen);
+
+  // Small stand/kickstand behind tablet base
+  const stand = new THREE.Mesh(new THREE.BoxGeometry(0.012, 0.055, 0.008), tabBodyMat);
+  stand.position.set(tabX, 0.022, 0.038);
+  stand.rotation.x = THREE.MathUtils.degToRad(-30);
+  g.add(stand);
+
+  // Cable — thin box connecting tablet right edge to radio left edge
+  const cable = new THREE.Mesh(new THREE.BoxGeometry(0.075, 0.004, 0.005), accentMat);
+  cable.position.set(tabX * 0.5 - 0.02, 0.012, 0.01);
+  g.add(cable);
+
+  // Screen glow — covers both radio and tablet
+  const light = new THREE.PointLight(0x00ff44, 4, 4);
+  light.position.set(tabX * 0.5, 0.18, 0.0);
   g.add(light);
 
   return g;

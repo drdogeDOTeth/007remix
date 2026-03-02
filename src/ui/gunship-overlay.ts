@@ -357,8 +357,8 @@ export class GunshipOverlay {
     const flashing = this._reticleFlash > 0;
     const isHowitzer = this._weaponMode === 'howitzer';
 
-    const size   = isHowitzer ? 60 : 38;
-    const armLen = isHowitzer ? 18 : 13;
+    const size   = isHowitzer ? 90 : 60;
+    const armLen = isHowitzer ? 24 : 18;
     const lineW  = isHowitzer ? 2.5 : 1.8;
 
     let color: string;
@@ -395,8 +395,8 @@ export class GunshipOverlay {
     // Cardinal tick marks
     c.globalAlpha = 0.55;
     c.lineWidth = lineW * 0.8;
-    const tickLen = isHowitzer ? 8 : 5;
-    const tickGap = isHowitzer ? 18 : 12;
+    const tickLen = isHowitzer ? 10 : 7;
+    const tickGap = isHowitzer ? 24 : 18;
     c.beginPath();
     c.moveTo(cx, cy - size + tickGap); c.lineTo(cx, cy - size + tickGap - tickLen);
     c.moveTo(cx, cy + size - tickGap); c.lineTo(cx, cy + size - tickGap + tickLen);

@@ -168,9 +168,9 @@ export function getSunState(t: number): {
     hemiSky.setRGB(0.3 + 0.4 * p, 0.25 + 0.35 * p, 0.5 + 0.4 * p);
     hemiGround.setRGB(0.15, 0.12, 0.1);
   } else {
-    // Deep night — moonlit blue-grey, not pitch black
-    hemiSky.setRGB(0.18, 0.20, 0.32);
-    hemiGround.setRGB(0.08, 0.08, 0.14);
+    // Deep night — moonlit blue-grey, bright enough for FLIR CSS filter to work with
+    hemiSky.setRGB(0.52, 0.55, 0.72);
+    hemiGround.setRGB(0.28, 0.28, 0.40);
   }
 
   // Night ambient: smoothly ramp up from 0 toward midnight so it's never pitch black.
@@ -180,20 +180,20 @@ export function getSunState(t: number): {
   const ambientIntensity = isDay
     ? 0.15 + sunHeight * 0.1
     : isDawnDusk
-      ? 0.10
-      : 0.25 + nightRamp * 0.30; // 0.25 right after dusk → 0.55 at midnight (enough for FLIR)
+      ? 0.20
+      : 0.80 + nightRamp * 0.25; // 0.80 right after dusk → 1.05 at midnight (FLIR-bright)
 
   const backgroundIntensity = isDay
     ? 0.7 + sunHeight * 0.3
     : isDawnDusk
-      ? 0.45
-      : 0.45 + nightRamp * 0.20; // 0.45 right after dusk → 0.65 at midnight
+      ? 0.55
+      : 0.80 + nightRamp * 0.20; // 0.80 right after dusk → 1.0 at midnight
 
   const envIntensity = isDay
     ? 0.6 + sunHeight * 0.4
     : isDawnDusk
-      ? 0.45
-      : 0.50 + nightRamp * 0.20; // 0.50 right after dusk → 0.70 at midnight
+      ? 0.55
+      : 0.85 + nightRamp * 0.15; // 0.85 right after dusk → 1.0 at midnight
 
   return {
     position: pos,
