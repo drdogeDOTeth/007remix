@@ -14,10 +14,10 @@ export type FlirMode = 'white-hot' | 'black-hot' | 'color';
 export type GunshipWeaponMode = 'cannon' | 'howitzer';
 
 // CSS filter strings applied to the WebGL canvas for thermal effect
-// brightness(1.6) compensates for dark night scenes without washing out daytime
-// contrast(2.2) separates hot/cool without crushing detail in bright daylight
-const FILTER_WHITE_HOT = 'grayscale(1) brightness(1.6) contrast(2.2)';
-const FILTER_BLACK_HOT = 'grayscale(1) brightness(1.6) contrast(2.2) invert(1)';
+// White-hot: high brightness to lift dark night scenes, moderate contrast
+// Black-hot: inverts first so daytime bright scene becomes dark — less brightness needed
+const FILTER_WHITE_HOT = 'grayscale(1) brightness(2.0) contrast(2.5)';
+const FILTER_BLACK_HOT = 'grayscale(1) invert(1) brightness(0.65) contrast(2.2)';
 // Color mode: no grayscale — just a mild contrast boost and slight green tint via hue shift
 const FILTER_COLOR = 'brightness(1.1) contrast(1.15) saturate(0.85)';
 

@@ -24,6 +24,8 @@ export class Renderer {
   private spriteBakerPass: SpriteBakerViewPass | null = null;
   /** Separate composer used for sprite-baker view (replaces main composer while active). */
   private spriteBakerComposer: EffectComposer | null = null;
+  /** When true, FLIR exposure override is active — applyPostProcessingSettings skips tone/exposure. */
+  private _flirOverrideActive = false;
 
   constructor(canvas: HTMLCanvasElement) {
     this.instance = new THREE.WebGLRenderer({
@@ -91,9 +93,8 @@ export class Renderer {
       this.bloomPass.threshold = s.bloomThreshold / 100;
     }
 
-    // Only touch tone-mapping / shadows / exposure when sprite-baker view is NOT active
-    // (it overrides those to NoToneMapping + shadows off while running)
-    if (!this.spriteBakerComposer) {
+    // Only touch tone-mapping / shadows / exposure when neither sprite-baker nor FLIR override is active
+    if (!this.spriteBakerComposer && !this._flirOverrideActive) {
       this.instance.toneMapping = TONE_MAP[s.toneMapping] ?? THREE.ACESFilmicToneMapping;
       this.instance.toneMappingExposure = s.exposure / 100;
       this.instance.shadowMap.enabled = s.shadowsEnabled;
@@ -207,12 +208,11 @@ export class Renderer {
    * scene luminance regardless of day/night cycle. Pass null to restore from GameSettings.
    */
   setFlirExposureOverride(active: boolean): void {
-    if (active) {
-      // LinearToneMapping + fixed exposure gives predictable midtone luminance
-      // that the CSS brightness/contrast filter can work with consistently
-      this.instance.toneMapping = THREE.LinearToneMapping;
-      this.instance.toneMappingExposure = 1.8;
-    } else {
+    this._flirOverrideActive = active;
+    // FLIR look is handled entirely by CSS filter on the canvas.
+    // No tone mapping override needed — just restore from settings when deactivating
+    // so any temporary override (doom mode, etc.) doesn't bleed through.
+    if (!active) {
       const s = GameSettings.get();
       this.instance.toneMapping = TONE_MAP[s.toneMapping] ?? THREE.ACESFilmicToneMapping;
       this.instance.toneMappingExposure = s.exposure / 100;
