@@ -503,6 +503,7 @@ export class Game {
           this.events.emit('enemy:killed', {
             position: enemy.group.position.clone(),
           });
+          this.hud.showKillScore(100);
         }
         return;
       }
@@ -792,6 +793,7 @@ export class Game {
         // Optimistic kill count update for local player (server snapshot will confirm)
         if (event.killerId === this.networkManager?.playerId) {
           this.localPlayerKills += 1;
+          this.hud.showKillScore(100);
         }
 
         // Add to kill feed (with weapon type from server)

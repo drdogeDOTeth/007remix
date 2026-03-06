@@ -160,6 +160,18 @@ export class HUD {
     `;
     this.compassEl.appendChild(this.compassDegreesEl);
     this.hudEl.appendChild(this.compassEl);
+
+    // Inject kill score animation keyframes once
+    if (!document.getElementById('kill-score-keyframes')) {
+      const style = document.createElement('style');
+      style.id = 'kill-score-keyframes';
+      style.textContent = `@keyframes killScorePop {
+        0%   { opacity: 1; transform: translateX(-50%) translateY(0px) scale(1.3); }
+        30%  { opacity: 1; transform: translateX(-50%) translateY(-20px) scale(1); }
+        100% { opacity: 0; transform: translateX(-50%) translateY(-60px) scale(0.85); }
+      }`;
+      document.head.appendChild(style);
+    }
   }
 
   /** Update compass heading. yaw in radians. Slides strip + shows degrees (no rotation = no tilt). */
@@ -194,6 +206,27 @@ export class HUD {
     }
     this.killsEl.style.visibility = 'visible';
     this.killsEl.textContent = `Kills: ${kills} / ${killsToWin}`;
+  }
+
+  /** Show a floating +100 score popup at screen center. */
+  showKillScore(points = 100): void {
+    const el = document.createElement('div');
+    el.textContent = `+${points}`;
+    el.style.cssText = `
+      position: absolute;
+      left: 50%;
+      top: 42%;
+      font-size: 28px;
+      font-family: 'Courier New', monospace;
+      font-weight: bold;
+      color: #ffdd44;
+      text-shadow: 0 0 10px rgba(255,200,0,0.9), 0 2px 4px rgba(0,0,0,0.9);
+      pointer-events: none;
+      z-index: 9999;
+      animation: killScorePop 1.2s ease-out forwards;
+    `;
+    this.hudEl.appendChild(el);
+    setTimeout(() => el.remove(), 1200);
   }
 
   show(): void {
