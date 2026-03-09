@@ -73,6 +73,7 @@ export class GunshipScorestreak {
   // Callbacks
   onEnd:         (() => void) | null = null;
   onExplosion:   ((pos: THREE.Vector3, radius: number, damage: number) => void) | null = null;
+  onFire:        ((weaponMode: GunshipWeaponMode, position: THREE.Vector3) => void) | null = null;
   onActivate:    (() => void) | null = null;   // called so game.ts can dim bloom
   onDeactivate:  (() => void) | null = null;   // called so game.ts can restore bloom
   /** Called when T key cycles FLIR mode — game.ts uses this to toggle exposure override. */
@@ -341,6 +342,7 @@ export class GunshipScorestreak {
 
   // Reusable vectors to avoid per-shot allocations
   private readonly _cannonSurfacePos = new THREE.Vector3();
+  private readonly _cannonDamagePos = new THREE.Vector3();
   private readonly _camDir = new THREE.Vector3();
   private readonly _tracerFrom = new THREE.Vector3();
 
@@ -351,13 +353,12 @@ export class GunshipScorestreak {
     // Scatter only affects damage, not visuals
     const dmgX = worldPos.x + (Math.random() - 0.5) * 0.7;
     const dmgZ = worldPos.z + (Math.random() - 0.5) * 0.7;
-    this._cannonSurfacePos.set(dmgX, 0, dmgZ); // Y unused in XZ check
+    const surfaceY = this._surfaceY(dmgX, dmgZ);
+    this._cannonDamagePos.set(dmgX, surfaceY, dmgZ);
 
-    this.enemyManager.damageEnemiesInRadiusXZ(this._cannonSurfacePos, CANNON_RADIUS, CANNON_DAMAGE);
-
-    // Pass surface Y to destructibles
-    this._cannonSurfacePos.set(vfxPos.x, this._surfaceY(vfxPos.x, vfxPos.z), vfxPos.z);
-    this.onExplosion?.(this._cannonSurfacePos, CANNON_RADIUS, CANNON_DAMAGE);
+    this.enemyManager.damageEnemiesInRadiusXZ(this._cannonDamagePos, CANNON_RADIUS, CANNON_DAMAGE);
+    this.onExplosion?.(this._cannonDamagePos, CANNON_RADIUS, CANNON_DAMAGE);
+    this.onFire?.('cannon', this._cannonDamagePos.clone());
 
     this.overlay.flashReticle();
     playGunshipCannon();
@@ -383,8 +384,19 @@ export class GunshipScorestreak {
       this.enemyManager.damageEnemiesInRadiusXZ(impactPos, HOWITZER_RADIUS, HOWITZER_DAMAGE);
       this.grenadeSystem.spawnExplosion(surfacePos);
       this.onExplosion?.(surfacePos, HOWITZER_RADIUS, HOWITZER_DAMAGE);
+      this.onFire?.('howitzer', surfacePos.clone());
       this._spawnHowitzerImpact(impactPos);
     }, HOWITZER_SHELL_DELAY * 1000);
+  }
+
+  spawnReplicatedImpact(weaponMode: GunshipWeaponMode, position: THREE.Vector3): void {
+    if (weaponMode === 'howitzer') {
+      this.grenadeSystem.spawnExplosion(position);
+      this._spawnHowitzerImpact(position);
+      return;
+    }
+
+    this._spawnCannonImpact(position);
   }
 
   // ─── VFX ───────────────────────────────────────────────────────────────────

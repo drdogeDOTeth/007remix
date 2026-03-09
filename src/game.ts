@@ -68,6 +68,7 @@ import {
   barrelTexture,
 } from './levels/procedural-textures';
 import type { NetworkManager } from './network/network-manager';
+import type { GunshipWeaponType } from './network/network-events';
 import { RemotePlayerManager } from './player/remote-player-manager';
 import { NetworkConfig } from './network/network-config';
 import { GameSettings } from './core/game-settings';
@@ -88,6 +89,14 @@ function getCanonicalWeaponType(weaponName: string): 'pistol' | 'rifle' | 'shotg
   if (name.includes('grenade') || name.includes('m79')) return 'grenade-launcher';
   if (name.includes('pistol') || name.includes('pp7')) return 'pistol';
   return 'pistol';
+}
+
+function getGunshipNetworkWeaponType(mode: 'cannon' | 'howitzer'): GunshipWeaponType {
+  return mode === 'howitzer' ? 'gunship-howitzer' : 'gunship-cannon';
+}
+
+function getGunshipModeFromNetworkWeaponType(type: GunshipWeaponType): 'cannon' | 'howitzer' {
+  return type === 'gunship-howitzer' ? 'howitzer' : 'cannon';
 }
 
 export interface GameOptions {
@@ -383,9 +392,30 @@ export class Game {
     this.gunshipScorestreak.onEnd = () => {
       this.gunshipActive = false;
       this.hud.show();
+      if (this.networkMode === 'client' && this.networkManager?.playerId) {
+        this.networkManager.sendGunshipState({
+          playerId: this.networkManager.playerId,
+          timestamp: performance.now(),
+          isActive: false,
+        });
+      }
     };
     this.gunshipScorestreak.onExplosion = (pos, radius, damage) => {
       this.destructibleSystem.damageInRadius(pos, radius, damage);
+    };
+    this.gunshipScorestreak.onFire = (weaponMode, position) => {
+      if (this.networkMode !== 'client' || !this.networkManager?.playerId) return;
+      this.networkManager.sendGunshipState({
+        playerId: this.networkManager.playerId,
+        timestamp: performance.now(),
+        isActive: true,
+      });
+      this.networkManager.sendGunshipFire({
+        playerId: this.networkManager.playerId,
+        timestamp: performance.now(),
+        weaponType: getGunshipNetworkWeaponType(weaponMode),
+        position: { x: position.x, y: position.y, z: position.z },
+      });
     };
     this.gunshipScorestreak.onActivate = () => {
       // Reduce bloom significantly — it washes out the FLIR thermal look
@@ -872,6 +902,17 @@ export class Game {
           }
           // Gas clouds are already spawned by grenade physics simulation
         }
+      };
+
+      this.networkManager.onGunshipFire = (event) => {
+        const isLocalPlayer = event.playerId === this.networkManager?.playerId;
+        if (isLocalPlayer) return;
+
+        const position = new THREE.Vector3(event.position.x, event.position.y, event.position.z);
+        this.gunshipScorestreak.spawnReplicatedImpact(
+          getGunshipModeFromNetworkWeaponType(event.weaponType),
+          position,
+        );
       };
 
       // Handle flashlight toggle events (Phase 5)
@@ -1841,6 +1882,13 @@ export class Game {
           prewarmAudio(); // resume AudioContext + pre-build noise buffers before first burst
           this.gunshipActive = true;
           this.hud.hide();
+          if (this.networkMode === 'client' && this.networkManager?.playerId) {
+            this.networkManager.sendGunshipState({
+              playerId: this.networkManager.playerId,
+              timestamp: performance.now(),
+              isActive: true,
+            });
+          }
           const pp = this.player.getPosition();
           this.gunshipScorestreak.activate(new THREE.Vector3(pp.x, pp.y, pp.z));
           this.hud.showPickupNotification('AC-130 GUNSHIP INBOUND');

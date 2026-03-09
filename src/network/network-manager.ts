@@ -13,6 +13,8 @@ import {
   PlayerRespawnEvent,
   GrenadeThrowEvent,
   GrenadeExplosionEvent,
+  GunshipStateEvent,
+  GunshipFireEvent,
   GasDamageEvent,
   EnemyDamageEvent,
   FlashlightToggleEvent,
@@ -53,6 +55,7 @@ export class NetworkManager {
   // Equipment event callbacks (Phase 5)
   onGrenadeThrow: ((event: GrenadeThrowEvent) => void) | null = null;
   onGrenadeExplosion: ((event: GrenadeExplosionEvent) => void) | null = null;
+  onGunshipFire: ((event: GunshipFireEvent) => void) | null = null;
   onFlashlightToggle: ((event: FlashlightToggleEvent) => void) | null = null;
   onDestructibleDestroyed: ((event: DestructibleDestroyedEvent) => void) | null = null;
 
@@ -200,6 +203,10 @@ export class NetworkManager {
         this.onGrenadeExplosion?.(event);
       });
 
+      this.socket.on(NetworkEventType.GUNSHIP_FIRE, (event: GunshipFireEvent) => {
+        this.onGunshipFire?.(event);
+      });
+
       this.socket.on(NetworkEventType.FLASHLIGHT_TOGGLE, (event: FlashlightToggleEvent) => {
         this.onFlashlightToggle?.(event);
       });
@@ -267,6 +274,24 @@ export class NetworkManager {
   }
 
   /**
+   * Send gunship impact event to server.
+   * Server validates and applies authoritative splash damage and kill credit.
+   */
+  sendGunshipFire(event: GunshipFireEvent): void {
+    if (!this.isConnected) return;
+    this.socket!.emit(NetworkEventType.GUNSHIP_FIRE, event);
+  }
+
+  /**
+   * Send gunship activation/deactivation state to server.
+   * Used to authorize the active scorestreak window.
+   */
+  sendGunshipState(event: GunshipStateEvent): void {
+    if (!this.isConnected) return;
+    this.socket!.emit(NetworkEventType.GUNSHIP_STATE, event);
+  }
+
+  /**
    * Send gas damage event to server.
    * Client reports when player is in gas cloud; server applies and broadcasts player:damaged.
    */
@@ -314,6 +339,7 @@ export class NetworkManager {
     this.onPlayerRespawned = null;
     this.onGrenadeThrow = null;
     this.onGrenadeExplosion = null;
+    this.onGunshipFire = null;
     this.onFlashlightToggle = null;
     this.onDestructibleDestroyed = null;
     this.onGameOver = null;

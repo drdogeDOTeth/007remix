@@ -284,6 +284,20 @@ class GameServer {
         }
       });
 
+      socket.on('gunship:state', (event: any) => {
+        const mapId = this.socketToMapId.get(socket.id);
+        if (mapId) {
+          this.gameRooms.get(mapId)?.handleGunshipState(socket.id, event);
+        }
+      });
+
+      socket.on('gunship:fire', (event: any) => {
+        const mapId = this.socketToMapId.get(socket.id);
+        if (mapId) {
+          this.gameRooms.get(mapId)?.handleGunshipFire(event);
+        }
+      });
+
       // Gas damage event
       socket.on('player:gas:damage', (event: any) => {
         const mapId = this.socketToMapId.get(socket.id);

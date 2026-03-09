@@ -80,6 +80,11 @@ export class KillFeed {
       rifle: '[KF7]',
       shotgun: '[SHOTGUN]',
       sniper: '[SNIPER]',
+      minigun: '[M134]',
+      rpg: '[RPG-7]',
+      'grenade-launcher': '[M79]',
+      'gunship-cannon': '[40MM]',
+      'gunship-howitzer': '[105MM]',
     };
     return labels[weaponType] || '[—]';
   }

@@ -80,6 +80,16 @@ io.on('connection', (socket) => {
     gameRoom.handleGrenadeExplosion(event);
   });
 
+  // Gunship activation/deactivation state
+  socket.on('gunship:state', (event) => {
+    gameRoom.handleGunshipState(socket.id, event);
+  });
+
+  // Gunship impact event
+  socket.on('gunship:fire', (event) => {
+    gameRoom.handleGunshipFire(event);
+  });
+
   // Flashlight toggle event
   socket.on('flashlight:toggle', (event) => {
     gameRoom.handleFlashlightToggle(event);

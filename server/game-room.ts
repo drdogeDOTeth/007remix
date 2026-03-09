@@ -6,11 +6,14 @@ import type {
   PlayerRespawnEvent,
   GrenadeThrowEvent,
   GrenadeExplosionEvent,
+  GunshipStateEvent,
+  GunshipFireEvent,
   GasDamageEvent,
   EnemyDamageEvent,
   FlashlightToggleEvent,
   DestructibleDestroyedEvent,
   GameOverEvent,
+  WeaponType,
 } from '../src/network/network-events.js';
 import { getSpawnPointsForMap, type MultiplayerMapId } from '../src/levels/multiplayer-arena.js';
 
@@ -38,6 +41,7 @@ export class GameRoom {
   // Headshot: hit point above head zone (player capsule center ~1.0, head ~1.4–1.7)
   private readonly HEADSHOT_Y_THRESHOLD = 0.5; // 0.5m above capsule center = head/upper torso
   private readonly HEADSHOT_MULTIPLIER = 2;
+  private readonly GUNSHIP_MAX_TARGET_DISTANCE = 400;
 
   // Destructible sync: track all destroyed props for new joiners
   private destroyedDestructibles: Array<{ propId: string; position: { x: number; y: number; z: number }; type: 'crate' | 'crate_metal' | 'barrel' }> = [];
@@ -48,6 +52,8 @@ export class GameRoom {
 
   // Enemy damage rate limit: ignore if same player sent < 150ms ago
   private lastEnemyDamageTime: Map<string, number> = new Map();
+  private readonly GUNSHIP_DURATION_MS = 30_000;
+  private gunshipActiveUntil: Map<string, number> = new Map();
 
   /** Map selected by first joiner. Used for spawn point selection. */
   private currentMapId: MultiplayerMapId = 'crossfire';
@@ -99,6 +105,7 @@ export class GameRoom {
 
       // Clear fire rate tracking
       this.lastFireTime.delete(id);
+      this.gunshipActiveUntil.delete(id);
 
       this.players.delete(id);
       console.log(`[GameRoom] Player ${player.username} (${id}) left. Total players: ${this.players.size}`);
@@ -115,6 +122,7 @@ export class GameRoom {
     this.destroyedDestructibles = [];
     this.destroyedPropIds.clear();
     this.gameOver = false;
+    this.gunshipActiveUntil.clear();
     this.currentMapId = 'crossfire'; // Reset so next joiner's mapId takes effect
     console.log('[GameRoom] Room empty — level state reset for next session');
   }
@@ -314,6 +322,116 @@ export class GameRoom {
   }
 
   /**
+   * Handle gunship impact event from client.
+   * Server validates cadence/targeting, rebroadcasts impact VFX, and applies authoritative AoE damage.
+   */
+  handleGunshipFire(event: GunshipFireEvent): void {
+    const shooter = this.players.get(event.playerId);
+    if (!shooter) {
+      console.log(`[GameRoom] Gunship fire from unknown player: ${event.playerId}`);
+      return;
+    }
+    if (shooter.health <= 0) return;
+
+    const now = Date.now();
+    const activeUntil = this.gunshipActiveUntil.get(event.playerId) ?? 0;
+    if (activeUntil < now) {
+      console.warn(`[GameRoom] Rejected gunship fire from ${shooter.username}: scorestreak not active`);
+      return;
+    }
+
+    // Keep the authorization window alive while the scorestreak is actively firing.
+    this.gunshipActiveUntil.set(event.playerId, now + this.GUNSHIP_DURATION_MS);
+
+    const lastFire = this.lastFireTime.get(event.playerId) ?? 0;
+    const timeSinceLastFire = now - lastFire;
+    const minInterval = this.getWeaponFireInterval(event.weaponType);
+    const tolerance = 0.9;
+
+    if (timeSinceLastFire < minInterval * tolerance) {
+      console.warn(
+        `[GameRoom] Rejected rapid gunship fire from ${shooter.username}: ` +
+        `${timeSinceLastFire}ms since last shot (min: ${minInterval}ms for ${event.weaponType})`
+      );
+      return;
+    }
+
+    const targetDistance = this.calculateHorizontalDistance(event.position, shooter.position);
+    if (targetDistance > this.GUNSHIP_MAX_TARGET_DISTANCE) {
+      console.warn(
+        `[GameRoom] Rejected gunship shot from ${shooter.username}: target ${targetDistance.toFixed(2)}u from player body`
+      );
+      return;
+    }
+
+    this.lastFireTime.set(event.playerId, now);
+    this.onBroadcast?.('gunship:fire', event);
+
+    const { damage, radius } = this.getGunshipStats(event.weaponType);
+    this.players.forEach((victim, victimId) => {
+      if (victim.health <= 0) return;
+
+      const distance = this.calculateHorizontalDistance(event.position, victim.position);
+      if (distance > radius) return;
+
+      const damageApplied = this.applyDamage(victim, damage);
+      if (!damageApplied) return;
+
+      const damageEvent: DamageEvent = {
+        shooterId: shooter.id,
+        victimId,
+        damage,
+        wasHeadshot: false,
+        timestamp: Date.now(),
+      };
+      this.onBroadcast?.('player:damaged', damageEvent);
+
+      if (victim.health <= 0) {
+        shooter.kills += 1;
+        victim.deaths += 1;
+
+        const deathEvent: PlayerDeathEvent = {
+          victimId,
+          killerId: shooter.id,
+          weaponType: event.weaponType,
+          timestamp: Date.now(),
+        };
+        this.onBroadcast?.('player:died', deathEvent);
+        console.log(`[GameRoom] Player ${victim.username} killed by ${shooter.username}'s ${event.weaponType}`);
+
+        if (!this.gameOver && shooter.kills >= this.KILLS_TO_WIN) {
+          this.gameOver = true;
+          const gameOverEvent: GameOverEvent = {
+            winnerId: shooter.id,
+            winnerUsername: shooter.username,
+            reason: 'kills',
+            timestamp: Date.now(),
+          };
+          this.onBroadcast?.('game:over', gameOverEvent);
+          console.log(`[GameRoom] ${shooter.username} wins! (${shooter.kills} kills)`);
+        }
+
+        this.scheduleRespawn(victimId);
+      }
+    });
+  }
+
+  /**
+   * Track whether a player's gunship scorestreak is currently active.
+   */
+  handleGunshipState(playerId: string, event: GunshipStateEvent): void {
+    const player = this.players.get(playerId);
+    if (!player) return;
+
+    if (!event.isActive) {
+      this.gunshipActiveUntil.delete(playerId);
+      return;
+    }
+
+    this.gunshipActiveUntil.set(playerId, Date.now() + this.GUNSHIP_DURATION_MS);
+  }
+
+  /**
    * Schedule a player respawn after delay.
    */
   private scheduleRespawn(playerId: string): void {
@@ -372,8 +490,8 @@ export class GameRoom {
   /**
    * Apply damage to a player, accounting for armor.
    */
-  private applyDamage(player: ServerPlayerState, damage: number): void {
-    if (player.invincibleUntil && Date.now() < player.invincibleUntil) return;
+  private applyDamage(player: ServerPlayerState, damage: number): boolean {
+    if (player.invincibleUntil && Date.now() < player.invincibleUntil) return false;
 
     // Armor absorbs 60% of damage
     const armorAbsorption = 0.6;
@@ -382,6 +500,7 @@ export class GameRoom {
 
     player.armor = Math.max(0, player.armor - damageToArmor);
     player.health = Math.max(0, player.health - damageToHealth);
+    return true;
   }
 
   /**
@@ -395,6 +514,19 @@ export class GameRoom {
     const dy = a.y - b.y;
     const dz = a.z - b.z;
     return Math.sqrt(dx * dx + dy * dy + dz * dz);
+  }
+
+  /**
+   * Calculate horizontal XZ distance between two points.
+   * Used for top-down splash damage such as the gunship.
+   */
+  private calculateHorizontalDistance(
+    a: { x: number; y: number; z: number },
+    b: { x: number; y: number; z: number }
+  ): number {
+    const dx = a.x - b.x;
+    const dz = a.z - b.z;
+    return Math.sqrt(dx * dx + dz * dz);
   }
 
   /**
@@ -430,6 +562,16 @@ export class GameRoom {
   }
 
   /**
+   * Gunship weapon stats (matches single-player scorestreak values).
+   */
+  private getGunshipStats(weaponType: WeaponType): { damage: number; radius: number } {
+    if (weaponType === 'gunship-howitzer') {
+      return { damage: 250, radius: 8 };
+    }
+    return { damage: 35, radius: 1.5 };
+  }
+
+  /**
    * Check if hit point is in head zone (same logic as single-player enemies).
    */
   private isHeadshot(
@@ -453,6 +595,8 @@ export class GameRoom {
       minigun: 20,    // 20 rounds/second (1200 rpm)
       rpg: 0.5,               // 1 shot per 2 seconds
       'grenade-launcher': 0.8, // ~1 shot per 1.25 seconds
+      'gunship-cannon': 1000 / 120, // 120ms between cannon impacts in a burst
+      'gunship-howitzer': 1 / 3.5,  // 1 shot every 3.5 seconds
     };
     const rate = fireRates[weaponType] ?? 3;
     return 1000 / rate; // Convert to ms between shots

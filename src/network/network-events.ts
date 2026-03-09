@@ -44,7 +44,18 @@ export interface PlayerStateUpdate {
 /**
  * Weapon type for kill feed and death events.
  */
-export type WeaponType = 'pistol' | 'rifle' | 'shotgun' | 'sniper' | 'minigun' | 'rpg' | 'grenade-launcher';
+export type WeaponType =
+  | 'pistol'
+  | 'rifle'
+  | 'shotgun'
+  | 'sniper'
+  | 'minigun'
+  | 'rpg'
+  | 'grenade-launcher'
+  | 'gunship-cannon'
+  | 'gunship-howitzer';
+
+export type GunshipWeaponType = 'gunship-cannon' | 'gunship-howitzer';
 
 /**
  * Destructible prop destroyed record (for sync).
@@ -134,6 +145,26 @@ export interface GrenadeExplosionEvent {
 }
 
 /**
+ * Gunship impact event sent from client to server and rebroadcast to clients.
+ * Server validates cadence and applies authoritative area damage/kills.
+ */
+export interface GunshipFireEvent {
+  playerId: string;
+  timestamp: number;
+  weaponType: GunshipWeaponType;
+  position: { x: number; y: number; z: number };
+}
+
+/**
+ * Gunship lifecycle event used so the server can authorize the active scorestreak window.
+ */
+export interface GunshipStateEvent {
+  playerId: string;
+  timestamp: number;
+  isActive: boolean;
+}
+
+/**
  * Gas damage event sent from client to server.
  * Client reports damage when player is in gas cloud; server applies and broadcasts player:damaged.
  */
@@ -203,6 +234,8 @@ export enum NetworkEventType {
   // Equipment events (Phase 5)
   GRENADE_THROW = 'grenade:throw',
   GRENADE_EXPLOSION = 'grenade:explosion',
+  GUNSHIP_STATE = 'gunship:state',
+  GUNSHIP_FIRE = 'gunship:fire',
   GAS_DAMAGE = 'player:gas:damage',
   ENEMY_DAMAGE = 'player:enemy:damage',
   FLASHLIGHT_TOGGLE = 'flashlight:toggle',
