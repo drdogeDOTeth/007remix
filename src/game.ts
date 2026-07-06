@@ -29,6 +29,7 @@ import { HUD } from './ui/hud';
 import { DamageIndicator } from './ui/damage-indicator';
 import { RespawnFlash } from './ui/respawn-flash';
 import { ScopeOverlay } from './ui/scope-overlay';
+import { showLoadingOverlay, hideLoadingOverlay } from './ui/loading-overlay';
 import { TacticalOverlay } from './ui/tactical-overlay';
 import { GunshipOverlay } from './ui/gunship-overlay';
 import { GunshipScorestreak } from './gameplay/gunship-scorestreak';
@@ -1088,18 +1089,25 @@ export class Game {
   start(): void {
     if (this.started) return;
     this.started = true;
-    this.warmupShaders();
     if (!MobileControls.isSupported()) {
       this.input.requestPointerLock();
     }
     this.mobileControls?.show();
     document.getElementById('start-screen')!.style.display = 'none';
-    this.hud.show();
-    if (this.networkMode === 'client') this.hud.setMultiplayerHint(true);
-    if (this.levelMode && this.objectivesDisplay) this.objectivesDisplay.show();
-    this.gameStartTime = performance.now();
-    this.loop.start();
-    startMusic();
+
+    // Compile all shaders before the first frame. Async (parallel shader
+    // compile) so the loading overlay stays responsive on big custom scenes;
+    // the game loop starts once every program is ready.
+    showLoadingOverlay('COMPILING SHADERS');
+    void this.warmupShaders().then(() => {
+      hideLoadingOverlay();
+      this.hud.show();
+      if (this.networkMode === 'client') this.hud.setMultiplayerHint(true);
+      if (this.levelMode && this.objectivesDisplay) this.objectivesDisplay.show();
+      this.gameStartTime = performance.now();
+      this.loop.start();
+      startMusic();
+    });
   }
 
   /**
@@ -1112,7 +1120,7 @@ export class Game {
    * the current light state. Because pooled lights keep the light count
    * constant, these programs stay valid for the whole session.
    */
-  private warmupShaders(): void {
+  private async warmupShaders(): Promise<void> {
     const warmupGroup = new THREE.Group();
     const geo = new THREE.PlaneGeometry(0.01, 0.01);
 
@@ -1138,7 +1146,9 @@ export class Game {
     this.scene.add(warmupGroup);
 
     try {
-      this.renderer.instance.compile(this.scene, this.fpsCamera.camera);
+      // compileAsync uses KHR_parallel_shader_compile — the driver compiles in
+      // the background and the main thread (loading spinner) stays responsive
+      await this.renderer.instance.compileAsync(this.scene, this.fpsCamera.camera);
     } catch (e) {
       console.warn('[Game] Shader warm-up failed (non-fatal):', e);
     }

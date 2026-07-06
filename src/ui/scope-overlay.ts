@@ -19,6 +19,7 @@ export class ScopeOverlay {
       opacity: 0;
       z-index: 4;
       transition: opacity 0.08s;
+      will-change: opacity;
     `;
 
     // Canvas for the reticle
@@ -41,6 +42,11 @@ export class ScopeOverlay {
     resize();
 
     this.ctx = this.canvas.getContext('2d')!;
+
+    // Pre-render the vignette/reticle now (during load) — rasterizing a
+    // full-screen canvas on the first aim causes a visible hitch otherwise.
+    // will-change keeps the layer composited while hidden at opacity 0.
+    this._draw();
   }
 
   set visible(v: boolean) {

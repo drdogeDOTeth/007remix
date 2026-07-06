@@ -23,6 +23,7 @@ import { CCTVBackground } from './ui/cctv-background';
 import { ScreenGlitch } from './ui/screen-glitch';
 import { NetworkManager } from './network/network-manager';
 import { MainMenuScreen } from './ui/main-menu-screen';
+import { showLoadingOverlay, hideLoadingOverlay } from './ui/loading-overlay';
 import { SettingsMenu } from './ui/settings-menu';
 import { CharacterModelsScreen } from './ui/character-models-screen';
 import { setEnemyRenderConfig, ENEMY_RENDER_CONFIG } from './enemies/enemy-render-config';
@@ -166,11 +167,13 @@ async function init(): Promise<void> {
         const game = new Game(canvas, physics, { customQuickplay: true });
         document.getElementById('start-screen')!.style.display = 'none';
         hideCCTVBackground();
+        showLoadingOverlay('LOADING CUSTOM ARENA');
         try {
           await game.prepareCustomScene();
           game.start();
           canvas.addEventListener('click', () => game.start());
         } catch (err) {
+          hideLoadingOverlay();
           console.error('Custom arena load failed:', err);
           alert(
             'Custom Arena assets not found. Add environment.glb (required) to public/maps/quickplay/\n' +
@@ -195,6 +198,7 @@ async function init(): Promise<void> {
       // Custom Arena as a mission level (uses outdoor GLB arena)
       if (levelId === 'custom-arena') {
         await customModelReady;
+        showLoadingOverlay('LOADING CUSTOM ARENA');
         try {
           const game = new Game(canvas, physics, { customQuickplay: true });
           await game.prepareCustomScene();
@@ -202,6 +206,7 @@ async function init(): Promise<void> {
           hideCCTVBackground();
           game.start();
         } catch (err) {
+          hideLoadingOverlay();
           console.error('Custom Arena load failed:', err);
           alert('Could not load Custom Arena. Make sure you run with "npm run dev".');
         }
@@ -257,11 +262,13 @@ async function init(): Promise<void> {
           level,
         });
         if (resolvedMapId === 'custom') {
+          showLoadingOverlay('LOADING CUSTOM ARENA');
           await game.prepareCustomScene();
         }
         game.start();
         canvas.addEventListener('click', () => game.start());
       } catch (err) {
+        hideLoadingOverlay();
         console.error('[Main] Multiplayer connection failed:', err);
         mainMenuScreen.setStatus('Connection failed. Is the server running? (npm run server)');
         mainMenuScreen.setJoinEnabled(true);
@@ -283,12 +290,14 @@ async function init(): Promise<void> {
           level,
         });
         if (mapId === 'custom') {
+          showLoadingOverlay('LOADING CUSTOM ARENA');
           await game.prepareCustomScene();
         }
         game.start();
         game.attachMapEditorUI(mapId);
         canvas.addEventListener('click', () => game.start());
       } catch (err) {
+        hideLoadingOverlay();
         console.error('[Main] Map editor load failed:', err);
         alert(`Could not load map for editing. Make sure assets exist for ${mapId}.`);
         document.getElementById('start-screen')!.style.display = 'flex';
