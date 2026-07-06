@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import type RAPIER from '@dimforge/rapier3d-compat';
-import { RemotePlayer } from './remote-player';
+import { RemotePlayer, preseedRemotePlayerFlashlights } from './remote-player';
 import type { GameStateSnapshot } from '../network/network-events';
 import type { PhysicsWorld } from '../core/physics-world';
 
@@ -41,6 +41,10 @@ export class RemotePlayerManager {
     this.getLocalPlayerId = getLocalPlayerId ?? (() => null);
     this.getCameraPosition = getCameraPosition ?? null;
     this.getGroundHeightProvider = getGroundHeightProvider ?? null;
+
+    // Park flashlights for joining players up-front so a join never adds a
+    // new light mid-game (light count changes recompile all lit shaders)
+    preseedRemotePlayerFlashlights(scene, 4);
   }
 
   /**

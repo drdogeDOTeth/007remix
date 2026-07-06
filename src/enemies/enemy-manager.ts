@@ -71,10 +71,11 @@ export class EnemyManager {
     this.events = events;
     this.getPlayerCollider = getPlayerCollider;
 
-    // Pre-create a small pool of muzzle flash lights (max 4 concurrent)
+    // Pre-create a small pool of muzzle flash lights (max 4 concurrent).
+    // Always visible with intensity 0 — toggling .visible changes the light
+    // count and forces a full shader recompile (one-frame stall).
     for (let i = 0; i < 4; i++) {
       const light = new THREE.PointLight(0xffaa33, 0, 8);
-      light.visible = false;
       this.scene.add(light);
       this.muzzleFlashPool.push(light);
       this.muzzleFlashTimers.push(0);
@@ -266,7 +267,6 @@ export class EnemyManager {
     const light = this.muzzleFlashPool[idx];
     light.position.copy(pos);
     light.intensity = 35;
-    light.visible = true;
     this.muzzleFlashTimers[idx] = 0.1;
   }
 
@@ -409,7 +409,6 @@ export class EnemyManager {
       if (this.muzzleFlashTimers[i] > 0) {
         this.muzzleFlashTimers[i] -= dt;
         if (this.muzzleFlashTimers[i] <= 0) {
-          this.muzzleFlashPool[i].visible = false;
           this.muzzleFlashPool[i].intensity = 0;
         } else {
           this.muzzleFlashPool[i].intensity = (this.muzzleFlashTimers[i] / 0.1) * 35;

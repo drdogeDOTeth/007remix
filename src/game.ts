@@ -304,6 +304,11 @@ export class Game {
     this.scene.background = new THREE.Color(0x1a1a2e);
     this.scene.fog = new THREE.Fog(0x1a1a2e, 20, 60);
 
+    // Park all pooled effect lights in the scene permanently (intensity 0).
+    // The scene light count must stay constant — adding/removing a light
+    // forces Three.js to recompile every lit shader (one-frame stall).
+    globalLightPool.attachToScene(this.scene);
+
     // Camera
     this.fpsCamera = new FPSCamera();
     this.scene.add(this.fpsCamera.camera);
@@ -1083,6 +1088,7 @@ export class Game {
   start(): void {
     if (this.started) return;
     this.started = true;
+    this.warmupShaders();
     if (!MobileControls.isSupported()) {
       this.input.requestPointerLock();
     }
@@ -1094,6 +1100,53 @@ export class Game {
     this.gameStartTime = performance.now();
     this.loop.start();
     startMusic();
+  }
+
+  /**
+   * Pre-compile all shader programs during the load transition so the first
+   * shot / pickup / explosion doesn't stall on shader compilation.
+   *
+   * Effect materials that are created lazily (decals, debris, explosion
+   * sprites, barrel flashes) get a hidden stand-in mesh with the same shader
+   * defines, then renderer.compile() builds every program up-front against
+   * the current light state. Because pooled lights keep the light count
+   * constant, these programs stay valid for the whole session.
+   */
+  private warmupShaders(): void {
+    const warmupGroup = new THREE.Group();
+    const geo = new THREE.PlaneGeometry(0.01, 0.01);
+
+    // Tiny canvas texture — stands in for explosion/smoke/muzzle sprite maps
+    const canvas = document.createElement('canvas');
+    canvas.width = 2;
+    canvas.height = 2;
+    const tex = new THREE.CanvasTexture(canvas);
+
+    const warmupMats: THREE.Material[] = [
+      // Decals, impact particles, debris, barrel flash
+      new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true }),
+      // Explosion / gas / smoke sprites (map presence changes shader defines)
+      new THREE.MeshBasicMaterial({ map: tex, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false }),
+      // Grenade/rocket bodies, ammo pickups (standard, no map)
+      new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.5, metalness: 0.5 }),
+    ];
+
+    for (const mat of warmupMats) {
+      const mesh = new THREE.Mesh(geo, mat);
+      warmupGroup.add(mesh);
+    }
+    this.scene.add(warmupGroup);
+
+    try {
+      this.renderer.instance.compile(this.scene, this.fpsCamera.camera);
+    } catch (e) {
+      console.warn('[Game] Shader warm-up failed (non-fatal):', e);
+    }
+
+    this.scene.remove(warmupGroup);
+    for (const mat of warmupMats) mat.dispose();
+    geo.dispose();
+    tex.dispose();
   }
 
   private pauseGame(): void {
@@ -2565,6 +2618,16 @@ export class Game {
     if (this.getGroundHeight) {
       this.gunshipScorestreak.getTerrainY = (x, z) => this.getGroundHeight!(x, z);
     }
+    this.gunshipScorestreak.raycastTerrain = (origin, direction) => {
+      const terrainRaycaster = this.customTerrainRaycaster;
+      if (!terrainRaycaster) return null;
+
+      const { raycaster, meshes } = terrainRaycaster;
+      raycaster.set(origin, direction);
+      raycaster.far = 1000;
+      const hits = raycaster.intersectObjects(meshes, true);
+      return hits.length > 0 ? hits[0].point.clone() : null;
+    };
 
     if (this.editorMode && this.customQuickplayPlacement) {
       this.editorPickups = (this.customQuickplayPlacement.pickups ?? []).map((p) => ({

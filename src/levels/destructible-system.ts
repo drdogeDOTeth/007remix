@@ -234,7 +234,6 @@ export class DestructibleSystem {
     }
     this.debris = [];
     for (const bf of this.barrelFlashes) {
-      this.scene.remove(bf.light);
       globalLightPool.release(bf.light);
       this.scene.remove(bf.flash);
       bf.geo.dispose();
@@ -403,10 +402,11 @@ export class DestructibleSystem {
   }
 
   private spawnBarrelFlash(pos: THREE.Vector3): void {
+    // Pool light already lives in the scene — never scene.add/remove it
+    // (changing the light count forces a full shader recompile)
     const light = globalLightPool.acquire(0xff6600, 60, 8);
     light.position.copy(pos);
     light.position.y += 0.5;
-    this.scene.add(light);
 
     const geo = new THREE.SphereGeometry(1.2, 6, 4);
     const mat = new THREE.MeshBasicMaterial({
@@ -525,7 +525,6 @@ export class DestructibleSystem {
       bf.mat.opacity = 0.9 * (1 - t);
       bf.flash.scale.setScalar(1 + t * 1.5);
       if (t >= 1) {
-        this.scene.remove(bf.light);
         globalLightPool.release(bf.light);
         this.scene.remove(bf.flash);
         bf.geo.dispose();

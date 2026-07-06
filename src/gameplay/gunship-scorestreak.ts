@@ -5,6 +5,7 @@ import { GrenadeSystem } from '../weapons/grenade-system';
 import { InputManager } from '../core/input-manager';
 import { FPSCamera } from '../player/fps-camera';
 import { playGunshipCannon, playGunshipHowitzer, HOWITZER_SHELL_DELAY } from '../audio/sound-effects';
+import { globalLightPool } from '../core/light-pool';
 
 const DURATION = 30;
 
@@ -80,6 +81,7 @@ export class GunshipScorestreak {
   onFlirModeChange: ((mode: FlirMode) => void) | null = null;
   /** Optional terrain raycast — provides actual surface Y instead of flat groundY. Set by game.ts. */
   getTerrainY:   ((x: number, z: number) => number) | null = null;
+  raycastTerrain: ((origin: THREE.Vector3, direction: THREE.Vector3) => THREE.Vector3 | null) | null = null;
 
   constructor(
     private readonly scene: THREE.Scene,
@@ -176,7 +178,7 @@ export class GunshipScorestreak {
     this._activeImpacts.length = 0;
     for (const tr of this._activeTracers) tr.line.visible = false;
     this._activeTracers.length = 0;
-    for (const l of this._activeLights) this.scene.remove(l.light);
+    for (const l of this._activeLights) globalLightPool.release(l.light);
     this._activeLights.length = 0;
   }
 
@@ -308,6 +310,14 @@ export class GunshipScorestreak {
     const ray = this._raycaster.ray;
     const target = this._worldFirePos;
 
+    if (this.raycastTerrain) {
+      const terrainHit = this.raycastTerrain(ray.origin, ray.direction);
+      if (terrainHit) {
+        target.copy(terrainHit);
+        return target.clone();
+      }
+    }
+
     // Helper: intersect ray with a horizontal plane at given Y
     const intersectAtY = (planeY: number): THREE.Vector3 | null => {
       if (Math.abs(ray.direction.y) < 0.0001) return null;
@@ -419,10 +429,9 @@ export class GunshipScorestreak {
       this._activeImpacts.push({ mesh, life: 0, maxLife: 0.25, initScale: 2.5 });
     }
 
-    // Short PointLight flash — tracked in game loop, no rAF
-    const light = new THREE.PointLight(0xff7722, 30, 10);
+    // Short PointLight flash — pooled (adding/removing lights recompiles all shaders)
+    const light = globalLightPool.acquire(0xff7722, 30, 10);
     light.position.set(pos.x, pos.y, pos.z);
-    this.scene.add(light);
     this._activeLights.push({ light, life: 0, maxLife: 0.15, initIntensity: 30 });
 
     // Dust/debris: a few spheres flung out
@@ -455,10 +464,9 @@ export class GunshipScorestreak {
       this._activeImpacts.push({ mesh, life: 0, maxLife: 0.8, initScale: 8 });
     }
 
-    // Bright area light — tracked in game loop, no rAF
-    const light = new THREE.PointLight(0xff6600, 80, 30);
+    // Bright area light — pooled (adding/removing lights recompiles all shaders)
+    const light = globalLightPool.acquire(0xff6600, 80, 30);
     light.position.set(pos.x, pos.y + 3, pos.z);
-    this.scene.add(light);
     this._activeLights.push({ light, life: 0, maxLife: 1.0, initIntensity: 80 });
 
     // Ring of debris spheres
@@ -504,7 +512,7 @@ export class GunshipScorestreak {
       const l = this._activeLights[i];
       l.life += dt;
       if (l.life >= l.maxLife) {
-        this.scene.remove(l.light);
+        globalLightPool.release(l.light);
         this._activeLights.splice(i, 1);
       } else {
         l.light.intensity = l.initIntensity * (1 - l.life / l.maxLife);

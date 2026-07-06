@@ -112,6 +112,8 @@ export class GrenadeSystem {
   private thrown: ThrownGrenade[] = [];
   private projectiles: ActiveProjectile[] = [];
   private clouds: GasCloud[] = [];
+  /** Recycled exhaust PointLights — kept in the scene at intensity 0 between launches. */
+  private exhaustLightPool: THREE.PointLight[] = [];
   private explosions: ActiveExplosion[] = [];
   private explosionTexture: THREE.Texture | null = null;
   private readonly _rayOrigin = new THREE.Vector3();
@@ -218,8 +220,9 @@ export class GrenadeSystem {
       exhaustCore.position.z = 0.24;
       mesh.add(exhaustCore);
 
-      // Dynamic light at exhaust position
-      exhaustLight = new THREE.PointLight(0xff6600, 6, 8);
+      // Dynamic light at exhaust position (reused across launches — adding a
+      // new light to the scene forces a full shader recompile)
+      exhaustLight = this.acquireExhaustLight(6, 8);
       exhaustLight.position.set(0, 0, 0.22);
       mesh.add(exhaustLight);
 
@@ -249,8 +252,9 @@ export class GrenadeSystem {
       band.position.z = 0.030;
       mesh.add(band);
 
-      // Dummy light (no exhaust on GL shell)
-      exhaustLight = new THREE.PointLight(0xff6600, 0, 0);
+      // Dummy light (no exhaust on GL shell) — kept so the scene light count
+      // stays identical between rocket and shell projectiles
+      exhaustLight = this.acquireExhaustLight(0, 0);
       mesh.add(exhaustLight);
     }
 
@@ -398,6 +402,22 @@ export class GrenadeSystem {
     });
   }
 
+  /** Reuse exhaust lights across projectiles — the scene light count must stay constant. */
+  private acquireExhaustLight(intensity: number, distance: number): THREE.PointLight {
+    const light = this.exhaustLightPool.pop() ?? new THREE.PointLight(0xff6600, 0, 0);
+    light.intensity = intensity;
+    light.distance = distance;
+    return light;
+  }
+
+  /** Park the light in the scene root at intensity 0 instead of removing it. */
+  private recycleExhaustLight(light: THREE.PointLight): void {
+    light.intensity = 0;
+    light.position.set(0, 0, 0);
+    this.scene.add(light); // re-parents from the doomed projectile mesh
+    this.exhaustLightPool.push(light);
+  }
+
   private getGroundY(x: number, y: number, z: number): number {
     const hit = this.physics.castRay(
       x, y, z,
@@ -500,6 +520,7 @@ export class GrenadeSystem {
           (ep.mesh.material as THREE.MeshBasicMaterial).dispose();
           ep.mesh.geometry.dispose();
         }
+        this.recycleExhaustLight(p.exhaustLight);
         this.scene.remove(p.mesh);
         this.projectiles.splice(i, 1);
 

@@ -30,6 +30,29 @@ type GetGroundHeightProvider = (() => GetGroundHeight | null) | null;
  * Handles rendering, interpolation, animation, and physics collider.
  * Supports both 3D model and 2D sprite modes (when ENEMY_RENDER_CONFIG.mode === 'sprite').
  */
+/**
+ * Recycled remote-player flashlights, parked in the scene at intensity 0.
+ * Removing (or hiding) a light changes the scene's light count and forces
+ * Three.js to recompile every lit shader — so flashlights are parked and
+ * reused across deaths, respawns, and player joins/leaves.
+ */
+const flashlightFreeList: THREE.SpotLight[] = [];
+
+/**
+ * Pre-create parked flashlights before the first render so joining players
+ * reuse them instead of adding new lights mid-game (which would trigger a
+ * recompile). Call from RemotePlayerManager before the shader warm-up runs.
+ */
+export function preseedRemotePlayerFlashlights(scene: THREE.Scene, count: number): void {
+  if (ENEMY_RENDER_CONFIG.mode === 'sprite') return; // sprite mode has no flashlights
+  while (flashlightFreeList.length < count) {
+    const light = new THREE.SpotLight(0xffe8cc, 0, 30, Math.PI / 6, 0.35, 1.5);
+    scene.add(light);
+    scene.add(light.target);
+    flashlightFreeList.push(light);
+  }
+}
+
 export class RemotePlayer {
   public id: string;
   public username: string;
@@ -52,6 +75,10 @@ export class RemotePlayer {
   private currentWeaponType: WeaponType = 'pistol';
   private weaponViewModel: WeaponViewModel | null = null;
   private flashlight: THREE.SpotLight | null = null;
+  private flashlightOn = false;
+  /** True while the flashlight is parked in the scene root (model hidden/dead). */
+  private flashlightParked = false;
+  private scene: THREE.Scene;
 
   // Smoothed position for even smoother rendering
   private smoothedPosition = new THREE.Vector3();
@@ -83,6 +110,7 @@ export class RemotePlayer {
     this.id = id;
     this.username = username;
     this.physics = physics;
+    this.scene = scene;
     this.getCameraPosition = getCameraPosition;
     this.getGroundHeightProvider = getGroundHeightProvider;
 
@@ -144,12 +172,12 @@ export class RemotePlayer {
         setPlayerWeapon(this.model, weaponMesh);
       }
 
-      // Create flashlight (spotlight attached to model - close to player, at chest/head height)
-      this.flashlight = new THREE.SpotLight(0xffe8cc, 0, 30, Math.PI / 6, 0.35, 1.5);
-      this.flashlight.position.set(0, 1.4, 0.15); // At chest height, slightly forward (weapon area)
-      this.flashlight.target.position.set(0, 1.2, -1.5); // Point forward (-Z in model space) for both procedural and custom models
-      this.model.add(this.flashlight);
-      this.model.add(this.flashlight.target);
+      // Create flashlight (spotlight attached to model - close to player, at chest/head height).
+      // Reuse a parked light when available so the scene light count stays constant.
+      this.flashlight = flashlightFreeList.pop()
+        ?? new THREE.SpotLight(0xffe8cc, 0, 30, Math.PI / 6, 0.35, 1.5);
+      this.flashlight.intensity = 0;
+      this.attachFlashlight();
     }
 
     // Create physics collider (kinematic capsule for hit detection) - used in both modes
@@ -223,6 +251,7 @@ export class RemotePlayer {
       }
 
       if (this.deathAnimationProgress >= 1) {
+        this.parkFlashlight(); // keep light count constant while model is hidden
         this.model.visible = false;
         this.shadowMesh.visible = false;
       }
@@ -412,7 +441,38 @@ export class RemotePlayer {
    * Set flashlight state (on/off). No-op in sprite mode.
    */
   setFlashlight(isOn: boolean): void {
-    if (this.flashlight) this.flashlight.intensity = isOn ? 40 : 0;
+    this.flashlightOn = isOn;
+    if (this.flashlight && !this.flashlightParked) {
+      this.flashlight.intensity = isOn ? 40 : 0;
+    }
+  }
+
+  /**
+   * Attach the flashlight to the model (chest height, pointing forward).
+   * Re-parenting keeps the scene light count constant.
+   */
+  private attachFlashlight(): void {
+    if (!this.flashlight) return;
+    this.flashlight.position.set(0, 1.4, 0.15); // At chest height, slightly forward (weapon area)
+    this.flashlight.target.position.set(0, 1.2, -1.5); // Point forward (-Z in model space) for both procedural and custom models
+    this.model.add(this.flashlight);
+    this.model.add(this.flashlight.target);
+    this.flashlightParked = false;
+    this.flashlight.intensity = this.flashlightOn ? 40 : 0;
+  }
+
+  /**
+   * Park the flashlight in the scene root at intensity 0. Must be called
+   * BEFORE the model is hidden or removed — a light inside a hidden/removed
+   * model leaves the render list, which changes the scene's light count and
+   * forces a full shader recompile.
+   */
+  private parkFlashlight(): void {
+    if (!this.flashlight || this.flashlightParked) return;
+    this.flashlight.intensity = 0;
+    this.scene.add(this.flashlight);
+    this.scene.add(this.flashlight.target);
+    this.flashlightParked = true;
   }
 
   /**
@@ -478,6 +538,7 @@ export class RemotePlayer {
     this.model.rotation.x = 0;
     this.model.quaternion.identity();
     this.shadowMesh.visible = true;
+    this.attachFlashlight();
 
     // Clear interpolation buffer so we don't blend from death position
     this.interpolationBuffer.clear();
@@ -502,6 +563,13 @@ export class RemotePlayer {
    * Cleanup and remove from scene.
    */
   dispose(scene: THREE.Scene, physics: PhysicsWorld): void {
+    // Park the flashlight for reuse by future players — removing it with the
+    // model would shrink the scene light count and recompile all shaders
+    if (this.flashlight) {
+      this.parkFlashlight();
+      flashlightFreeList.push(this.flashlight);
+      this.flashlight = null;
+    }
     scene.remove(this.model);
     if (!this.spriteMode) scene.remove(this.shadowMesh);
 

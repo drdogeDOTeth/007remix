@@ -52,6 +52,13 @@ const WEAPON_GLOW_COLORS: Record<string, number> = {
 export class PickupSystem {
   private pickups: Pickup[] = [];
   private scene: THREE.Scene;
+  /**
+   * Recycled glow lights, parked in the scene at intensity 0.
+   * Removing a light from the scene changes the light count and forces
+   * Three.js to recompile every lit shader (a one-frame stall) — so collected
+   * pickups hand their light back here instead of deleting it.
+   */
+  private glowLightFreeList: THREE.PointLight[] = [];
 
   onPickupCollected: ((type: PickupType, amount: number, keyId?: string) => void) | null = null;
 
@@ -79,6 +86,28 @@ export class PickupSystem {
       this.scene.remove(p.mesh);
     }
     this.pickups = [];
+    // Level switch: actually drop the parked lights (recompile is hidden by loading)
+    for (const light of this.glowLightFreeList) {
+      light.parent?.remove(light);
+    }
+    this.glowLightFreeList = [];
+  }
+
+  /** Reuse a parked glow light or create a new one (first spawns only). */
+  private acquireGlowLight(color: number, intensity: number, distance: number): THREE.PointLight {
+    const light = this.glowLightFreeList.pop() ?? new THREE.PointLight();
+    light.color.setHex(color);
+    light.intensity = intensity;
+    light.distance = distance;
+    return light;
+  }
+
+  /** Park a glow light in the scene root at intensity 0 for reuse. */
+  private recycleGlowLight(light: THREE.PointLight): void {
+    light.intensity = 0;
+    light.position.set(0, 0, 0);
+    this.scene.add(light); // re-parents from the pickup group being removed
+    this.glowLightFreeList.push(light);
   }
 
   /** Remove pickup nearest to position within maxDist. Returns index removed or -1. */
@@ -98,6 +127,7 @@ export class PickupSystem {
     }
     if (bestIdx < 0) return -1;
     const p = this.pickups[bestIdx];
+    if (p.light) this.recycleGlowLight(p.light);
     this.scene.remove(p.mesh);
     this.pickups.splice(bestIdx, 1);
     return bestIdx;
@@ -113,10 +143,19 @@ export class PickupSystem {
 
     if (type === 'gunship') {
       const gunshipMesh = buildGunshipPickupMesh();
-      // Extract the embedded PointLight so intensity can be pulsed
-      pickupLight = gunshipMesh.children.find(
+      // Swap the embedded PointLight for a recycled one so collecting the
+      // pickup doesn't shrink the scene's light count
+      const embedded = gunshipMesh.children.find(
         (c) => c instanceof THREE.PointLight,
       ) as THREE.PointLight | undefined;
+      if (embedded) {
+        gunshipMesh.remove(embedded);
+        pickupLight = this.acquireGlowLight(
+          embedded.color.getHex(), embedded.intensity, embedded.distance,
+        );
+        pickupLight.position.copy(embedded.position);
+        gunshipMesh.add(pickupLight);
+      }
       group.add(gunshipMesh);
     } else if (isWeapon && this.weaponModelBuilder) {
       // Build actual 3D weapon model for ground pickup
@@ -127,9 +166,9 @@ export class PickupSystem {
       weaponMesh.rotation.x = -Math.PI / 14; // slight forward tilt
       group.add(weaponMesh);
 
-      // Add a colored glow light under the weapon
+      // Add a colored glow light under the weapon (recycled across pickups)
       const glowColor = WEAPON_GLOW_COLORS[type] ?? 0x66ff44;
-      pickupLight = new THREE.PointLight(glowColor, 3, 4);
+      pickupLight = this.acquireGlowLight(glowColor, 3, 4);
       pickupLight.position.set(0, -0.1, 0);
       group.add(pickupLight);
     } else {
@@ -167,7 +206,9 @@ export class PickupSystem {
       const dist = playerPos.distanceTo(pickup.mesh.position);
       if (dist < COLLECT_RADIUS) {
         pickup.collected = true;
-        // Light is child of pickup.mesh — scene.remove removes it; PointLight has no dispose()
+        // Park the glow light back in the scene BEFORE removing the mesh so
+        // the scene light count never changes (avoids full shader recompile)
+        if (pickup.light) this.recycleGlowLight(pickup.light);
         this.scene.remove(pickup.mesh);
         this.onPickupCollected?.(pickup.type, pickup.amount, pickup.keyId);
       }
