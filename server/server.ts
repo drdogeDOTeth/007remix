@@ -64,6 +64,8 @@ class GameServer {
         origin: '*',
         methods: ['GET', 'POST'],
       },
+      pingInterval: 25000,
+      pingTimeout: 60000,
     });
 
     this.setupSocketHandlers();
@@ -331,7 +333,7 @@ class GameServer {
       });
 
       // Player disconnected
-      socket.on('disconnect', () => {
+      socket.on('disconnect', (reason) => {
         const mapId = this.socketToMapId.get(socket.id);
         if (mapId) {
           this.gameRooms.get(mapId)?.removePlayer(socket.id);
@@ -345,7 +347,7 @@ class GameServer {
             console.log(`[Server] Disposed empty room: ${mapId}`);
           }
         }
-        console.log(`[Server] Client disconnected: ${socket.id}`);
+        console.log(`[Server] Client disconnected: ${socket.id} (${reason})`);
       });
     });
   }

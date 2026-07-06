@@ -73,8 +73,15 @@ export class InputManager {
   }
 
   requestPointerLock(): void {
-    if (typeof document.documentElement.requestPointerLock === 'function') {
-      this.canvas.requestPointerLock();
+    if (typeof document.documentElement.requestPointerLock !== 'function') return;
+    if (!this.canvas.isConnected) return;
+    if (this.canvas.ownerDocument !== document) return;
+
+    const maybePromise = this.canvas.requestPointerLock();
+    if (maybePromise && typeof (maybePromise as Promise<void>).catch === 'function') {
+      (maybePromise as Promise<void>).catch((error) => {
+        console.warn('[InputManager] Pointer lock request failed:', error);
+      });
     }
   }
 

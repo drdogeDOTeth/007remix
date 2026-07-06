@@ -101,11 +101,17 @@ export class NetworkManager {
    */
   async connect(mapId?: MultiplayerMapId): Promise<void> {
     return new Promise((resolve, reject) => {
+      const useStableLocalPolling =
+        typeof window !== 'undefined' && window.location.hostname === 'localhost';
+
       this.socket = io(NetworkConfig.SERVER_URL, {
         reconnection: NetworkConfig.RECONNECTION.enabled,
         reconnectionAttempts: NetworkConfig.RECONNECTION.attempts,
         reconnectionDelay: NetworkConfig.RECONNECTION.delay,
         reconnectionDelayMax: NetworkConfig.RECONNECTION.delayMax,
+        timeout: 30000,
+        transports: useStableLocalPolling ? ['polling'] : ['polling', 'websocket'],
+        upgrade: !useStableLocalPolling,
       });
 
       // Connection successful
@@ -137,6 +143,22 @@ export class NetworkManager {
         console.log('[NetworkManager] Disconnected:', reason);
         this.connected = false;
         this._playerId = null;
+      });
+
+      this.socket.io.on('reconnect_attempt', (attempt) => {
+        console.log('[NetworkManager] Reconnect attempt:', attempt);
+      });
+
+      this.socket.io.on('reconnect_error', (error) => {
+        console.warn('[NetworkManager] Reconnect error:', error);
+      });
+
+      this.socket.io.on('reconnect_failed', () => {
+        console.warn('[NetworkManager] Reconnect failed');
+      });
+
+      this.socket.io.engine.on('close', (reason) => {
+        console.warn('[NetworkManager] Engine closed:', reason);
       });
 
       // Player connected event

@@ -365,6 +365,10 @@ export class GameRoom {
     }
 
     this.lastFireTime.set(event.playerId, now);
+    console.log(
+      `[GameRoom] ${shooter.username} gunship ${event.weaponType} @ ` +
+      `(${event.position.x.toFixed(2)}, ${event.position.y.toFixed(2)}, ${event.position.z.toFixed(2)})`
+    );
     this.onBroadcast?.('gunship:fire', event);
 
     const { damage, radius } = this.getGunshipStats(event.weaponType);

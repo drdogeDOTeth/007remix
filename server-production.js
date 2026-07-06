@@ -37,6 +37,8 @@ const io = new SocketIOServer(httpServer, {
     origin: '*', // In production, you may want to restrict this
     methods: ['GET', 'POST'],
   },
+  pingInterval: 25000,
+  pingTimeout: 60000,
 });
 
 // Create game room
@@ -101,8 +103,8 @@ io.on('connection', (socket) => {
   });
 
   // Player disconnected
-  socket.on('disconnect', () => {
-    console.log(`[Server] Client disconnected: ${socket.id}`);
+  socket.on('disconnect', (reason) => {
+    console.log(`[Server] Client disconnected: ${socket.id} (${reason})`);
     gameRoom.removePlayer(socket.id);
     io.emit('player:disconnected', {
       playerId: socket.id,
