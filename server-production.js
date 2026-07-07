@@ -46,7 +46,12 @@ const gameRoom = new GameRoom();
 
 // Set up broadcast callback
 gameRoom.onBroadcast = (eventName, data) => {
-  io.emit(eventName, data);
+  if (eventName === 'game:state:snapshot') {
+    // volatile: drop stale snapshots instead of queueing catch-up bursts
+    io.volatile.emit(eventName, data);
+  } else {
+    io.emit(eventName, data);
+  }
 };
 
 // Socket.IO event handlers
@@ -59,6 +64,11 @@ io.on('connection', (socket) => {
     io.emit('player:connected', {
       playerId: socket.id,
       username: data.username,
+    });
+    // One-time sync of already-destroyed props (not part of the 30Hz snapshot)
+    socket.emit('destructibles:sync', {
+      timestamp: Date.now(),
+      destroyed: gameRoom.getDestroyedDestructibles(),
     });
   });
 

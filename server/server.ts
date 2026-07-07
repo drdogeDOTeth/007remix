@@ -220,7 +220,13 @@ class GameServer {
       room = new GameRoom();
       const roomName = this.roomName(mapId);
       room.onBroadcast = (eventName, data) => {
-        this.io.to(roomName).emit(eventName, data);
+        if (eventName === 'game:state:snapshot') {
+          // volatile: a stale snapshot is worthless (a fresh one follows in
+          // 33ms) — dropping beats queueing a rubber-band catch-up burst
+          this.io.to(roomName).volatile.emit(eventName, data);
+        } else {
+          this.io.to(roomName).emit(eventName, data);
+        }
       };
       this.gameRooms.set(mapId, room);
       console.log(`[Server] Created room for map: ${mapId} (${roomName})`);
@@ -251,6 +257,12 @@ class GameServer {
         this.io.to(roomName).emit('player:connected', {
           playerId: socket.id,
           username: data.username,
+        });
+
+        // One-time sync of already-destroyed props (not part of the 30Hz snapshot)
+        socket.emit('destructibles:sync', {
+          timestamp: Date.now(),
+          destroyed: gameRoom.getDestroyedDestructibles(),
         });
       });
 

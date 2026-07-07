@@ -19,6 +19,7 @@ import {
   EnemyDamageEvent,
   FlashlightToggleEvent,
   DestructibleDestroyedEvent,
+  DestructiblesSyncEvent,
   GameOverEvent,
 } from './network-events';
 
@@ -58,6 +59,9 @@ export class NetworkManager {
   onGunshipFire: ((event: GunshipFireEvent) => void) | null = null;
   onFlashlightToggle: ((event: FlashlightToggleEvent) => void) | null = null;
   onDestructibleDestroyed: ((event: DestructibleDestroyedEvent) => void) | null = null;
+  onDestructiblesSync: ((event: DestructiblesSyncEvent) => void) | null = null;
+  /** Last received sync — kept so Game can apply it even if it arrived before callbacks/level were ready. */
+  lastDestructiblesSync: DestructiblesSyncEvent | null = null;
 
   // Game mode (Phase 4)
   onGameOver: ((event: GameOverEvent) => void) | null = null;
@@ -101,17 +105,16 @@ export class NetworkManager {
    */
   async connect(mapId?: MultiplayerMapId): Promise<void> {
     return new Promise((resolve, reject) => {
-      const useStableLocalPolling =
-        typeof window !== 'undefined' && window.location.hostname === 'localhost';
-
       this.socket = io(NetworkConfig.SERVER_URL, {
         reconnection: NetworkConfig.RECONNECTION.enabled,
         reconnectionAttempts: NetworkConfig.RECONNECTION.attempts,
         reconnectionDelay: NetworkConfig.RECONNECTION.delay,
         reconnectionDelayMax: NetworkConfig.RECONNECTION.delayMax,
         timeout: 30000,
-        transports: useStableLocalPolling ? ['polling'] : ['polling', 'websocket'],
-        upgrade: !useStableLocalPolling,
+        // WebSocket first: long-polling adds tens of ms of latency and delivers
+        // messages in bursts (HTTP request cycles), which reads as lag/jitter.
+        // Polling remains as an automatic fallback if the WS handshake fails.
+        transports: ['websocket', 'polling'],
       });
 
       // Connection successful
@@ -237,6 +240,11 @@ export class NetworkManager {
         this.onDestructibleDestroyed?.(event);
       });
 
+      this.socket.on(NetworkEventType.DESTRUCTIBLES_SYNC, (event: DestructiblesSyncEvent) => {
+        this.lastDestructiblesSync = event;
+        this.onDestructiblesSync?.(event);
+      });
+
       this.socket.on(NetworkEventType.GAME_OVER, (event: GameOverEvent) => {
         this.onGameOver?.(event);
       });
@@ -266,7 +274,9 @@ export class NetworkManager {
     if (state.timestamp) {
       this.sentTimestamps.set(state.timestamp, performance.now());
     }
-    this.socket!.emit(NetworkEventType.PLAYER_STATE_UPDATE, state);
+    // volatile: drop stale state instead of queueing behind TCP backpressure —
+    // a fresh update follows in ≤33ms, so old positions are worthless
+    this.socket!.volatile.emit(NetworkEventType.PLAYER_STATE_UPDATE, state);
   }
 
   /**

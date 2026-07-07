@@ -191,8 +191,10 @@ export class RemotePlayer {
 
   /**
    * Update remote player state from server snapshot.
+   * @param serverTimestamp The snapshot's server clock (Date.now() on server) —
+   *   used to reconstruct a jitter-free interpolation timeline.
    */
-  updateFromServer(state: PlayerStateUpdate): void {
+  updateFromServer(state: PlayerStateUpdate, serverTimestamp = 0): void {
     // Detect large position jumps (respawn, teleport) - clear buffer to avoid interpolating across the gap
     if (this.currentState) {
       const dx = state.position.x - this.currentState.position.x;
@@ -204,7 +206,7 @@ export class RemotePlayer {
         this.hasInitialPosition = false;
       }
     }
-    this.interpolationBuffer.addSnapshot(state.timestamp, state);
+    this.interpolationBuffer.addSnapshot(serverTimestamp, state);
     this.currentState = state;
   }
 

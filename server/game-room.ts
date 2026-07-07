@@ -606,6 +606,11 @@ export class GameRoom {
     return 1000 / rate; // Convert to ms between shots
   }
 
+  /** Destroyed props since room start — sent once to new joiners. */
+  getDestroyedDestructibles(): Array<{ propId: string; position: { x: number; y: number; z: number }; type: 'crate' | 'crate_metal' | 'barrel' }> {
+    return this.destroyedDestructibles;
+  }
+
   /**
    * Start the broadcast loop that sends game state to all clients.
    */
@@ -618,7 +623,9 @@ export class GameRoom {
           timestamp: Date.now(),
           mapId: this.currentMapId,
           players: this.getAllPlayerStates(),
-          destroyedDestructibles: this.destroyedDestructibles, // Sync for new joiners
+          // NOTE: destroyedDestructibles is intentionally NOT included — it
+          // grows unbounded over a match and re-serializing it 30x/s bloats
+          // every snapshot. New joiners get it once via 'destructibles:sync'.
         };
         this.onBroadcast('game:state:snapshot', snapshot);
       }

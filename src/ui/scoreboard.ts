@@ -16,6 +16,8 @@ export class Scoreboard {
   private container: HTMLDivElement;
   private tableBody: HTMLTableSectionElement;
   private _visible = false;
+  /** Latest data — rendered lazily so hidden updates (30Hz snapshots) don't rebuild the DOM. */
+  private lastPlayers: ScoreboardPlayer[] = [];
 
   constructor() {
     this.container = document.createElement('div');
@@ -98,10 +100,16 @@ export class Scoreboard {
 
   /**
    * Update scoreboard with current player data.
+   * Called on every server snapshot (30Hz) — only touches the DOM while visible.
    */
   update(players: ScoreboardPlayer[]): void {
+    this.lastPlayers = players;
+    if (this._visible) this.render();
+  }
+
+  private render(): void {
     // Sort by kills descending, then by deaths ascending
-    const sorted = [...players].sort((a, b) => {
+    const sorted = [...this.lastPlayers].sort((a, b) => {
       if (b.kills !== a.kills) return b.kills - a.kills;
       return a.deaths - b.deaths;
     });
@@ -146,6 +154,7 @@ export class Scoreboard {
 
   show(): void {
     this._visible = true;
+    this.render(); // render latest data on open
     this.container.style.display = 'flex';
   }
 

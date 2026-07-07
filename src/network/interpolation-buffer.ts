@@ -18,7 +18,14 @@ interface Snapshot {
 export class InterpolationBuffer {
   private snapshots: Snapshot[] = [];
   private interpolationDelay: number; // ms
-  private baseTime: number = 0; // Base time offset
+  /**
+   * Estimated server-clock → local-clock offset (local = server + offset).
+   * Tracks the minimum observed offset (the least-delayed packet), creeping
+   * up slowly to absorb clock drift. This reconstructs the server's steady
+   * snapshot cadence instead of stamping snapshots with jittery arrival
+   * times — arrival jitter otherwise becomes visible motion jitter.
+   */
+  private clockOffset: number | null = null;
 
   /**
    * @param interpolationDelay How far behind real-time to render (default: 100ms)
@@ -29,16 +36,35 @@ export class InterpolationBuffer {
 
   /**
    * Add a new state snapshot to the buffer.
-   * @param timestamp Server timestamp (performance.now())
+   * @param serverTimestamp Server clock at snapshot creation (Date.now() on server).
+   *   Pass 0/undefined to fall back to local arrival time.
    * @param state Player state at this timestamp
    */
-  addSnapshot(timestamp: number, state: PlayerStateUpdate): void {
-    // Use local performance.now() for consistent timing
-    const localTimestamp = performance.now();
+  addSnapshot(serverTimestamp: number, state: PlayerStateUpdate): void {
+    const arrival = performance.now();
+    let timestamp: number;
 
-    this.snapshots.push({ timestamp: localTimestamp, state });
+    if (Number.isFinite(serverTimestamp) && serverTimestamp > 0) {
+      const rawOffset = arrival - serverTimestamp;
+      if (this.clockOffset === null || rawOffset < this.clockOffset) {
+        this.clockOffset = rawOffset; // faster packet = closer to true offset
+      } else {
+        this.clockOffset += 0.1; // slow upward creep to track clock drift
+      }
+      timestamp = serverTimestamp + this.clockOffset;
 
-    // Keep only last 10 snapshots (500ms of history for better interpolation)
+      // Timeline must be monotonic (guards duplicate/reordered timestamps)
+      const last = this.snapshots[this.snapshots.length - 1];
+      if (last && timestamp <= last.timestamp) {
+        timestamp = last.timestamp + 1;
+      }
+    } else {
+      timestamp = arrival;
+    }
+
+    this.snapshots.push({ timestamp, state });
+
+    // Keep only last 10 snapshots (~330ms of history at 30Hz)
     if (this.snapshots.length > 10) {
       this.snapshots.shift();
     }

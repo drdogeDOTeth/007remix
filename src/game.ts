@@ -740,7 +740,14 @@ export class Game {
           this.remotePlayerManager?.updateFromSnapshot(snapshot);
         }
         this.updateScoreboardFromSnapshot(snapshot);
+        // Legacy field — servers no longer include this per-snapshot, but keep
+        // handling it so old servers still sync correctly
         this.syncDestroyedDestructibles(snapshot.destroyedDestructibles);
+      };
+
+      // One-time destroyed-props sync on join (replaces the per-snapshot array)
+      this.networkManager.onDestructiblesSync = (event) => {
+        this.syncDestroyedDestructibles(event.destroyed);
       };
 
       // Handle weapon fire events (Phase 4: animations + spatial audio)
@@ -1098,6 +1105,12 @@ export class Game {
     // Compile all shaders before the first frame. Async (parallel shader
     // compile) so the loading overlay stays responsive on big custom scenes;
     // the game loop starts once every program is ready.
+    // Re-apply the join-time destroyed-props sync now that level props exist
+    // (the event usually arrives before the level finishes building)
+    if (this.networkMode === 'client' && this.networkManager?.lastDestructiblesSync) {
+      this.syncDestroyedDestructibles(this.networkManager.lastDestructiblesSync.destroyed);
+    }
+
     showLoadingOverlay('COMPILING SHADERS');
     void this.warmupShaders().then(() => {
       hideLoadingOverlay();
@@ -1216,9 +1229,11 @@ export class Game {
       if (this.processedDestructibleIds.size >= this.MAX_PROCESSED_DESTRUCTIBLES) {
         this.processedDestructibleIds.clear();
       }
-      this.processedDestructibleIds.add(d.propId);
-      // Silent=true: no explosions/debris when syncing for new joiners
-      this.destructibleSystem.destroyByPositionAndType(d.position, d.type, 1.0, true, true);
+      // Silent=true: no explosions/debris when syncing for new joiners.
+      // Only mark processed on success — the sync can arrive before the level's
+      // props are registered, and start() re-applies it once they exist.
+      const ok = this.destructibleSystem.destroyByPositionAndType(d.position, d.type, 1.0, true, true);
+      if (ok) this.processedDestructibleIds.add(d.propId);
     }
   }
 

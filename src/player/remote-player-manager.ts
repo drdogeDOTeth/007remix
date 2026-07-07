@@ -85,10 +85,12 @@ export class RemotePlayerManager {
         console.log(`[RemotePlayerManager] Player ${playerId} joined`);
       }
 
-      // Update player state (sync username from server if available)
+      // Update player state (sync username from server if available).
+      // Pass the snapshot's server timestamp — per-player state.timestamp is
+      // the origin client's own clock and is meaningless across machines.
       const username = (playerState as { username?: string }).username;
       if (username) remotePlayer.username = username;
-      remotePlayer.updateFromServer(playerState);
+      remotePlayer.updateFromServer(playerState, snapshot.timestamp);
     }
 
     // Remove players that disconnected (not in snapshot)

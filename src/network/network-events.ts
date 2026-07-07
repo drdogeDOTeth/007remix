@@ -74,7 +74,16 @@ export interface GameStateSnapshot {
   /** Map this snapshot is for. Client ignores if it doesn't match local map. */
   mapId?: 'crossfire' | 'wasteland' | 'custom';
   players: Record<string, PlayerStateUpdate>;
-  destroyedDestructibles?: DestroyedDestructible[]; // For new joiners + sync
+  destroyedDestructibles?: DestroyedDestructible[]; // Legacy — no longer sent per-snapshot
+}
+
+/**
+ * One-time sync of already-destroyed props, sent to a client when it joins.
+ * (Live destruction is broadcast via DESTRUCTIBLE_DESTROYED events.)
+ */
+export interface DestructiblesSyncEvent {
+  timestamp: number;
+  destroyed: DestroyedDestructible[];
 }
 
 /**
@@ -240,6 +249,7 @@ export enum NetworkEventType {
   ENEMY_DAMAGE = 'player:enemy:damage',
   FLASHLIGHT_TOGGLE = 'flashlight:toggle',
   DESTRUCTIBLE_DESTROYED = 'destructible:destroyed',
+  DESTRUCTIBLES_SYNC = 'destructibles:sync',
 
   // Game mode (Phase 4)
   GAME_OVER = 'game:over',
