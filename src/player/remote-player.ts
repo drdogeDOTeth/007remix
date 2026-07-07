@@ -4,6 +4,7 @@ import { buildPlayerModel, buildAnimatedPlayerFromCharacter, animatePlayerMoveme
 import { getCachedAvatarModel } from '../core/model-loader';
 import type { CustomPlayerAnimator } from './custom-player-animator';
 import { InterpolationBuffer } from '../network/interpolation-buffer';
+import { NetworkConfig } from '../network/network-config';
 import type { PlayerStateUpdate } from '../network/network-events';
 import type { PhysicsWorld } from '../core/physics-world';
 import { WeaponViewModel } from '../weapons/weapon-view-model';
@@ -186,7 +187,7 @@ export class RemotePlayer {
     const colliderDesc = RAPIER.ColliderDesc.capsule(0.9, 0.3); // Standing capsule
     this.collider = physics.world.createCollider(colliderDesc, this.rigidBody);
     this.collider.setActiveEvents(RAPIER.ActiveEvents.COLLISION_EVENTS);
-    this.interpolationBuffer = new InterpolationBuffer(66); // 66ms delay — 2 snapshot intervals at 30Hz
+    this.interpolationBuffer = new InterpolationBuffer(NetworkConfig.UPDATE_RATES.INTERPOLATION_DELAY);
   }
 
   /**

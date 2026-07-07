@@ -617,7 +617,15 @@ export class GameRoom {
   private startBroadcastLoop(): void {
     const intervalMs = 1000 / this.updateRate;
 
+    // Tick fast and gate on elapsed time: on Windows, setInterval(33) is
+    // coarsened to ~47ms (timer granularity), silently dropping the real
+    // broadcast rate to ~21Hz. A 10ms tick with an elapsed check holds the
+    // target cadence on every platform.
+    let lastBroadcast = 0;
     this.updateInterval = setInterval(() => {
+      const now = Date.now();
+      if (now - lastBroadcast < intervalMs - 8) return;
+      lastBroadcast = now;
       if (this.onBroadcast && this.players.size > 0) {
         const snapshot = {
           timestamp: Date.now(),
@@ -629,7 +637,7 @@ export class GameRoom {
         };
         this.onBroadcast('game:state:snapshot', snapshot);
       }
-    }, intervalMs);
+    }, 10);
   }
 
   /**
